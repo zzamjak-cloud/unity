@@ -133,6 +133,13 @@ namespace CAT.Effects
         private void EditorUpdate()
         {
             if (this == null || graphic == null) return;
+            
+            // 컴포넌트가 파괴되었거나 비활성화된 경우 체크
+            if (!this || !graphic)
+            {
+                EditorApplication.update -= EditorUpdate;
+                return;
+            }
 
             // Editor에서 성능을 위해 업데이트 주기 제한
             float currentTime = (float)EditorApplication.timeSinceStartup;
@@ -171,13 +178,6 @@ namespace CAT.Effects
             {
                 needsUpdate = true;
                 graphic.SetVerticesDirty();
-
-#if UNITY_EDITOR
-                if (!Application.isPlaying)
-                {
-                    EditorUtility.SetDirty(this);
-                }
-#endif
                 return;
             }
 
@@ -202,13 +202,6 @@ namespace CAT.Effects
             {
                 needsUpdate = true;
                 graphic.SetVerticesDirty();
-
-#if UNITY_EDITOR
-                if (!Application.isPlaying)
-                {
-                    EditorUtility.SetDirty(this);
-                }
-#endif
             }
         }
 
@@ -353,6 +346,21 @@ namespace CAT.Effects
                 return originalPosition;
             }
 
+            // 앵커 타겟이 자식인지 확인
+            bool isChildAnchor = anchor.anchorTarget.IsChildOf(transform);
+            
+            if (isChildAnchor)
+            {
+                // 자식 앵커인 경우: 로컬 좌표 직접 사용
+                RectTransform anchorRect = anchor.anchorTarget as RectTransform;
+                if (anchorRect != null)
+                {
+                    // 로컬 위치에 오프셋 추가
+                    return anchorRect.anchoredPosition + anchor.localOffset;
+                }
+            }
+            
+            // 외부 앵커인 경우: 기존 월드 좌표 변환 사용
             Vector3 worldPosition = anchor.anchorTarget.position + (Vector3)anchor.localOffset;
             return WorldToCanvasPosition(worldPosition);
         }
@@ -363,24 +371,25 @@ namespace CAT.Effects
                 return worldPosition;
 
             Vector2 screenPoint;
+            Camera canvasCamera = parentCanvas.worldCamera;
+            
             if (parentCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
             {
-                // Screen Space Overlay 모드
-                screenPoint = Camera.main.WorldToScreenPoint(worldPosition);
+                screenPoint = RectTransformUtility.WorldToScreenPoint(null, worldPosition);
             }
             else
             {
-                // Screen Space Camera 또는 World Space 모드
-                Camera canvasCamera = parentCanvas.worldCamera ?? Camera.main;
-                screenPoint = canvasCamera.WorldToScreenPoint(worldPosition);
+                if (canvasCamera == null)
+                    canvasCamera = Camera.main;
+                screenPoint = RectTransformUtility.WorldToScreenPoint(canvasCamera, worldPosition);
             }
 
-            // Screen 좌표를 Canvas 로컬 좌표로 변환
+            // Screen 좌표를 이 오브젝트의 로컬 좌표로 변환
             Vector2 localPoint;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                parentCanvas.transform as RectTransform,
+                transform as RectTransform,  // parentCanvas 대신 자신의 transform 사용
                 screenPoint,
-                parentCanvas.worldCamera,
+                canvasCamera,
                 out localPoint);
 
             return localPoint;
@@ -444,21 +453,24 @@ namespace CAT.Effects
             // RectTransform 추가 및 설정
             RectTransform anchorRect = anchorPoint.AddComponent<RectTransform>();
 
-            // 로컬 위치 설정 (이미지의 vertex 위치와 정확히 일치)
-            anchorRect.anchoredPosition = localPosition;
-            anchorRect.sizeDelta = Vector2.zero;
-
-            // 앵커와 피벗을 중앙으로 설정
+            // 앵커를 부모의 중심으로 설정 (애니메이션 시 안정적)
             anchorRect.anchorMin = Vector2.one * 0.5f;
             anchorRect.anchorMax = Vector2.one * 0.5f;
             anchorRect.pivot = Vector2.one * 0.5f;
+            
+            // 로컬 위치 설정 (이미지의 vertex 위치와 정확히 일치)
+            anchorRect.anchoredPosition = localPosition;
+            anchorRect.sizeDelta = Vector2.zero;
+            
+            // 스케일 초기화 (애니메이션 오류 방지)
+            anchorRect.localScale = Vector3.one;
+            anchorRect.localRotation = Quaternion.identity;
 
 #if UNITY_EDITOR
             // Editor에서 변경사항 기록 (Undo 지원)
             if (!Application.isPlaying)
             {
                 UnityEditor.Undo.RegisterCreatedObjectUndo(anchorPoint, "Create Anchor Point");
-                UnityEditor.EditorUtility.SetDirty(this);
             }
 #endif
 
@@ -541,13 +553,6 @@ namespace CAT.Effects
             {
                 graphic.SetVerticesDirty();
             }
-
-#if UNITY_EDITOR
-            if (!Application.isPlaying)
-            {
-                EditorUtility.SetDirty(this);
-            }
-#endif
         }
 
         // 특정 vertex의 앵커를 설정하는 메서드들
