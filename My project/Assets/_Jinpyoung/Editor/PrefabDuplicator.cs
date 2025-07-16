@@ -6,9 +6,9 @@ using System.Text;
 
 public static class PrefabDuplicator
 {
-    private const string MENU_BASE_PATH = "CAT/";
-    private const string CONTEXT_MENU_BASE_PATH = "GameObject/CAT/";
-    private const string PREFAB_PATH = "Assets/0_Jinpyoung/Prefabs";
+    private const string MENU_BASE_PATH = "CAT/_Preset";
+    private const string CONTEXT_MENU_BASE_PATH = "GameObject/CAT/_Preset";
+    private const string PREFAB_PATH = "Assets/_Jinpyoung/Prefab";
     private const string MENU_ITEM_PATH = "CAT/[Refresh Menu]";
 
     private const string METHOD_START_MARKER = "// === Start";
@@ -187,7 +187,7 @@ public static class PrefabDuplicator
     [MenuItem("CAT/TMP Preset/DropShadow (TMP)")]
     static void Create_DropShadow__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/DropShadow (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/DropShadow (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }
@@ -195,7 +195,7 @@ public static class PrefabDuplicator
     [MenuItem("GameObject/CAT/TMP Preset/DropShadow (TMP)", false, 10)]
     static void CreateContext_DropShadow__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/DropShadow (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/DropShadow (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }
@@ -203,7 +203,7 @@ public static class PrefabDuplicator
     [MenuItem("CAT/TMP Preset/Outline (TMP)")]
     static void Create_Outline__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/Outline (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/Outline (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }
@@ -211,7 +211,7 @@ public static class PrefabDuplicator
     [MenuItem("GameObject/CAT/TMP Preset/Outline (TMP)", false, 10)]
     static void CreateContext_Outline__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/Outline (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/Outline (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }
@@ -219,7 +219,7 @@ public static class PrefabDuplicator
     [MenuItem("CAT/TMP Preset/Outlinex2 (TMP)")]
     static void Create_Outlinex2__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/Outlinex2 (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/Outlinex2 (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }
@@ -227,7 +227,7 @@ public static class PrefabDuplicator
     [MenuItem("GameObject/CAT/TMP Preset/Outlinex2 (TMP)", false, 10)]
     static void CreateContext_Outlinex2__TMP_()
     {
-        string path = "Assets/_Art/Prefab/TMP Preset/Outlinex2 (TMP).prefab";
+        string path = "Assets/_Jinpyoung/Prefab/TMP Preset/Outlinex2 (TMP).prefab";
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab != null) CreatePrefabInstance(prefab);
     }

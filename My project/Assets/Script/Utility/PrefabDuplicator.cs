@@ -8,7 +8,7 @@ public static class PrefabDuplicator
 {
     private const string MENU_BASE_PATH = "CAT/";
     private const string CONTEXT_MENU_BASE_PATH = "GameObject/CAT/";
-    private const string PREFAB_PATH = "Assets/_Art/Prefab/";
+    private const string PREFAB_PATH = "Assets/_Jinpyoung/Prefab/";
     private const string MENU_ITEM_PATH = "CAT/[Refresh Menu]";
 
     private const string METHOD_START_MARKER = "// === Start";
