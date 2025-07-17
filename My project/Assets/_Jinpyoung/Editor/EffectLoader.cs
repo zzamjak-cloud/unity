@@ -14,11 +14,11 @@ namespace CAT.Utility
 {
     public class EffectLoader : EditorWindow
     {
-        private const string EFFECTS_PATH = "Assets/Prefabs/Effects";       // 이펙트 저장 경로
-        private const int GRID_X_LIMIT = 10;                                // 이펙트 프리팹의 X축 그리드 Max 개수
-        private const float SPACING_3D = 5f;                                // 3D 이펙트 프리팹 간격 (기본값 5유닛)
-        private const float SPACING_UI = 400f;                              // UI 이펙트 프리팹 간격 (기본값 400px)
-        private const string EFFECT_SCENE_NAME = "Effect Scene";            // 이펙트 전용 씬 이름
+        private const string EFFECTS_PATH = "Assets/_Jinpyoung/Prefab/Effect";      // 이펙트 저장 경로
+        private const int GRID_X_LIMIT = 10;                                        // 이펙트 프리팹의 X축 그리드 Max 개수
+        private const float SPACING_3D = 5f;                                        // 3D 이펙트 프리팹 간격 (기본값 5유닛)
+        private const float SPACING_UI = 400f;                                      // UI 이펙트 프리팹 간격 (기본값 400px)
+        private const string EFFECT_SCENE_NAME = "Effect Scene";                    // 이펙트 전용 씬 이름
 
         private static bool showSceneViewButton = false;
 
