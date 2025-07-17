@@ -6,17 +6,19 @@ using TMPro;
 using System.IO;
 using System.Collections.Generic;
 
+// 프로젝트 Effect 폴더 내에 저장된 프리팹들을 씬에 모두 불러들여 한번에 확인하기 위한 디스플레이 전용 툴입니다.
+// 메뉴는 CAT/Effects/Defalut Loader와 CAT/Effects/UI Loader 2개로 제공됩니다.
+// 3D용 이펙트와 UI용 이펙트를 각각 별도로 불러들여 확인하기 위한 기능입니다.
+
 namespace CAT.Utility
 {
     public class EffectLoader : EditorWindow
     {
-        private const string EFFECTS_PATH = "Assets/_Jinpyoung/Prefab/Effect";     // Effects 폴더 경로를 변경해주셔야 합니다.
-        private const string DEFAULT_FOLDER = "Default";                  // 3D space 이펙트 폴더의 이름입니다.
-        private const string UI_FOLDER = "UI";                            // UI 이펙트 폴더의 이름입니다.                     
-        private const int GRID_X_LIMIT = 10;                              // X축 그리드 개수 제한입니다.
-        private const float SPACING_3D = 5f;                              // 3D space 프리팹의 Transform 간격입니다. (unit 단위)
-        private const float SPACING_UI = 400f;                            // UI 이펙트 프리팹의 Transform 간격입니다.
-        private const string EFFECT_SCENE_NAME = "Effect Scene";          // 이펙트 확인용 전용 씬의 이름입니다.
+        private const string EFFECTS_PATH = "Assets/Prefabs/Effects";       // 이펙트 저장 경로
+        private const int GRID_X_LIMIT = 10;                                // 이펙트 프리팹의 X축 그리드 Max 개수
+        private const float SPACING_3D = 5f;                                // 3D 이펙트 프리팹 간격 (기본값 5유닛)
+        private const float SPACING_UI = 400f;                              // UI 이펙트 프리팹 간격 (기본값 400px)
+        private const string EFFECT_SCENE_NAME = "Effect Scene";            // 이펙트 전용 씬 이름
 
         private static bool showSceneViewButton = false;
 
@@ -71,7 +73,7 @@ namespace CAT.Utility
             Handles.EndGUI();
         }
 
-        [MenuItem("CAT/Effect Loader/Default Load")]
+        [MenuItem("CAT/Effects/Default Load")]
         static void LoadDefaultEffects()
         {
             if (!IsEffectScene())
@@ -80,11 +82,11 @@ namespace CAT.Utility
                 return;
             }
 
-            LoadEffects(DEFAULT_FOLDER, false);
+            LoadEffectsByType(false); // 3D 이펙트 로드
             showSceneViewButton = true; // Scene View 버튼 활성화
         }
 
-        [MenuItem("CAT/Effect Loader/UI Load")]
+        [MenuItem("CAT/Effects/UI Load")]
         static void LoadUIEffects()
         {
             if (!IsEffectScene())
@@ -93,30 +95,60 @@ namespace CAT.Utility
                 return;
             }
 
-            LoadEffects(UI_FOLDER, true);
+            LoadEffectsByType(true); // UI 이펙트 로드
             showSceneViewButton = true; // Scene View 버튼 활성화
         }
 
-        static void LoadEffects(string folderName, bool isUI)
+        static void LoadEffectsByType(bool isUI)
         {
             // 현재 씬의 모든 오브젝트 제거
             ClearScene();
 
-            string folderPath = Path.Combine(EFFECTS_PATH, folderName);
-
-            // 폴더가 존재하는지 확인
-            if (!Directory.Exists(folderPath))
+            // Effects 폴더가 존재하는지 확인
+            if (!Directory.Exists(EFFECTS_PATH))
             {
-                Debug.LogError($"폴더를 찾을 수 없습니다: {folderPath}");
+                Debug.LogError($"폴더를 찾을 수 없습니다: {EFFECTS_PATH}");
                 return;
             }
 
-            // 프리팹 파일들 찾기
-            string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { folderPath });
+            // Effects 폴더 내의 모든 프리팹 파일들 찾기 (하위 폴더 포함)
+            string[] allPrefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { EFFECTS_PATH });
 
-            if (prefabGuids.Length == 0)
+            if (allPrefabGuids.Length == 0)
             {
-                Debug.LogWarning($"{folderPath}에서 프리팹을 찾을 수 없습니다.");
+                Debug.LogWarning($"{EFFECTS_PATH}에서 프리팹을 찾을 수 없습니다.");
+                return;
+            }
+
+            // UI/3D 이펙트 구분
+            List<string> targetPrefabGuids = new List<string>();
+
+            foreach (string guid in allPrefabGuids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+
+                if (prefab != null)
+                {
+                    bool hasRectTransform = prefab.GetComponent<RectTransform>() != null;
+
+                    // UI 이펙트를 찾는 경우
+                    if (isUI && hasRectTransform)
+                    {
+                        targetPrefabGuids.Add(guid);
+                    }
+                    // 3D 이펙트를 찾는 경우
+                    else if (!isUI && !hasRectTransform)
+                    {
+                        targetPrefabGuids.Add(guid);
+                    }
+                }
+            }
+
+            if (targetPrefabGuids.Count == 0)
+            {
+                string typeString = isUI ? "UI" : "3D";
+                Debug.LogWarning($"{EFFECTS_PATH}에서 {typeString} 이펙트를 찾을 수 없습니다.");
                 return;
             }
 
@@ -128,9 +160,10 @@ namespace CAT.Utility
                 parentTransform = CreateCanvas();
             }
 
-            LoadAndArrangePrefabs(prefabGuids, parentTransform, isUI);
+            LoadAndArrangePrefabs(targetPrefabGuids.ToArray(), parentTransform, isUI);
 
-            Debug.Log($"{folderName} 이펙트 {prefabGuids.Length}개를 로드했습니다.");
+            string loadedType = isUI ? "UI" : "3D";
+            Debug.Log($"{loadedType} 이펙트 {targetPrefabGuids.Count}개를 로드했습니다.");
         }
 
         static void ClearScene()
@@ -421,13 +454,13 @@ namespace CAT.Utility
         [MenuItem("CAT/Effects/Default Load", true)]
         static bool ValidateLoadDefaultEffects()
         {
-            return Directory.Exists(Path.Combine(EFFECTS_PATH, DEFAULT_FOLDER));
+            return Directory.Exists(EFFECTS_PATH);
         }
 
         [MenuItem("CAT/Effects/UI Load", true)]
         static bool ValidateLoadUIEffects()
         {
-            return Directory.Exists(Path.Combine(EFFECTS_PATH, UI_FOLDER));
+            return Directory.Exists(EFFECTS_PATH);
         }
     }
 }
