@@ -13,7 +13,7 @@ namespace CAT.Effects
     /// </summary>
     [ExecuteAlways]
     [RequireComponent(typeof(Graphic))]
-    public class UIMultiAnchor : MonoBehaviour, IMeshModifier
+    public class UIImageDeform : MonoBehaviour, IMeshModifier
     {
         [System.Serializable]
         public class VertexAnchor
@@ -110,7 +110,7 @@ namespace CAT.Effects
             Image image = GetComponent<Image>();
             if (image != null && image.type != Image.Type.Simple)
             {
-                Debug.LogWarning($"[{gameObject.name}] UIMultiAnchor는 Image Type이 Simple일 때만 정상 작동합니다. 현재: {image.type}");
+                Debug.LogWarning($"[{gameObject.name}] UIImageDeform는 Image Type이 Simple일 때만 정상 작동합니다. 현재: {image.type}");
             }
 
             // 모바일 성능 경고
