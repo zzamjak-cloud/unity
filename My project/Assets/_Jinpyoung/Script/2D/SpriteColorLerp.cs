@@ -5,19 +5,24 @@ using UnityEditor.SceneManagement;
 using System.IO;
 #endif
 
-namespace CAT.Utilities
+namespace CAT.Utility
 {
-    /// <summary>
-    /// SpriteRenderer의 색상을 지정된 색상으로 선형 보간하는 컴포넌트입니다.
-    /// </summary>
-
     [ExecuteAlways]
     [RequireComponent(typeof(SpriteRenderer))]
-    public class SpriteColorLerp : MonoBehaviour
+    public class SpriteColorLerp_Optimized : MonoBehaviour
     {
         [Header("Color Settings")]
         [SerializeField] private Color targetColor = Color.red;
         [SerializeField][Range(0f, 1f)] private float lerpValue = 0f;
+
+        [Header("Performance Settings")]
+        [SerializeField] private bool alwaysUpdate = false; // 애니메이션 사용 시에만 true
+        [SerializeField] private float updateThreshold = 0.001f; // 변화 감지 임계값
+
+        // 이전 값 캐싱 (변화 감지용)
+        private Color lastTargetColor;
+        private float lastLerpValue = -1f;
+        private bool isDirty = true;
 
         // 애니메이션 시스템에서 접근할 수 있도록 public 프로퍼티로 노출
         public Color TargetColor
@@ -25,8 +30,11 @@ namespace CAT.Utilities
             get => targetColor;
             set
             {
-                targetColor = value;
-                UpdateMaterialProperties();
+                if (targetColor != value)
+                {
+                    targetColor = value;
+                    isDirty = true;
+                }
             }
         }
 
@@ -35,20 +43,25 @@ namespace CAT.Utilities
             get => lerpValue;
             set
             {
-                lerpValue = Mathf.Clamp01(value);
-                UpdateMaterialProperties();
+                float newValue = Mathf.Clamp01(value);
+                if (Mathf.Abs(lerpValue - newValue) > updateThreshold)
+                {
+                    lerpValue = newValue;
+                    isDirty = true;
+                }
             }
         }
 
         // 캐시된 컴포넌트들
         private SpriteRenderer spriteRenderer;
         private MaterialPropertyBlock propertyBlock;
-        private Material originalMaterial;
         private static Material sharedColorLerpMaterial;
 
-        // 셰이더 프로퍼티 이름
-        private const string TARGET_COLOR_PROPERTY = "_TargetColor";
-        private const string LERP_VALUE_PROPERTY = "_LerpValue";
+        // 셰이더 프로퍼티 ID (성능 최적화)
+        private static readonly int TargetColorProperty = Shader.PropertyToID("_TargetColor");
+        private static readonly int LerpValueProperty = Shader.PropertyToID("_LerpValue");
+
+        // 셰이더 이름
         private const string SHADER_NAME = "CAT/2D/SpriteColorLerp";
 
         private void Awake()
@@ -61,59 +74,37 @@ namespace CAT.Utilities
         {
             InitializeComponents();
             SetupMaterial();
-            UpdateMaterialProperties();
-        }
-
-        private void OnDisable()
-        {
-            // 컴포넌트가 비활성화될 때는 머티리얼을 유지
+            ForceUpdate();
         }
 
         private void OnDestroy()
         {
-            // 컴포넌트가 제거될 때 Sprites-Default로 복구
-            if (spriteRenderer != null)
+#if UNITY_EDITOR
+        // 에디터에서만 실행 (런타임에서는 컴포넌트 제거 없음)
+        if (!Application.isPlaying && spriteRenderer != null)
+        {
+            // Sprites-Default로 복구
+            Material defaultSprite = AssetDatabase.GetBuiltinExtraResource<Material>("Sprites-Default.mat");
+            if (defaultSprite != null)
             {
-                // Sprites-Default 머티리얼 직접 할당
-                Material defaultSprite = null;
-
-    #if UNITY_EDITOR
-                if (!Application.isPlaying)
-                {
-                    // 에디터에서는 AssetDatabase를 통해 로드
-                    defaultSprite = AssetDatabase.GetBuiltinExtraResource<Material>("Sprites-Default.mat");
-                }
-                else
-    #endif
-                {
-                    // 런타임에서는 Resources를 통해 로드
-                    defaultSprite = Resources.GetBuiltinResource<Material>("Sprites-Default.mat");
-                }
-
-                if (defaultSprite != null)
-                {
-                    spriteRenderer.sharedMaterial = defaultSprite;
-                }
-
-                // PropertyBlock 제거
-                spriteRenderer.SetPropertyBlock(null);
-
-    #if UNITY_EDITOR
-                if (!Application.isPlaying)
-                {
-                    // 에디터에서 변경사항 즉시 적용
-                    EditorUtility.SetDirty(spriteRenderer);
-                    EditorUtility.SetDirty(gameObject);
-
-                    // 씬 더티 마킹
-                    var scene = gameObject.scene;
-                    if (scene.IsValid())
-                    {
-                        EditorSceneManager.MarkSceneDirty(scene);
-                    }
-                }
-    #endif
+                spriteRenderer.sharedMaterial = defaultSprite;
             }
+            
+            // PropertyBlock 제거
+            spriteRenderer.SetPropertyBlock(null);
+            
+            // 에디터에서 변경사항 즉시 적용
+            EditorUtility.SetDirty(spriteRenderer);
+            EditorUtility.SetDirty(gameObject);
+            
+            // 씬 더티 마킹
+            var scene = gameObject.scene;
+            if (scene.IsValid())
+            {
+                EditorSceneManager.MarkSceneDirty(scene);
+            }
+        }
+#endif
         }
 
         private void InitializeComponents()
@@ -138,12 +129,6 @@ namespace CAT.Utilities
                 return;
             }
 
-            // 원본 머티리얼 저장 (나중에 복구용)
-            if (originalMaterial == null && spriteRenderer.sharedMaterial != null)
-            {
-                originalMaterial = spriteRenderer.sharedMaterial;
-            }
-
             // 공유 머티리얼이 없으면 생성
             if (sharedColorLerpMaterial == null)
             {
@@ -155,12 +140,12 @@ namespace CAT.Utilities
             {
                 spriteRenderer.sharedMaterial = sharedColorLerpMaterial;
 
-    #if UNITY_EDITOR
-                if (!Application.isPlaying)
-                {
-                    EditorUtility.SetDirty(spriteRenderer);
-                }
-    #endif
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                EditorUtility.SetDirty(spriteRenderer);
+            }
+#endif
             }
         }
 
@@ -174,42 +159,42 @@ namespace CAT.Utilities
                 return;
             }
 
-    #if UNITY_EDITOR
-            if (!Application.isPlaying)
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            // 에디터: 셰이더와 같은 디렉토리에 머티리얼 저장
+            string shaderPath = AssetDatabase.GetAssetPath(colorLerpShader);
+            if (!string.IsNullOrEmpty(shaderPath))
             {
-                // 에디터: 셰이더와 같은 디렉토리에 머티리얼 저장
-                string shaderPath = AssetDatabase.GetAssetPath(colorLerpShader);
-                if (!string.IsNullOrEmpty(shaderPath))
+                string shaderDirectory = Path.GetDirectoryName(shaderPath);
+                string materialPath = Path.Combine(shaderDirectory, "SpriteColorLerp.mat");
+                
+                // 기존 머티리얼 확인
+                sharedColorLerpMaterial = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+                
+                if (sharedColorLerpMaterial == null)
                 {
-                    string shaderDirectory = Path.GetDirectoryName(shaderPath);
-                    string materialPath = Path.Combine(shaderDirectory, "SpriteColorLerp.mat");
-
-                    // 기존 머티리얼 확인
-                    sharedColorLerpMaterial = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-
-                    if (sharedColorLerpMaterial == null)
-                    {
-                        // 새 머티리얼 생성
-                        sharedColorLerpMaterial = new Material(colorLerpShader);
-                        sharedColorLerpMaterial.name = "SpriteColorLerp";
-
-                        // 머티리얼을 에셋으로 저장
-                        AssetDatabase.CreateAsset(sharedColorLerpMaterial, materialPath);
-                        AssetDatabase.SaveAssets();
-                        AssetDatabase.Refresh();
-
-                        Debug.Log($"Created shared material at: {materialPath}");
-                    }
-                }
-                else
-                {
-                    // 셰이더 경로를 찾을 수 없는 경우 임시 머티리얼 생성
+                    // 새 머티리얼 생성
                     sharedColorLerpMaterial = new Material(colorLerpShader);
-                    sharedColorLerpMaterial.name = "SpriteColorLerp (Temp)";
+                    sharedColorLerpMaterial.name = "SpriteColorLerp";
+                    
+                    // 머티리얼을 에셋으로 저장
+                    AssetDatabase.CreateAsset(sharedColorLerpMaterial, materialPath);
+                    AssetDatabase.SaveAssets();
+                    AssetDatabase.Refresh();
+                    
+                    Debug.Log($"Created shared material at: {materialPath}");
                 }
             }
             else
-    #endif
+            {
+                // 셰이더 경로를 찾을 수 없는 경우 임시 머티리얼 생성
+                sharedColorLerpMaterial = new Material(colorLerpShader);
+                sharedColorLerpMaterial.name = "SpriteColorLerp (Temp)";
+            }
+        }
+        else
+#endif
             {
                 // 런타임: 메모리에 머티리얼 생성
                 sharedColorLerpMaterial = new Material(colorLerpShader);
@@ -217,52 +202,13 @@ namespace CAT.Utilities
             }
         }
 
-        private void RestoreOriginalMaterial()
-        {
-            if (spriteRenderer == null)
-                return;
-
-            // 항상 Sprites-Default로 복구
-            Material defaultSprite = null;
-
-    #if UNITY_EDITOR
-            if (!Application.isPlaying)
-            {
-                // 에디터에서는 AssetDatabase를 통해 로드
-                defaultSprite = AssetDatabase.GetBuiltinExtraResource<Material>("Sprites-Default.mat");
-            }
-            else
-    #endif
-            {
-                // 런타임에서는 Resources를 통해 로드
-                defaultSprite = Resources.GetBuiltinResource<Material>("Sprites-Default.mat");
-            }
-
-            if (defaultSprite != null)
-            {
-                spriteRenderer.sharedMaterial = defaultSprite;
-            }
-
-            // PropertyBlock 제거
-            if (propertyBlock != null)
-            {
-                spriteRenderer.SetPropertyBlock(null);
-            }
-
-    #if UNITY_EDITOR
-            if (!Application.isPlaying)
-            {
-                EditorUtility.SetDirty(spriteRenderer);
-                EditorUtility.SetDirty(gameObject);
-            }
-    #endif
-        }
-
         // 에디터에서 값이 변경될 때 호출
         private void OnValidate()
         {
             if (!gameObject.activeInHierarchy)
                 return;
+
+            isDirty = true;
 
             // 컴포넌트가 처음 추가될 때도 머티리얼 설정
             if (spriteRenderer == null)
@@ -274,26 +220,40 @@ namespace CAT.Utilities
             UpdateMaterialProperties();
         }
 
-    #if UNITY_EDITOR
         private void Update()
         {
-            // 에디터에서만 실행
-            if (!Application.isPlaying)
+#if UNITY_EDITOR
+        // 에디터에서만 실행
+        if (!Application.isPlaying)
+        {
+            // 머티리얼이 변경되었는지 확인
+            if (spriteRenderer != null && 
+                spriteRenderer.sharedMaterial != sharedColorLerpMaterial &&
+                spriteRenderer.sharedMaterial != null &&
+                !spriteRenderer.sharedMaterial.name.Contains("Sprites-Default"))
             {
-                // 머티리얼이 변경되었는지 확인
-                if (spriteRenderer != null &&
-                    spriteRenderer.sharedMaterial != sharedColorLerpMaterial &&
-                    (originalMaterial == null || spriteRenderer.sharedMaterial != originalMaterial))
-                {
-                    // 사용자가 수동으로 머티리얼을 변경한 경우
-                    originalMaterial = spriteRenderer.sharedMaterial;
-                    SetupMaterial();
-                }
+                // 사용자가 수동으로 다른 머티리얼을 변경한 경우 다시 설정
+                SetupMaterial();
+            }
+            
+            UpdateMaterialProperties();
+        }
+#endif
+        }
 
-                UpdateMaterialProperties();
+        // 애니메이션 시스템에서 값이 변경될 때 호출
+        private void LateUpdate()
+        {
+            if (Application.isPlaying)
+            {
+                // alwaysUpdate가 true이거나 값이 변경되었을 때만 업데이트
+                if (alwaysUpdate || isDirty)
+                {
+                    UpdateMaterialProperties();
+                    isDirty = false;
+                }
             }
         }
-    #endif
 
         private void UpdateMaterialProperties()
         {
@@ -307,11 +267,38 @@ namespace CAT.Utilities
                 return;
             }
 
-            // MaterialPropertyBlock을 사용하여 인스턴스별 값 설정
-            spriteRenderer.GetPropertyBlock(propertyBlock);
-            propertyBlock.SetColor(TARGET_COLOR_PROPERTY, targetColor);
-            propertyBlock.SetFloat(LERP_VALUE_PROPERTY, lerpValue);
-            spriteRenderer.SetPropertyBlock(propertyBlock);
+            // 값이 실제로 변경되었는지 확인 (성능 최적화)
+            bool hasChanged = false;
+
+            if (lastTargetColor != targetColor)
+            {
+                lastTargetColor = targetColor;
+                hasChanged = true;
+            }
+
+            if (Mathf.Abs(lastLerpValue - lerpValue) > updateThreshold)
+            {
+                lastLerpValue = lerpValue;
+                hasChanged = true;
+            }
+
+            // 변경된 경우에만 PropertyBlock 업데이트
+            if (hasChanged || !Application.isPlaying)
+            {
+                // MaterialPropertyBlock을 사용하여 인스턴스별 값 설정
+                spriteRenderer.GetPropertyBlock(propertyBlock);
+                propertyBlock.SetColor(TargetColorProperty, targetColor);
+                propertyBlock.SetFloat(LerpValueProperty, lerpValue);
+                spriteRenderer.SetPropertyBlock(propertyBlock);
+            }
+        }
+
+        // 강제 업데이트
+        public void ForceUpdate()
+        {
+            isDirty = true;
+            lastLerpValue = -1f;
+            UpdateMaterialProperties();
         }
 
         // 컴포넌트가 리셋될 때
@@ -319,19 +306,12 @@ namespace CAT.Utilities
         {
             targetColor = Color.red;
             lerpValue = 0f;
-
-            // 원본 머티리얼 저장
-            if (spriteRenderer == null)
-                spriteRenderer = GetComponent<SpriteRenderer>();
-
-            if (spriteRenderer != null && spriteRenderer.sharedMaterial != null)
-            {
-                originalMaterial = spriteRenderer.sharedMaterial;
-            }
+            alwaysUpdate = false;
+            updateThreshold = 0.001f;
 
             InitializeComponents();
             SetupMaterial();
-            UpdateMaterialProperties();
+            ForceUpdate();
         }
 
         // 런타임에서 값 변경을 위한 헬퍼 메서드들
@@ -349,7 +329,13 @@ namespace CAT.Utilities
         {
             targetColor = color;
             lerpValue = Mathf.Clamp01(lerp);
-            UpdateMaterialProperties();
+            isDirty = true;
+        }
+
+        // 애니메이션 사용 설정
+        public void SetAnimationMode(bool useAnimation)
+        {
+            alwaysUpdate = useAnimation;
         }
 
         // 머티리얼 재설정
@@ -358,14 +344,7 @@ namespace CAT.Utilities
         {
             propertyBlock.Clear();
             SetupMaterial();
-            UpdateMaterialProperties();
-        }
-
-        // 원본 머티리얼로 복구
-        [ContextMenu("Restore Original Material")]
-        public void RestoreOriginal()
-        {
-            RestoreOriginalMaterial();
+            ForceUpdate();
         }
 
         // 애니메이션을 위한 편의 메서드
@@ -392,6 +371,10 @@ namespace CAT.Utilities
             float startValue = lerpValue;
             float elapsedTime = 0f;
 
+            // 코루틴 실행 중에는 항상 업데이트
+            bool previousAlwaysUpdate = alwaysUpdate;
+            alwaysUpdate = true;
+
             while (elapsedTime < duration)
             {
                 elapsedTime += Time.deltaTime;
@@ -401,6 +384,9 @@ namespace CAT.Utilities
             }
 
             LerpValue = targetValue;
+
+            // 원래 설정으로 복구
+            alwaysUpdate = previousAlwaysUpdate;
         }
 
         // 디버그용 메서드
@@ -409,18 +395,11 @@ namespace CAT.Utilities
         {
             Debug.Log($"=== SpriteColorLerp Debug Info ===");
             Debug.Log($"GameObject: {gameObject.name}");
-            Debug.Log($"SpriteRenderer: {(spriteRenderer != null ? "Found" : "NULL")}");
-
-            if (spriteRenderer != null)
-            {
-                Debug.Log($"Current Material: {(spriteRenderer.sharedMaterial != null ? spriteRenderer.sharedMaterial.name : "NULL")}");
-                Debug.Log($"Current Shader: {(spriteRenderer.sharedMaterial != null ? spriteRenderer.sharedMaterial.shader.name : "NULL")}");
-                Debug.Log($"Original Material: {(originalMaterial != null ? originalMaterial.name : "NULL")}");
-            }
-
+            Debug.Log($"Always Update: {alwaysUpdate}");
+            Debug.Log($"Is Dirty: {isDirty}");
+            Debug.Log($"Update Threshold: {updateThreshold}");
             Debug.Log($"Target Color: {targetColor}");
             Debug.Log($"Lerp Value: {lerpValue}");
-            Debug.Log($"Using PropertyBlock: Yes");
         }
     }
 }
