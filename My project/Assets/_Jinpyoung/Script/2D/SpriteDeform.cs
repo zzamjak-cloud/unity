@@ -1,6 +1,9 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace CAT.Utility
 {
@@ -54,7 +57,7 @@ namespace CAT.Utility
         private MeshFilter meshFilter;
         private MeshRenderer meshRenderer;
         private Mesh mesh;
-        
+
         // 재사용 가능한 배열들
         private Vector3[] vertices;
         private Vector2[] uvs;
@@ -68,27 +71,92 @@ namespace CAT.Utility
         // 성능 최적화를 위한 플래그
         private bool isDirty = false;
         private bool isInitialized = false;
+        private bool needsFlipApplication = false;
+        private bool pendingFlipX = false;
+        private bool pendingFlipY = false;
 
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         // 에디터 전용 변수들
         private Vector3 lastTopLeftPos;
         private Vector3 lastTopRightPos;
         private Vector3 lastBottomLeftPos;
         private Vector3 lastBottomRightPos;
-        #endif
+#endif
 
         private void Awake()
         {
+            // Awake에서는 자동 변환하지 않음 (컴포넌트 충돌 방지)
             Initialize();
+        }
+
+        private void ConvertFromSpriteRenderer()
+        {
+            // SpriteRenderer가 있는지 확인
+            SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+            {
+                // SpriteRenderer의 설정을 저장
+                if (sprite == null && spriteRenderer.sprite != null)
+                {
+                    sprite = spriteRenderer.sprite;
+                }
+
+                if (color == Color.white && spriteRenderer.color != Color.white)
+                {
+                    color = spriteRenderer.color;
+                }
+
+                // Sorting 정보 저장
+                sortingLayerName = spriteRenderer.sortingLayerName;
+                sortingOrder = spriteRenderer.sortingOrder;
+
+                // Flip 정보 저장 (필요한 경우 핸들 위치에 반영)
+                bool flipX = spriteRenderer.flipX;
+                bool flipY = spriteRenderer.flipY;
+
+                // SpriteRenderer 제거
+                if (Application.isPlaying)
+                {
+                    Destroy(spriteRenderer);
+                }
+                else
+                {
+                    DestroyImmediate(spriteRenderer);
+                }
+
+                // Flip 정보가 있었다면 적용
+                if (flipX || flipY)
+                {
+                    ApplyFlip(flipX, flipY);
+                }
+
+                Debug.Log($"SpriteRenderer를 SpriteDeform으로 변환했습니다. Sprite: {sprite?.name}");
+            }
+        }
+
+        private void ApplyFlip(bool flipX, bool flipY)
+        {
+            // 플립 정보를 저장해두고 핸들 생성 후에 적용
+            needsFlipApplication = true;
+            pendingFlipX = flipX;
+            pendingFlipY = flipY;
         }
 
         private void Initialize()
         {
             if (isInitialized) return;
 
+            // SpriteRenderer가 있으면 경고
+            if (GetComponent<SpriteRenderer>() != null)
+            {
+                Debug.LogWarning($"[SpriteDeform] {gameObject.name}에 SpriteRenderer가 있습니다. " +
+                    "SpriteRenderer의 컨텍스트 메뉴에서 'Convert to SpriteDeform'을 사용하세요.");
+                return;
+            }
+
             meshFilter = GetComponent<MeshFilter>();
             meshRenderer = GetComponent<MeshRenderer>();
-            
+
             if (mesh == null)
             {
                 mesh = new Mesh();
@@ -99,7 +167,7 @@ namespace CAT.Utility
             CreateOrUpdateHandles();
             SetupMaterial();
             UpdateSortingSettings();
-            
+
             isInitialized = true;
             isDirty = true;
         }
@@ -113,7 +181,7 @@ namespace CAT.Utility
             isDirty = true;
         }
 
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         private void Update()
         {
             if (!Application.isPlaying)
@@ -146,7 +214,7 @@ namespace CAT.Utility
                 lastBottomRightPos = bottomRightHandle.localPosition;
             }
         }
-        #endif
+#endif
 
         private void LateUpdate()
         {
@@ -182,12 +250,12 @@ namespace CAT.Utility
                 {
                     Shader shader = Shader.Find("Sprites/Default");
                     if (shader == null) shader = Shader.Find("Unlit/Transparent");
-                    
+
                     Material mat = new Material(shader);
                     mat.mainTexture = sprite.texture;
                     sharedMaterials[textureID] = mat;
                 }
-                
+
                 if (meshRenderer != null)
                 {
                     meshRenderer.sharedMaterial = sharedMaterials[textureID];
@@ -201,7 +269,7 @@ namespace CAT.Utility
                     if (shader == null) shader = Shader.Find("Unlit/Transparent");
                     instanceMaterial = new Material(shader);
                 }
-                
+
                 instanceMaterial.mainTexture = sprite.texture;
                 if (meshRenderer != null)
                 {
@@ -212,13 +280,13 @@ namespace CAT.Utility
 
         private bool HasValidHandles()
         {
-            return topLeftHandle != null && topRightHandle != null && 
+            return topLeftHandle != null && topRightHandle != null &&
                    bottomLeftHandle != null && bottomRightHandle != null;
         }
 
         private void CreateOrUpdateHandles()
         {
-            #if UNITY_EDITOR
+#if UNITY_EDITOR
             if (sprite == null) return;
 
             if (topLeftHandle == null)
@@ -231,13 +299,12 @@ namespace CAT.Utility
                 bottomRightHandle = CreateHandle("BR");
 
             ApplyOriginSize();
-            #endif
         }
 
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         private Transform CreateHandle(string name)
         {
-            GameObject handle = new GameObject($"Handle_{name}");
+            GameObject handle = new GameObject($"{name}");
             handle.transform.SetParent(transform);
             handle.transform.localRotation = Quaternion.identity;
             handle.transform.localScale = Vector3.one;
@@ -250,7 +317,7 @@ namespace CAT.Utility
 
             return handle.transform;
         }
-        #endif
+#endif
 
         public void ApplyOriginSize()
         {
@@ -276,10 +343,42 @@ namespace CAT.Utility
             if (bottomRightHandle != null)
                 bottomRightHandle.localPosition = new Vector3(halfWidth - pivotOffset.x, -halfHeight - pivotOffset.y, 0);
 
-            #if UNITY_EDITOR
+            // 플립 적용이 필요한 경우
+            if (needsFlipApplication && HasValidHandles())
+            {
+                if (pendingFlipX)
+                {
+                    Vector3 tlPos = topLeftHandle.localPosition;
+                    Vector3 trPos = topRightHandle.localPosition;
+                    Vector3 blPos = bottomLeftHandle.localPosition;
+                    Vector3 brPos = bottomRightHandle.localPosition;
+
+                    topLeftHandle.localPosition = new Vector3(trPos.x, tlPos.y, tlPos.z);
+                    topRightHandle.localPosition = new Vector3(tlPos.x, trPos.y, trPos.z);
+                    bottomLeftHandle.localPosition = new Vector3(brPos.x, blPos.y, blPos.z);
+                    bottomRightHandle.localPosition = new Vector3(blPos.x, brPos.y, brPos.z);
+                }
+
+                if (pendingFlipY)
+                {
+                    Vector3 tlPos = topLeftHandle.localPosition;
+                    Vector3 trPos = topRightHandle.localPosition;
+                    Vector3 blPos = bottomLeftHandle.localPosition;
+                    Vector3 brPos = bottomRightHandle.localPosition;
+
+                    topLeftHandle.localPosition = new Vector3(tlPos.x, blPos.y, tlPos.z);
+                    topRightHandle.localPosition = new Vector3(trPos.x, brPos.y, trPos.z);
+                    bottomLeftHandle.localPosition = new Vector3(blPos.x, tlPos.y, blPos.z);
+                    bottomRightHandle.localPosition = new Vector3(brPos.x, trPos.y, brPos.z);
+                }
+
+                needsFlipApplication = false;
+            }
+
+#if UNITY_EDITOR
             UpdateLastHandlePositions();
-            #endif
-            
+#endif
+
             isDirty = true;
         }
 
@@ -306,46 +405,46 @@ namespace CAT.Utility
 
             int subdivisions = (int)effectiveLevel;
             int vertexCount = (subdivisions + 1) * (subdivisions + 1);
-            
+
             // 배열 초기화 (필요한 경우에만)
             InitializeArrays(vertexCount, subdivisions);
-            
+
             // 버텍스와 UV 생성
             int vertexIndex = 0;
             for (int y = 0; y <= subdivisions; y++)
             {
                 float v = y / (float)subdivisions;
-                
+
                 for (int x = 0; x <= subdivisions; x++)
                 {
                     float u = x / (float)subdivisions;
-                    
+
                     // Bilinear interpolation으로 위치 계산
                     Vector2 position = BilinearInterpolate(bl, br, tl, tr, u, v);
                     vertices[vertexIndex] = new Vector3(position.x, position.y, 0);
-                    
+
                     // UV 좌표 설정
                     Rect spriteRect = sprite.rect;
                     Texture2D texture = sprite.texture;
-                    
-                    float uvX = Mathf.Lerp(spriteRect.x / texture.width, 
+
+                    float uvX = Mathf.Lerp(spriteRect.x / texture.width,
                                           (spriteRect.x + spriteRect.width) / texture.width, u);
-                    float uvY = Mathf.Lerp(spriteRect.y / texture.height, 
+                    float uvY = Mathf.Lerp(spriteRect.y / texture.height,
                                           (spriteRect.y + spriteRect.height) / texture.height, v);
-                    
+
                     uvs[vertexIndex] = new Vector2(uvX, uvY);
                     colors[vertexIndex] = color;
-                    
+
                     vertexIndex++;
                 }
             }
-            
+
             // 삼각형 인덱스 생성 (변경되지 않은 경우 스킵)
             if (triangles == null || triangles.Length != subdivisions * subdivisions * 6)
             {
                 triangles = new int[subdivisions * subdivisions * 6];
                 int triangleIndex = 0;
-                
+
                 for (int y = 0; y < subdivisions; y++)
                 {
                     for (int x = 0; x < subdivisions; x++)
@@ -354,18 +453,18 @@ namespace CAT.Utility
                         int bottomRightIndex = bottomLeftIndex + 1;
                         int topLeftIndex = bottomLeftIndex + subdivisions + 1;
                         int topRightIndex = topLeftIndex + 1;
-                        
+
                         triangles[triangleIndex++] = bottomLeftIndex;
                         triangles[triangleIndex++] = topLeftIndex;
                         triangles[triangleIndex++] = bottomRightIndex;
-                        
+
                         triangles[triangleIndex++] = bottomRightIndex;
                         triangles[triangleIndex++] = topLeftIndex;
                         triangles[triangleIndex++] = topRightIndex;
                     }
                 }
             }
-            
+
             // 메쉬 업데이트
             mesh.Clear();
             mesh.vertices = vertices;
@@ -374,7 +473,7 @@ namespace CAT.Utility
             mesh.triangles = triangles;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            
+
             if (meshFilter != null)
             {
                 meshFilter.mesh = mesh;
@@ -395,7 +494,7 @@ namespace CAT.Utility
         {
             float u1 = 1f - u;
             float v1 = 1f - v;
-            
+
             return new Vector2(
                 p00.x * u1 * v1 + p10.x * u * v1 + p01.x * u1 * v + p11.x * u * v,
                 p00.y * u1 * v1 + p10.y * u * v1 + p01.y * u1 * v + p11.y * u * v
@@ -406,12 +505,33 @@ namespace CAT.Utility
         {
             sprite = newSprite;
             SetupMaterial();
-            #if UNITY_EDITOR
+#if UNITY_EDITOR
             if (sprite != null && !HasValidHandles())
             {
                 CreateOrUpdateHandles();
             }
-            #endif
+#endif
+            isDirty = true;
+        }
+
+        public void ConvertSpriteRenderer(SpriteRenderer spriteRenderer)
+        {
+            if (spriteRenderer == null) return;
+
+            // SpriteRenderer의 모든 설정을 복사
+            sprite = spriteRenderer.sprite;
+            color = spriteRenderer.color;
+            sortingLayerName = spriteRenderer.sortingLayerName;
+            sortingOrder = spriteRenderer.sortingOrder;
+
+            // 플립 정보 저장
+            if (spriteRenderer.flipX || spriteRenderer.flipY)
+            {
+                ApplyFlip(spriteRenderer.flipX, spriteRenderer.flipY);
+            }
+
+            // 변환 후 초기화
+            Initialize();
             isDirty = true;
         }
 
@@ -452,7 +572,7 @@ namespace CAT.Utility
             isDirty = true;
         }
 
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         private void OnDrawGizmosSelected()
         {
             if (!showVertices || mesh == null) return;
@@ -466,12 +586,12 @@ namespace CAT.Utility
                 Gizmos.color = Color.green;
                 float spriteWidth = sprite.rect.width / sprite.pixelsPerUnit;
                 float spriteHeight = sprite.rect.height / sprite.pixelsPerUnit;
-                
+
                 Vector2 pivotOffset = new Vector2(
                     (sprite.pivot.x / sprite.rect.width - 0.5f) * spriteWidth,
                     (sprite.pivot.y / sprite.rect.height - 0.5f) * spriteHeight
                 );
-                
+
                 Vector3 center = new Vector3(-pivotOffset.x, -pivotOffset.y, 0);
                 Vector3 size = new Vector3(spriteWidth, spriteHeight, 0);
                 Gizmos.DrawWireCube(center, size);
@@ -481,7 +601,7 @@ namespace CAT.Utility
             if (vertices != null && vertices.Length > 0)
             {
                 Gizmos.color = Color.yellow;
-                
+
                 foreach (Vector3 vertex in vertices)
                 {
                     Gizmos.DrawWireSphere(vertex, gizmoSize * 0.5f);
@@ -497,20 +617,20 @@ namespace CAT.Utility
                 Gizmos.DrawLine(bottomRightHandle.localPosition, bottomLeftHandle.localPosition);
                 Gizmos.DrawLine(bottomLeftHandle.localPosition, topLeftHandle.localPosition);
             }
-            
+
             Gizmos.matrix = originalMatrix;
         }
-        #endif
+#endif
 
         private void OnDestroy()
         {
-            #if UNITY_EDITOR
+#if UNITY_EDITOR
             // 핸들 오브젝트 제거
             if (topLeftHandle != null) DestroyImmediate(topLeftHandle.gameObject);
             if (topRightHandle != null) DestroyImmediate(topRightHandle.gameObject);
             if (bottomLeftHandle != null) DestroyImmediate(bottomLeftHandle.gameObject);
             if (bottomRightHandle != null) DestroyImmediate(bottomRightHandle.gameObject);
-            #endif
+#endif
 
             if (mesh != null)
             {
@@ -534,88 +654,169 @@ namespace CAT.Utility
         {
             sharedMaterials.Clear();
         }
-    }
-
-    #if UNITY_EDITOR
-    [UnityEditor.CustomEditor(typeof(SpriteDeform))]
-    public class SpriteDeformEditor : UnityEditor.Editor
-    {
-        private UnityEditor.SerializedProperty sortingLayerProp;
-        private UnityEditor.SerializedProperty sortingOrderProp;
-
-        private void OnEnable()
+        [UnityEditor.CustomEditor(typeof(SpriteDeform))]
+        public class SpriteDeformEditor : UnityEditor.Editor
         {
-            sortingLayerProp = serializedObject.FindProperty("sortingLayerName");
-            sortingOrderProp = serializedObject.FindProperty("sortingOrder");
-        }
+            private UnityEditor.SerializedProperty sortingLayerProp;
+            private UnityEditor.SerializedProperty sortingOrderProp;
 
-        public override void OnInspectorGUI()
-        {
-            serializedObject.Update();
-
-            // 기본 인스펙터 그리기 (Sorting 제외)
-            DrawPropertiesExcluding(serializedObject, "sortingLayerName", "sortingOrder");
-
-            // Sorting Layer 커스텀 UI
-            UnityEditor.EditorGUILayout.Space();
-            UnityEditor.EditorGUILayout.LabelField("Sorting", UnityEditor.EditorStyles.boldLabel);
-
-            // Sorting Layer 드롭다운
-            string[] sortingLayerNames = GetSortingLayerNames();
-            int currentIndex = System.Array.IndexOf(sortingLayerNames, sortingLayerProp.stringValue);
-            if (currentIndex == -1) currentIndex = 0;
-
-            UnityEditor.EditorGUI.BeginChangeCheck();
-            int newIndex = UnityEditor.EditorGUILayout.Popup("Sorting Layer", currentIndex, sortingLayerNames);
-            if (UnityEditor.EditorGUI.EndChangeCheck())
+            private void OnEnable()
             {
-                sortingLayerProp.stringValue = sortingLayerNames[newIndex];
+                sortingLayerProp = serializedObject.FindProperty("sortingLayerName");
+                sortingOrderProp = serializedObject.FindProperty("sortingOrder");
             }
 
-            // Order in Layer
-            UnityEditor.EditorGUILayout.PropertyField(sortingOrderProp, new GUIContent("Order in Layer"));
-
-            serializedObject.ApplyModifiedProperties();
-
-            // Apply Origin Size 버튼
-            SpriteDeform spriteDeform = (SpriteDeform)target;
-            
-            UnityEditor.EditorGUILayout.Space();
-            
-            if (GUILayout.Button("Apply Origin Size", GUILayout.Height(30)))
+            public override void OnInspectorGUI()
             {
-                spriteDeform.ApplyOriginSize();
-                UnityEditor.EditorUtility.SetDirty(target);
-            }
+                serializedObject.Update();
 
-            // 성능 정보 표시
-            if (Application.isPlaying && spriteDeform.Sprite != null)
-            {
-                UnityEditor.EditorGUILayout.Space();
-                UnityEditor.EditorGUILayout.LabelField("Performance Info", UnityEditor.EditorStyles.boldLabel);
-                
-                int vertexCount = ((int)spriteDeform.CurrentSubdivisionLevel + 1) * ((int)spriteDeform.CurrentSubdivisionLevel + 1);
-                int triangleCount = (int)spriteDeform.CurrentSubdivisionLevel * (int)spriteDeform.CurrentSubdivisionLevel * 2;
-                
-                UnityEditor.EditorGUILayout.LabelField($"Vertices: {vertexCount}");
-                UnityEditor.EditorGUILayout.LabelField($"Triangles: {triangleCount}");
-                UnityEditor.EditorGUILayout.LabelField($"Material Sharing: {(spriteDeform.UseSharedMaterial ? "Enabled" : "Disabled")}");
-            }
-        }
+                // SpriteRenderer 감지 및 변환 제안
+                SpriteDeform spriteDeform = (SpriteDeform)target;
+                SpriteRenderer spriteRenderer = spriteDeform.GetComponent<SpriteRenderer>();
 
-        private string[] GetSortingLayerNames()
-        {
-            System.Type internalEditorUtilityType = typeof(UnityEditor.EditorGUIUtility).Assembly.GetType("UnityEditorInternal.InternalEditorUtility");
-            if (internalEditorUtilityType != null)
-            {
-                var sortingLayersProperty = internalEditorUtilityType.GetProperty("sortingLayerNames", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                if (sortingLayersProperty != null)
+                if (spriteRenderer != null)
                 {
-                    return (string[])sortingLayersProperty.GetValue(null, new object[0]);
+                    UnityEditor.EditorGUILayout.HelpBox(
+                        "SpriteRenderer가 감지되었습니다. 아래 버튼을 클릭하여 변환하세요.",
+                        UnityEditor.MessageType.Info
+                    );
+
+                    if (GUILayout.Button("SpriteRenderer를 변환", GUILayout.Height(30)))
+                    {
+                        Undo.RecordObject(spriteDeform.gameObject, "Convert SpriteRenderer");
+
+                        // 설정 복사
+                        spriteDeform.ConvertSpriteRenderer(spriteRenderer);
+
+                        // SpriteRenderer 제거
+                        Undo.DestroyObjectImmediate(spriteRenderer);
+
+                        UnityEditor.EditorUtility.SetDirty(spriteDeform);
+                    }
+
+                    UnityEditor.EditorGUILayout.Space();
+                }
+
+                // 기본 인스펙터 그리기 (Sorting 제외)
+                DrawPropertiesExcluding(serializedObject, "sortingLayerName", "sortingOrder");
+
+                // Sorting Layer 커스텀 UI
+                UnityEditor.EditorGUILayout.Space();
+                UnityEditor.EditorGUILayout.LabelField("Sorting", UnityEditor.EditorStyles.boldLabel);
+
+                // Sorting Layer 드롭다운
+                string[] sortingLayerNames = GetSortingLayerNames();
+                int currentIndex = System.Array.IndexOf(sortingLayerNames, sortingLayerProp.stringValue);
+                if (currentIndex == -1) currentIndex = 0;
+
+                UnityEditor.EditorGUI.BeginChangeCheck();
+                int newIndex = UnityEditor.EditorGUILayout.Popup("Sorting Layer", currentIndex, sortingLayerNames);
+                if (UnityEditor.EditorGUI.EndChangeCheck())
+                {
+                    sortingLayerProp.stringValue = sortingLayerNames[newIndex];
+                }
+
+                // Order in Layer
+                UnityEditor.EditorGUILayout.PropertyField(sortingOrderProp, new GUIContent("Order in Layer"));
+
+                serializedObject.ApplyModifiedProperties();
+
+                // Apply Origin Size 버튼
+                UnityEditor.EditorGUILayout.Space();
+
+                if (GUILayout.Button("Apply Origin Size", GUILayout.Height(30)))
+                {
+                    spriteDeform.ApplyOriginSize();
+                    UnityEditor.EditorUtility.SetDirty(target);
+                }
+
+                // 성능 정보 표시
+                if (Application.isPlaying && spriteDeform.Sprite != null)
+                {
+                    UnityEditor.EditorGUILayout.Space();
+                    UnityEditor.EditorGUILayout.LabelField("Performance Info", UnityEditor.EditorStyles.boldLabel);
+
+                    int vertexCount = ((int)spriteDeform.CurrentSubdivisionLevel + 1) * ((int)spriteDeform.CurrentSubdivisionLevel + 1);
+                    int triangleCount = (int)spriteDeform.CurrentSubdivisionLevel * (int)spriteDeform.CurrentSubdivisionLevel * 2;
+
+                    UnityEditor.EditorGUILayout.LabelField($"Vertices: {vertexCount}");
+                    UnityEditor.EditorGUILayout.LabelField($"Triangles: {triangleCount}");
+                    UnityEditor.EditorGUILayout.LabelField($"Material Sharing: {(spriteDeform.UseSharedMaterial ? "Enabled" : "Disabled")}");
                 }
             }
-            return new string[] { "Default" };
+
+            private string[] GetSortingLayerNames()
+            {
+                System.Type internalEditorUtilityType = typeof(UnityEditor.EditorGUIUtility).Assembly.GetType("UnityEditorInternal.InternalEditorUtility");
+                if (internalEditorUtilityType != null)
+                {
+                    var sortingLayersProperty = internalEditorUtilityType.GetProperty("sortingLayerNames", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                    if (sortingLayersProperty != null)
+                    {
+                        return (string[])sortingLayersProperty.GetValue(null, new object[0]);
+                    }
+                }
+                return new string[] { "Default" };
+            }
+
+            // 컨텍스트 메뉴 - SpriteRenderer를 SpriteDeform으로 변환
+            [UnityEditor.MenuItem("CONTEXT/SpriteRenderer/Convert to SpriteDeform")]
+            static void ConvertSpriteRendererToDeform(UnityEditor.MenuCommand command)
+            {
+                SpriteRenderer spriteRenderer = (SpriteRenderer)command.context;
+                GameObject go = spriteRenderer.gameObject;
+
+                // Undo 지원
+                Undo.RegisterFullObjectHierarchyUndo(go, "Convert to SpriteDeform");
+
+                // SpriteRenderer 정보 저장
+                Sprite sprite = spriteRenderer.sprite;
+                Color color = spriteRenderer.color;
+                string sortingLayerName = spriteRenderer.sortingLayerName;
+                int sortingOrder = spriteRenderer.sortingOrder;
+                bool flipX = spriteRenderer.flipX;
+                bool flipY = spriteRenderer.flipY;
+
+                // SpriteRenderer 제거
+                Undo.DestroyObjectImmediate(spriteRenderer);
+
+                // SpriteDeform 추가
+                SpriteDeform spriteDeform = Undo.AddComponent<SpriteDeform>(go);
+
+                // 설정 복사
+                spriteDeform.SetSprite(sprite);
+                spriteDeform.SetColor(color);
+                spriteDeform.SetSortingLayer(sortingLayerName);
+                spriteDeform.SetSortingOrder(sortingOrder);
+
+                // 플립 적용
+                if (flipX || flipY)
+                {
+                    spriteDeform.ApplyFlip(flipX, flipY);
+                }
+
+                UnityEditor.EditorUtility.SetDirty(go);
+
+                Debug.Log($"SpriteRenderer를 SpriteDeform으로 변환했습니다: {go.name}");
+            }
+
+            // GameObject 메뉴에 추가
+            [UnityEditor.MenuItem("GameObject/2D Object/Sprite Deform", false, 10)]
+            static void CreateSpriteDeform(UnityEditor.MenuCommand menuCommand)
+            {
+                GameObject go = new GameObject("Sprite Deform");
+                SpriteDeform spriteDeform = go.AddComponent<SpriteDeform>();
+
+                // 선택된 오브젝트의 자식으로 생성
+                UnityEditor.GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
+
+                // Undo 지원
+                Undo.RegisterCreatedObjectUndo(go, "Create " + go.name);
+
+                // 선택
+                UnityEditor.Selection.activeObject = go;
+            }
         }
+#endif
     }
-    #endif
 }

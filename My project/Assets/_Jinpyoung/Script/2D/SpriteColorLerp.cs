@@ -9,7 +9,7 @@ namespace CAT.Utility
 {
     [ExecuteAlways]
     [RequireComponent(typeof(SpriteRenderer))]
-    public class SpriteColorLerp_Optimized : MonoBehaviour
+    public class SpriteColorLerp : MonoBehaviour
     {
         [Header("Color Settings")]
         [SerializeField] private Color targetColor = Color.red;
