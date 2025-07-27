@@ -62,7 +62,7 @@ Shader "CAT/UI/UIMaskRadialStencil"
                 float mask = step(_InnerRadius, dist) * step(dist, _OuterRadius);
 
                 if (mask < 0.5)
-                    discard; // 도넛 영역이 아니면 픽셀 자체를 버림(스텐실 기록 X)
+                    discard;
 
                 fixed4 col = tex2D(_MainTex, i.uv) * _Color;
                 col.a *= _Alpha;

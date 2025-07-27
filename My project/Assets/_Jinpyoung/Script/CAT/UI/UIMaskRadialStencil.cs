@@ -78,24 +78,23 @@ namespace CAT.UI
 
         void ApplyMaskToChildren()
         {
-            if (maskTargetMaterial == null)
-            {
-                var shader = Shader.Find("CAT/UI/UIMaskRadialStencilTarget");
-                if (shader == null)
-                {
-                    Debug.LogError("CAT/UI/UIMaskRadialStencilTarget shader not found!");
-                    return;
-                }
-                maskTargetMaterial = new Material(shader);
-            }
-
             originalMaterials.Clear();
             foreach (var childGraphic in GetComponentsInChildren<Graphic>(includeInactive: true))
             {
                 if (childGraphic == GetComponent<Graphic>()) continue; // 자기 자신 제외
                 if (!originalMaterials.ContainsKey(childGraphic))
                     originalMaterials[childGraphic] = childGraphic.material;
-                childGraphic.material = maskTargetMaterial;
+
+                // 머티리얼 인스턴스 생성 및 color 적용
+                var shader = Shader.Find("CAT/UI/UIMaskRadialStencilTarget");
+                if (shader == null)
+                {
+                    Debug.LogError("CAT/UI/UIMaskRadialStencilTarget shader not found!");
+                    continue;
+                }
+                var mat = new Material(shader);
+                mat.SetColor("_Color", childGraphic.color);
+                childGraphic.material = mat;
             }
         }
 
@@ -112,6 +111,22 @@ namespace CAT.UI
         private void UpdateMaskGraphicVisibility()
         {
             // 아무 것도 하지 않거나, 필요 없다면 이 함수 자체를 삭제해도 됩니다.
+        }
+
+        void LateUpdate()
+        {
+            UpdateMaskMaterial();
+
+            // 자식들의 color가 바뀌었으면 머티리얼에도 반영
+            foreach (var childGraphic in GetComponentsInChildren<Graphic>(includeInactive: true))
+            {
+                if (childGraphic == GetComponent<Graphic>()) continue;
+                var mat = childGraphic.material;
+                if (mat != null && mat.HasProperty("_Color"))
+                {
+                    mat.SetColor("_Color", childGraphic.color);
+                }
+            }
         }
     }
 }
