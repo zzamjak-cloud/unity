@@ -45,6 +45,10 @@ namespace CAT.Effects
         private Canvas parentCanvas;
         private Vector3[] lastAnchorPositions = new Vector3[4];
         private bool needsUpdate = true;
+        
+        // 메시 데이터 캐싱
+        private List<UIVertex> lastMeshVertices = new List<UIVertex>();
+        private List<int> lastMeshTriangles = new List<int>();
 
         // 성능 정보 캐싱
         private int lastVertexCount = 0;
@@ -110,7 +114,7 @@ namespace CAT.Effects
             Image image = GetComponent<Image>();
             if (image != null && image.type != Image.Type.Simple)
             {
-                Debug.LogWarning($"[{gameObject.name}] UIImageDeform는 Image Type이 Simple일 때만 정상 작동합니다. 현재: {image.type}");
+                Debug.LogWarning($"[{gameObject.name}] UIMultiAnchor는 Image Type이 Simple일 때만 정상 작동합니다. 현재: {image.type}");
             }
 
             // 모바일 성능 경고
@@ -174,6 +178,13 @@ namespace CAT.Effects
         {
             if (graphic == null) return;
 
+            // Color 변경으로 인한 SetVerticesDirty 호출을 무시하기 위해
+            // needsUpdate가 false인 경우 바로 리턴
+            if (!needsUpdate && optimizePerformance && Application.isPlaying)
+            {
+                return;
+            }
+
             if (!optimizePerformance)
             {
                 needsUpdate = true;
@@ -207,6 +218,31 @@ namespace CAT.Effects
 
         public void ModifyMesh(VertexHelper vh)
         {
+            // Color 변경만으로 인한 호출인지 체크
+            if (!needsUpdate && lastMeshVertices != null && lastMeshVertices.Count > 0)
+            {
+                // 이전에 저장한 메시 데이터 복원
+                vh.Clear();
+                
+                // 현재 Graphic의 색상 가져오기
+                Color currentColor = graphic != null ? graphic.color : Color.white;
+                
+                // 저장된 vertex에 현재 색상 적용
+                for (int i = 0; i < lastMeshVertices.Count; i++)
+                {
+                    UIVertex vertex = lastMeshVertices[i];
+                    vertex.color = currentColor;  // Alpha 포함 전체 색상 적용
+                    vh.AddVert(vertex);
+                }
+                
+                // 삼각형 인덱스 복원
+                for (int i = 0; i < lastMeshTriangles.Count; i += 3)
+                {
+                    vh.AddTriangle(lastMeshTriangles[i], lastMeshTriangles[i + 1], lastMeshTriangles[i + 2]);
+                }
+                return;
+            }
+
             if (!needsUpdate) return;
 
             RectTransform rectTransform = transform as RectTransform;
@@ -222,6 +258,9 @@ namespace CAT.Effects
                 CreateBasicMesh(vh, rect);
             }
 
+            // 메시 데이터 저장
+            SaveMeshData(vh);
+            
             needsUpdate = false;
 
             // 성능 정보 업데이트
@@ -311,12 +350,51 @@ namespace CAT.Effects
             }
         }
 
+        private void SaveMeshData(VertexHelper vh)
+        {
+            lastMeshVertices.Clear();
+            lastMeshTriangles.Clear();
+            
+            // 현재 VertexHelper의 데이터를 저장
+            for (int i = 0; i < vh.currentVertCount; i++)
+            {
+                UIVertex vertex = new UIVertex();
+                vh.PopulateUIVertex(ref vertex, i);
+                lastMeshVertices.Add(vertex);
+            }
+            
+            // 삼각형 인덱스 저장
+            for (int i = 0; i < vh.currentIndexCount; i++)
+            {
+                lastMeshTriangles.Add(i);
+            }
+        }
+
         private UIVertex CreateUIVertex(Vector3 position, Vector2 uv)
         {
             UIVertex vertex = UIVertex.simpleVert;
             vertex.position = position;
             vertex.uv0 = uv;
-            vertex.color = Color.white;
+            
+            // Graphic의 현재 색상 사용 (Alpha 포함)
+            if (graphic != null)
+            {
+                Color color = graphic.color;
+                
+                // CanvasGroup의 alpha도 고려
+                CanvasGroup canvasGroup = GetComponentInParent<CanvasGroup>();
+                if (canvasGroup != null)
+                {
+                    color.a *= canvasGroup.alpha;
+                }
+                
+                vertex.color = color;
+            }
+            else
+            {
+                vertex.color = Color.white;
+            }
+            
             return vertex;
         }
 
