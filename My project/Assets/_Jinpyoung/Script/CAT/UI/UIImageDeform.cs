@@ -1,27 +1,31 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
-namespace CAT.Effects
+namespace CAT.UI
 {
     /// <summary>
     /// UI의 4개 모서리를 앵커로 설정하여 메시를 변형하는 컴포넌트입니다.
     /// 모바일 최적화를 위해 메시 분할 기능을 지원합니다.
+    /// Unity 2022.3 및 Unity 6 호환 버전
     /// </summary>
     [ExecuteAlways]
     [RequireComponent(typeof(Graphic))]
+    [DisallowMultipleComponent]
     public class UIImageDeform : MonoBehaviour, IMeshModifier
     {
+        // ===== 필드 선언 =====
         [System.Serializable]
         public class VertexAnchor
         {
             [Header("앵커 설정")]
-            public Transform anchorTarget;      // 앵커할 타겟 Transform
-            public Vector2 localOffset;        // 타겟으로부터의 로컬 오프셋
-            public bool useAnchor = true;       // 이 vertex에 앵커를 적용할지 여부
+            public Transform anchorTarget;
+            public Vector2 localOffset;
+            public bool useAnchor = true;
         }
 
         [Header("Vertex 앵커 설정")]
@@ -32,20 +36,22 @@ namespace CAT.Effects
 
         [Header("메시 분할 설정 (모바일 최적화)")]
         [SerializeField] private bool useSubdivision = false;
-        [SerializeField][Range(2, 6)] private int subdivisionX = 2;  // 모바일 고려하여 최대 6으로 제한
-        [SerializeField][Range(2, 6)] private int subdivisionY = 2;  // 모바일 고려하여 최대 6으로 제한
+        [SerializeField][Range(2, 6)] private int subdivisionX = 2;
+        [SerializeField][Range(2, 6)] private int subdivisionY = 2;
         [Space]
         [SerializeField] private bool showPerformanceInfo = true;
 
         [Header("업데이트 설정")]
         [SerializeField] private bool updateEveryFrame = true;
         [SerializeField] private bool optimizePerformance = true;
+        [SerializeField] private bool useLateUpdate = true;
 
         private Graphic graphic;
         private Canvas parentCanvas;
         private Vector3[] lastAnchorPositions = new Vector3[4];
         private bool needsUpdate = true;
-        
+        private bool hasAnimator = false;
+
         // 메시 데이터 캐싱
         private List<UIVertex> lastMeshVertices = new List<UIVertex>();
         private List<int> lastMeshTriangles = new List<int>();
@@ -56,127 +62,91 @@ namespace CAT.Effects
 
 #if UNITY_EDITOR
         private float lastEditorUpdateTime = 0f;
-        private const float EDITOR_UPDATE_INTERVAL = 0.016f; // ~60fps
+        private const float EDITOR_UPDATE_INTERVAL = 0.016f;
 #endif
 
+        // ===== Unity 이벤트 메서드 =====
         private void Awake()
         {
             InitializeComponents();
         }
 
-#if UNITY_EDITOR
-        // 컴포넌트가 처음 추가될 때 호출됨 (Editor에서만)
-        private void Reset()
-        {
-            InitializeComponents();
-
-            // 앵커 포인트 자동 생성
-            if (ShouldCreateAnchorPoints())
-            {
-                CreateAnchorPoints();
-            }
-        }
-#endif
-
         private void OnEnable()
         {
             InitializeComponents();
+            if (graphic != null)
+                graphic.SetVerticesDirty();
 
 #if UNITY_EDITOR
             if (!Application.isPlaying)
-            {
-                EditorApplication.update += EditorUpdate;
-            }
+                UnityEditor.EditorApplication.update += EditorUpdate;
 #endif
         }
 
         private void OnDisable()
         {
+            if (graphic != null)
+                graphic.SetVerticesDirty();
+
 #if UNITY_EDITOR
             if (!Application.isPlaying)
-            {
-                EditorApplication.update -= EditorUpdate;
-            }
+                UnityEditor.EditorApplication.update -= EditorUpdate;
 #endif
-        }
-
-        private void InitializeComponents()
-        {
-            graphic = GetComponent<Graphic>();
-            parentCanvas = GetComponentInParent<Canvas>();
-
-            // Image 타입 검사
-            ValidateImageType();
-        }
-
-        private void ValidateImageType()
-        {
-            Image image = GetComponent<Image>();
-            if (image != null && image.type != Image.Type.Simple)
-            {
-                Debug.LogWarning($"[{gameObject.name}] UIMultiAnchor는 Image Type이 Simple일 때만 정상 작동합니다. 현재: {image.type}");
-            }
-
-            // 모바일 성능 경고
-            if (useSubdivision && (subdivisionX > 4 || subdivisionY > 4))
-            {
-                Debug.LogWarning($"[{gameObject.name}] 모바일에서는 subdivision 4x4 이하를 권장합니다. 현재: {subdivisionX}x{subdivisionY}");
-            }
         }
 
         private void Start()
         {
-            // 초기화
+            if (graphic != null)
+                graphic.SetVerticesDirty();
+        }
+
+        private void Update()
+        {
+            if (!useLateUpdate)
+                PerformUpdate();
+        }
+
+        private void LateUpdate()
+        {
+            // 앵커가 애니메이션으로 움직일 때 항상 갱신
+            if (useLateUpdate)
+            {
+                needsUpdate = true; // 항상 업데이트 플래그 활성화
+                if (graphic != null)
+                    graphic.SetVerticesDirty();
+            }
+        }
+
+        private void PerformUpdate()
+        {
+            if (Application.isPlaying && updateEveryFrame)
+            {
+                needsUpdate = true; // 항상 업데이트
+                if (graphic != null)
+                    graphic.SetVerticesDirty();
+            }
+        }
+
+        // 메시만 강제 업데이트 (needsUpdate 플래그 변경 없이)
+        private void ForceUpdateMesh()
+        {
             if (graphic != null)
             {
                 graphic.SetVerticesDirty();
             }
         }
 
-#if UNITY_EDITOR
-        private void EditorUpdate()
-        {
-            if (this == null || graphic == null) return;
-            
-            // 컴포넌트가 파괴되었거나 비활성화된 경우 체크
-            if (!this || !graphic)
-            {
-                EditorApplication.update -= EditorUpdate;
-                return;
-            }
-
-            // Editor에서 성능을 위해 업데이트 주기 제한
-            float currentTime = (float)EditorApplication.timeSinceStartup;
-            if (currentTime - lastEditorUpdateTime < EDITOR_UPDATE_INTERVAL) return;
-
-            lastEditorUpdateTime = currentTime;
-            CheckForAnchorChanges();
-        }
-
-        private void OnValidate()
-        {
-            // Inspector에서 값이 변경될 때
-            if (graphic == null)
-                InitializeComponents();
-            else
-                ValidateImageType();
-
-            ForceUpdate();
-        }
-#endif
-
-        private void Update()
-        {
-            // 런타임에서만 매 프레임 업데이트
-            if (Application.isPlaying && updateEveryFrame)
-            {
-                CheckForAnchorChanges();
-            }
-        }
-
         private void CheckForAnchorChanges()
         {
             if (graphic == null) return;
+
+            // 애니메이션 모드에서는 항상 업데이트
+            if (hasAnimator && Application.isPlaying)
+            {
+                needsUpdate = true;
+                graphic.SetVerticesDirty();
+                return;
+            }
 
             // Color 변경으로 인한 SetVerticesDirty 호출을 무시하기 위해
             // needsUpdate가 false인 경우 바로 리턴
@@ -278,11 +248,14 @@ namespace CAT.Effects
             Vector3 topRightPos = GetAnchorPosition(topRight, new Vector2(rect.xMax, rect.yMax));
             Vector3 bottomRightPos = GetAnchorPosition(bottomRight, new Vector2(rect.xMax, rect.yMin));
 
+            // UV 좌표 가져오기 (아틀라스 대응)
+            Vector4 uv = GetAdjustedUV();
+            
             // 4개의 vertex 생성
-            UIVertex bottomLeftVert = CreateUIVertex(bottomLeftPos, new Vector2(0, 0));
-            UIVertex topLeftVert = CreateUIVertex(topLeftPos, new Vector2(0, 1));
-            UIVertex topRightVert = CreateUIVertex(topRightPos, new Vector2(1, 1));
-            UIVertex bottomRightVert = CreateUIVertex(bottomRightPos, new Vector2(1, 0));
+            UIVertex bottomLeftVert = CreateUIVertex(bottomLeftPos, new Vector2(uv.x, uv.y));
+            UIVertex topLeftVert = CreateUIVertex(topLeftPos, new Vector2(uv.x, uv.w));
+            UIVertex topRightVert = CreateUIVertex(topRightPos, new Vector2(uv.z, uv.w));
+            UIVertex bottomRightVert = CreateUIVertex(bottomRightPos, new Vector2(uv.z, uv.y));
 
             // Quad를 2개의 삼각형으로 구성
             vh.AddVert(bottomLeftVert);
@@ -309,6 +282,9 @@ namespace CAT.Effects
             Vector3 topRightPos = GetAnchorPosition(topRight, new Vector2(rect.xMax, rect.yMax));
             Vector3 bottomRightPos = GetAnchorPosition(bottomRight, new Vector2(rect.xMax, rect.yMin));
 
+            // UV 좌표 가져오기 (아틀라스 대응)
+            Vector4 uv = GetAdjustedUV();
+
             // Subdivision된 vertex들 생성
             for (int y = 0; y <= safeSubdivisionY; y++)
             {
@@ -323,11 +299,14 @@ namespace CAT.Effects
                     Vector3 topInterp = Vector3.Lerp(topLeftPos, topRightPos, normalizedX);
                     Vector3 finalPosition = Vector3.Lerp(bottomInterp, topInterp, normalizedY);
 
-                    // UV 좌표
-                    Vector2 uv = new Vector2(normalizedX, normalizedY);
+                    // UV 좌표 (아틀라스 범위 내에서 보간)
+                    Vector2 finalUV = new Vector2(
+                        Mathf.Lerp(uv.x, uv.z, normalizedX),
+                        Mathf.Lerp(uv.y, uv.w, normalizedY)
+                    );
 
                     // Vertex 생성
-                    UIVertex vertex = CreateUIVertex(finalPosition, uv);
+                    UIVertex vertex = CreateUIVertex(finalPosition, finalUV);
                     vh.AddVert(vertex);
                 }
             }
@@ -471,6 +450,43 @@ namespace CAT.Effects
                 out localPoint);
 
             return localPoint;
+        }
+
+        // 아틀라스를 고려한 UV 좌표 가져오기
+        private Vector4 GetAdjustedUV()
+        {
+            Image image = graphic as Image;
+            if (image != null && image.sprite != null)
+            {
+                // Image의 overrideSprite 우선 사용
+                Sprite currentSprite = image.overrideSprite ?? image.sprite;
+                
+                if (currentSprite.packed && currentSprite.packingMode != SpritePackingMode.Tight)
+                {
+                    // 아틀라스에 포함된 스프라이트의 UV 계산
+                    Vector4 padding = UnityEngine.Sprites.DataUtility.GetPadding(currentSprite);
+                    Vector4 outerUV = UnityEngine.Sprites.DataUtility.GetOuterUV(currentSprite);
+                    
+                    // Image 타입에 따른 UV 조정
+                    if (image.type == Image.Type.Simple || image.type == Image.Type.Filled)
+                    {
+                        return outerUV;
+                    }
+                    else if (image.type == Image.Type.Sliced || image.type == Image.Type.Tiled)
+                    {
+                        Vector4 innerUV = UnityEngine.Sprites.DataUtility.GetInnerUV(currentSprite);
+                        return innerUV;
+                    }
+                }
+                else
+                {
+                    // 아틀라스가 아닌 경우 또는 Tight 패킹인 경우
+                    return UnityEngine.Sprites.DataUtility.GetOuterUV(currentSprite);
+                }
+            }
+            
+            // 기본 UV (0,0 ~ 1,1)
+            return new Vector4(0f, 0f, 1f, 1f);
         }
 
         public void ModifyMesh(Mesh mesh)
@@ -627,9 +643,15 @@ namespace CAT.Effects
         public void ForceUpdate()
         {
             needsUpdate = true;
+            
             if (graphic != null)
             {
                 graphic.SetVerticesDirty();
+                
+                // Unity 2022.3에서 Canvas 재구성 강제
+#if UNITY_2022_3_OR_NEWER && !UNITY_6000_0_OR_NEWER
+                Canvas.ForceUpdateCanvases();
+#endif
             }
         }
 
@@ -686,6 +708,87 @@ namespace CAT.Effects
                     // 선으로 연결
                     Gizmos.DrawLine(transform.position, targetPos);
                 }
+            }
+        }
+
+#if UNITY_EDITOR
+        // 에디터 전용 메서드들은 클래스 맨 아래에 배치
+        [ContextMenu("Toggle Animation Mode")]
+        public void ToggleAnimationMode()
+        {
+            hasAnimator = !hasAnimator;
+            useLateUpdate = hasAnimator;
+            Debug.Log($"[{gameObject.name}] Animation Mode: {(hasAnimator ? "ON" : "OFF")}");
+            ForceUpdate();
+        }
+
+        [ContextMenu("Force Animation Detection")]
+        public void ForceAnimationDetection()
+        {
+            hasAnimator = GetComponent<Animator>() != null || GetComponentInParent<Animator>() != null;
+            if (hasAnimator)
+            {
+                useLateUpdate = true;
+                Debug.Log($"[{gameObject.name}] Animator 감지됨. Animation Mode 활성화.");
+            }
+            else
+            {
+                Debug.Log($"[{gameObject.name}] Animator를 찾을 수 없습니다.");
+            }
+        }
+
+        private void EditorUpdate()
+        {
+            if (this == null || graphic == null) return;
+            
+            // 컴포넌트가 파괴되었거나 비활성화된 경우 체크
+            if (!this || !graphic)
+            {
+                EditorApplication.update -= EditorUpdate;
+                return;
+            }
+
+            // Editor에서 성능을 위해 업데이트 주기 제한
+            float currentTime = (float)EditorApplication.timeSinceStartup;
+            if (currentTime - lastEditorUpdateTime < EDITOR_UPDATE_INTERVAL) return;
+
+            lastEditorUpdateTime = currentTime;
+            CheckForAnchorChanges();
+        }
+
+        private void OnValidate()
+        {
+            // Inspector에서 값이 변경될 때
+            if (graphic == null)
+                InitializeComponents();
+            else
+                ValidateImageType();
+
+            ForceUpdate();
+        }
+#endif
+
+        // 컴포넌트 초기화 (graphic, parentCanvas 등)
+        private void InitializeComponents()
+        {
+            graphic = GetComponent<Graphic>();
+            if (graphic != null)
+            {
+                parentCanvas = graphic.canvas;
+            }
+            else
+            {
+                parentCanvas = GetComponentInParent<Canvas>();
+            }
+        }
+
+        // Image 타입 유효성 검사 (필요시 확장)
+        private void ValidateImageType()
+        {
+            Image image = graphic as Image;
+            if (image != null && image.sprite == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] Image 컴포넌트에 Sprite가 없습니다.");
             }
         }
     }
