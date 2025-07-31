@@ -10,7 +10,7 @@ namespace CAT.UI
 {
     /// <summary>
     /// UI의 4개 모서리를 앵커로 설정하여 메시를 변형하는 컴포넌트입니다.
-    /// 모바일 최적화를 위해 메시 분할 기능을 지원합니다.
+    /// 모바일 최적화를 위해 메시 분할 기능을 지원하며, Tight Mesh 타입의 Sprite도 지원합니다.
     /// Unity 2022.3 및 Unity 6 호환 버전
     /// </summary>
     [ExecuteAlways]
@@ -38,6 +38,10 @@ namespace CAT.UI
         [SerializeField] private bool useSubdivision = false;
         [SerializeField][Range(2, 6)] private int subdivisionX = 2;
         [SerializeField][Range(2, 6)] private int subdivisionY = 2;
+
+        [Header("Sprite 메시 설정")]
+        [Tooltip("Sprite의 Mesh Type이 Tight일 때, Sprite의 메시를 기반으로 변형할지 여부를 결정합니다.")]
+        [SerializeField] private bool useTightSpriteMesh = true;
         [Space]
         [SerializeField] private bool showPerformanceInfo = true;
 
@@ -52,9 +56,8 @@ namespace CAT.UI
         private bool needsUpdate = true;
         private bool hasAnimator = false;
 
-        // 메시 데이터 캐싱
+        // 메시 데이터 캐싱 (정점 스트림 방식)
         private List<UIVertex> lastMeshVertices = new List<UIVertex>();
-        private List<int> lastMeshTriangles = new List<int>();
 
         // 성능 정보 캐싱
         private int lastVertexCount = 0;
@@ -188,7 +191,7 @@ namespace CAT.UI
 
         public void ModifyMesh(VertexHelper vh)
         {
-            // Color 변경만으로 인한 호출인지 체크
+            // Color 변경만으로 인한 호출인지 체크 (메시 구조 변경 없음)
             if (!needsUpdate && lastMeshVertices != null && lastMeshVertices.Count > 0)
             {
                 // 이전에 저장한 메시 데이터 복원
@@ -197,35 +200,47 @@ namespace CAT.UI
                 // 현재 Graphic의 색상 가져오기
                 Color currentColor = graphic != null ? graphic.color : Color.white;
                 
-                // 저장된 vertex에 현재 색상 적용
+                // 캐시된 버텍스 리스트에 현재 색상을 적용합니다.
+                // UIVertex는 구조체이므로 리스트의 항목을 직접 수정하려면 다시 할당해야 합니다.
                 for (int i = 0; i < lastMeshVertices.Count; i++)
                 {
                     UIVertex vertex = lastMeshVertices[i];
-                    vertex.color = currentColor;  // Alpha 포함 전체 색상 적용
-                    vh.AddVert(vertex);
+                    vertex.color = currentColor;
+                    lastMeshVertices[i] = vertex;
                 }
                 
-                // 삼각형 인덱스 복원
-                for (int i = 0; i < lastMeshTriangles.Count; i += 3)
-                {
-                    vh.AddTriangle(lastMeshTriangles[i], lastMeshTriangles[i + 1], lastMeshTriangles[i + 2]);
-                }
+                // 캐시된 버텍스 스트림을 사용하여 메시를 한 번에 복원합니다.
+                // 이 메서드는 버텍스와 삼각형을 모두 올바르게 추가합니다.
+                vh.AddUIVertexTriangleStream(lastMeshVertices);
                 return;
             }
 
             if (!needsUpdate) return;
 
-            RectTransform rectTransform = transform as RectTransform;
-            Rect rect = rectTransform.rect;
             vh.Clear();
 
-            if (useSubdivision)
+            Image image = graphic as Image;
+            Sprite sprite = (image != null) ? (image.overrideSprite ?? image.sprite) : null;
+
+            // Tight Mesh 타입이고 옵션이 활성화된 경우 Sprite의 메시를 사용
+            // sprite.triangles.Length > 6 조건으로 Tight Mesh 여부를 간접적으로 확인
+            if (useTightSpriteMesh && sprite != null && sprite.triangles.Length > 6)
             {
-                CreateSubdividedMesh(vh, rect);
+                CreateDeformedSpriteMesh(vh, sprite);
             }
-            else
+            else // Full Rect 또는 기본 Quad 메시 생성
             {
-                CreateBasicMesh(vh, rect);
+                RectTransform rectTransform = transform as RectTransform;
+                Rect rect = rectTransform.rect;
+
+                if (useSubdivision)
+                {
+                    CreateSubdividedMesh(vh, rect);
+                }
+                else
+                {
+                    CreateBasicMesh(vh, rect);
+                }
             }
 
             // 메시 데이터 저장
@@ -239,6 +254,51 @@ namespace CAT.UI
                 UpdatePerformanceInfo(vh);
             }
         }
+        
+        /// <summary>
+        /// Sprite의 Tight Mesh를 기반으로 변형된 메시를 생성합니다.
+        /// </summary>
+        private void CreateDeformedSpriteMesh(VertexHelper vh, Sprite sprite)
+        {
+            // 1. 네 모서리의 최종 앵커 위치를 가져옵니다.
+            RectTransform rectTransform = transform as RectTransform;
+            Rect rect = rectTransform.rect;
+            Vector3 bottomLeftPos = GetAnchorPosition(bottomLeft, new Vector2(rect.xMin, rect.yMin));
+            Vector3 topLeftPos = GetAnchorPosition(topLeft, new Vector2(rect.xMin, rect.yMax));
+            Vector3 topRightPos = GetAnchorPosition(topRight, new Vector2(rect.xMax, rect.yMax));
+            Vector3 bottomRightPos = GetAnchorPosition(bottomRight, new Vector2(rect.xMax, rect.yMin));
+
+            // 2. Sprite에서 메시 데이터를 가져옵니다.
+            Vector2[] spriteVertices = sprite.vertices;
+            Vector2[] spriteUVs = sprite.uv;
+            ushort[] spriteTriangles = sprite.triangles;
+            Bounds spriteBounds = sprite.bounds;
+
+            // 3. 각 Sprite Vertex를 변형된 사각형에 맞게 재계산합니다.
+            for (int i = 0; i < spriteVertices.Length; i++)
+            {
+                Vector2 vert = spriteVertices[i];
+                Vector2 uv = spriteUVs[i];
+
+                // Sprite 바운더리 내에서 현재 Vertex의 정규화된 위치(0-1)를 계산합니다.
+                float normalizedX = (vert.x - spriteBounds.min.x) / spriteBounds.size.x;
+                float normalizedY = (vert.y - spriteBounds.min.y) / spriteBounds.size.y;
+
+                // Bilinear Interpolation을 사용하여 최종 위치를 계산합니다.
+                Vector3 bottomInterp = Vector3.Lerp(bottomLeftPos, bottomRightPos, normalizedX);
+                Vector3 topInterp = Vector3.Lerp(topLeftPos, topRightPos, normalizedX);
+                Vector3 finalPosition = Vector3.Lerp(bottomInterp, topInterp, normalizedY);
+
+                vh.AddVert(CreateUIVertex(finalPosition, uv));
+            }
+
+            // 4. Sprite의 삼각형 정보를 그대로 추가합니다.
+            for (int i = 0; i < spriteTriangles.Length; i += 3)
+            {
+                vh.AddTriangle(spriteTriangles[i], spriteTriangles[i + 1], spriteTriangles[i + 2]);
+            }
+        }
+
 
         private void CreateBasicMesh(VertexHelper vh, Rect rect)
         {
@@ -261,13 +321,11 @@ namespace CAT.UI
             vh.AddVert(bottomLeftVert);
             vh.AddVert(topLeftVert);
             vh.AddVert(topRightVert);
-            vh.AddVert(bottomLeftVert);
-            vh.AddVert(topRightVert);
             vh.AddVert(bottomRightVert);
 
             // 삼각형 인덱스 추가
-            vh.AddTriangle(0, 1, 2);  // 첫 번째 삼각형
-            vh.AddTriangle(3, 4, 5);  // 두 번째 삼각형
+            vh.AddTriangle(0, 1, 2);
+            vh.AddTriangle(2, 3, 0);
         }
 
         private void CreateSubdividedMesh(VertexHelper vh, Rect rect)
@@ -332,21 +390,9 @@ namespace CAT.UI
         private void SaveMeshData(VertexHelper vh)
         {
             lastMeshVertices.Clear();
-            lastMeshTriangles.Clear();
-            
-            // 현재 VertexHelper의 데이터를 저장
-            for (int i = 0; i < vh.currentVertCount; i++)
-            {
-                UIVertex vertex = new UIVertex();
-                vh.PopulateUIVertex(ref vertex, i);
-                lastMeshVertices.Add(vertex);
-            }
-            
-            // 삼각형 인덱스 저장
-            for (int i = 0; i < vh.currentIndexCount; i++)
-            {
-                lastMeshTriangles.Add(i);
-            }
+            // GetUIVertexStream은 삼각형을 구성하는 모든 정점의 목록을 채웁니다.
+            // 이 "펼쳐진" 정점 목록은 나중에 AddUIVertexTriangleStream으로 메시를 복원하는 데 사용됩니다.
+            vh.GetUIVertexStream(lastMeshVertices);
         }
 
         private UIVertex CreateUIVertex(Vector3 position, Vector2 uv)
@@ -380,16 +426,16 @@ namespace CAT.UI
         private void UpdatePerformanceInfo(VertexHelper vh)
         {
             lastVertexCount = vh.currentVertCount;
-            lastTriangleCount = vh.currentVertCount / 3;
+            lastTriangleCount = vh.currentIndexCount / 3;
 
-#if UNITY_EDITOR && !APPLICATION_IS_PLAYING
+#if UNITY_EDITOR
             // Editor에서만 성능 정보 로깅
-            if (useSubdivision)
+            if (showPerformanceInfo && !Application.isPlaying)
             {
                 UnityEditor.EditorApplication.delayCall += () =>
                 {
-                    Debug.Log($"[{gameObject.name}] 성능 정보 - Vertex: {lastVertexCount}, 삼각형: {lastTriangleCount} " +
-                             $"(Subdivision: {subdivisionX}x{subdivisionY})");
+                    if (this == null) return;
+                    Debug.Log($"[{gameObject.name}] 메시 정보 - Vertex: {lastVertexCount}, 삼각형: {lastTriangleCount}");
                 };
             }
 #endif
@@ -425,7 +471,7 @@ namespace CAT.UI
         private Vector3 WorldToCanvasPosition(Vector3 worldPosition)
         {
             if (parentCanvas == null)
-                return worldPosition;
+                return transform.InverseTransformPoint(worldPosition);
 
             Vector2 screenPoint;
             Camera canvasCamera = parentCanvas.worldCamera;
@@ -444,7 +490,7 @@ namespace CAT.UI
             // Screen 좌표를 이 오브젝트의 로컬 좌표로 변환
             Vector2 localPoint;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                transform as RectTransform,  // parentCanvas 대신 자신의 transform 사용
+                transform as RectTransform,
                 screenPoint,
                 canvasCamera,
                 out localPoint);
@@ -452,35 +498,20 @@ namespace CAT.UI
             return localPoint;
         }
 
-        // 아틀라스를 고려한 UV 좌표 가져오기
+        /// <summary>
+        /// 아틀라스 사용 여부와 관계없이 Sprite의 전체 영역에 해당하는 UV 좌표를 가져옵니다.
+        /// </summary>
         private Vector4 GetAdjustedUV()
         {
             Image image = graphic as Image;
-            if (image != null && image.sprite != null)
+            if (image != null)
             {
-                // Image의 overrideSprite 우선 사용
                 Sprite currentSprite = image.overrideSprite ?? image.sprite;
-                
-                if (currentSprite.packed && currentSprite.packingMode != SpritePackingMode.Tight)
+                if (currentSprite != null)
                 {
-                    // 아틀라스에 포함된 스프라이트의 UV 계산
-                    Vector4 padding = UnityEngine.Sprites.DataUtility.GetPadding(currentSprite);
-                    Vector4 outerUV = UnityEngine.Sprites.DataUtility.GetOuterUV(currentSprite);
-                    
-                    // Image 타입에 따른 UV 조정
-                    if (image.type == Image.Type.Simple || image.type == Image.Type.Filled)
-                    {
-                        return outerUV;
-                    }
-                    else if (image.type == Image.Type.Sliced || image.type == Image.Type.Tiled)
-                    {
-                        Vector4 innerUV = UnityEngine.Sprites.DataUtility.GetInnerUV(currentSprite);
-                        return innerUV;
-                    }
-                }
-                else
-                {
-                    // 아틀라스가 아닌 경우 또는 Tight 패킹인 경우
+                    // GetOuterUV는 스프라이트가 아틀라스에 포함되어 있든 아니든
+                    // 텍스처 내에서 스프라이트가 차지하는 사각 영역의 UV를 반환합니다.
+                    // 이 컴포넌트는 자체 메시를 생성하므로 항상 OuterUV를 사용하는 것이 맞습니다.
                     return UnityEngine.Sprites.DataUtility.GetOuterUV(currentSprite);
                 }
             }
@@ -586,7 +617,7 @@ namespace CAT.UI
         }
 
         [ContextMenu("Show Performance Info")]
-        public void ShowPerformanceInfo()
+        public void ShowPerformanceInfoContext()
         {
             LogPerformanceInfo();
         }
@@ -594,19 +625,16 @@ namespace CAT.UI
         // 성능 정보 확인 메서드 (디버깅용)
         public void LogPerformanceInfo()
         {
-            int vertexCount = useSubdivision ? (subdivisionX + 1) * (subdivisionY + 1) : 4;
-            int triangleCount = useSubdivision ? subdivisionX * subdivisionY * 2 : 2;
+            int vertexCount = lastVertexCount;
+            int triangleCount = lastTriangleCount;
 
             Debug.Log($"[{gameObject.name}] 성능 정보:\n" +
-                     $"- Subdivision 사용: {useSubdivision}\n" +
-                     $"- 분할 설정: {subdivisionX}x{subdivisionY}\n" +
-                     $"- Vertex 수: {vertexCount}\n" +
-                     $"- 삼각형 수: {triangleCount}\n" +
-                     $"- 모바일 권장: {(vertexCount <= 25 ? "✓" : "✗")}");
+                      $"- Vertex 수: {vertexCount}\n" +
+                      $"- 삼각형 수: {triangleCount}");
         }
 
         // 모바일 최적화 프리셋 적용
-        [ContextMenu("Apply Mobile Preset (2x2)")]
+        [ContextMenu("Apply Mobile Preset (Basic Quad)")]
         public void ApplyMobilePreset()
         {
             useSubdivision = false;
@@ -625,7 +653,7 @@ namespace CAT.UI
             subdivisionY = 3;
             optimizePerformance = true;
             ForceUpdate();
-            Debug.Log($"[{gameObject.name}] 부드러운 변형 프리셋 적용됨 (3x3 = 16 vertex)");
+            Debug.Log($"[{gameObject.name}] 부드러운 변형 프리셋 적용됨 (3x3 = 18 triangles)");
         }
 
         [ContextMenu("Apply Quality Preset (4x4)")]
@@ -636,7 +664,7 @@ namespace CAT.UI
             subdivisionY = 4;
             optimizePerformance = true;
             ForceUpdate();
-            Debug.Log($"[{gameObject.name}] 고품질 변형 프리셋 적용됨 (4x4 = 25 vertex)");
+            Debug.Log($"[{gameObject.name}] 고품질 변형 프리셋 적용됨 (4x4 = 32 triangles)");
         }
 
         // 수동으로 업데이트를 강제하는 메서드
@@ -691,24 +719,23 @@ namespace CAT.UI
         // 디버깅용 Gizmo
         private void OnDrawGizmosSelected()
         {
-            if (!Application.isPlaying) return;
+            if (!this.enabled) return;
 
-            VertexAnchor[] anchors = { bottomLeft, topLeft, topRight, bottomRight };
-            Color[] colors = { Color.blue, Color.green, Color.red, Color.yellow };
-            string[] names = { "Bottom-Left", "Top-Left", "Top-Right", "Bottom-Right" };
+            Gizmos.matrix = transform.localToWorldMatrix;
+            RectTransform rectTransform = transform as RectTransform;
+            if (rectTransform == null) return;
+            Rect rect = rectTransform.rect;
 
-            for (int i = 0; i < anchors.Length; i++)
-            {
-                if (anchors[i].useAnchor && anchors[i].anchorTarget != null)
-                {
-                    Gizmos.color = colors[i];
-                    Vector3 targetPos = anchors[i].anchorTarget.position + (Vector3)anchors[i].localOffset;
-                    Gizmos.DrawWireSphere(targetPos, 0.1f);
+            Vector3 bl = GetAnchorPosition(bottomLeft, new Vector2(rect.xMin, rect.yMin));
+            Vector3 tl = GetAnchorPosition(topLeft, new Vector2(rect.xMin, rect.yMax));
+            Vector3 tr = GetAnchorPosition(topRight, new Vector2(rect.xMax, rect.yMax));
+            Vector3 br = GetAnchorPosition(bottomRight, new Vector2(rect.xMax, rect.yMin));
 
-                    // 선으로 연결
-                    Gizmos.DrawLine(transform.position, targetPos);
-                }
-            }
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(bl, tl);
+            Gizmos.DrawLine(tl, tr);
+            Gizmos.DrawLine(tr, br);
+            Gizmos.DrawLine(br, bl);
         }
 
 #if UNITY_EDITOR
@@ -739,15 +766,12 @@ namespace CAT.UI
 
         private void EditorUpdate()
         {
-            if (this == null || graphic == null) return;
-            
-            // 컴포넌트가 파괴되었거나 비활성화된 경우 체크
-            if (!this || !graphic)
+            if (this == null || graphic == null || !this.enabled || !this.gameObject.activeInHierarchy)
             {
                 EditorApplication.update -= EditorUpdate;
                 return;
             }
-
+            
             // Editor에서 성능을 위해 업데이트 주기 제한
             float currentTime = (float)EditorApplication.timeSinceStartup;
             if (currentTime - lastEditorUpdateTime < EDITOR_UPDATE_INTERVAL) return;
