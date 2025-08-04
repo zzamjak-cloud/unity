@@ -2,9 +2,9 @@ using UnityEngine;
 using UnityEditor;
 using DG.Tweening;
 
-namespace CAT.Util
+namespace CAT.Utility
 {
-    public static class DOTweenEasingSelectorMenuItems
+    public static class DOTweenEaseMenuItems
     {
         // DOTween Animation 컴포넌트가 선택됐을 때만 메뉴 활성화
         [MenuItem("Tools/DOTween/이징 그래프 선택기 열기 %#e", true)]
@@ -69,11 +69,11 @@ namespace CAT.Util
             if (targetAnimation != null)
             {
                 // 이징 선택기 창 열기
-                var window = EditorWindow.GetWindow<DOTweenEasingSelectorWindow>("DOTween 이징 선택기");
+                var window = EditorWindow.GetWindow<DOTweenEaseWindow>("DOTween 이징 선택기");
                 window.minSize = new Vector2(850, 600);
 
                 // 선택한 DOTweenAnimation 컴포넌트 전달
-                var easingSelectorType = typeof(DOTweenEasingSelectorWindow);
+                var easingSelectorType = typeof(DOTweenEaseWindow);
                 var targetAnimationProperty = easingSelectorType.GetField("targetAnimation",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 

@@ -4,10 +4,10 @@ using DG.Tweening;
 using System;
 using System.Collections.Generic;
 
-namespace CAT.Util
+namespace CAT.Utility
 {
     // 정적 딕셔너리를 추가하여 이징 텍스처 캐싱
-    public class DOTweenEasingSelectorWindow : EditorWindow
+    public class DOTweenEaseWindow : EditorWindow
     {
         // 타겟 애니메이션 컴포넌트
         private DG.Tweening.DOTweenAnimation targetAnimation;
@@ -37,7 +37,7 @@ namespace CAT.Util
         [MenuItem("Window/DOTween/Easing Selector")]
         public static void ShowWindow()
         {
-            var window = GetWindow<DOTweenEasingSelectorWindow>("DOTween 이징 선택기");
+            var window = GetWindow<DOTweenEaseWindow>("DOTween 이징 선택기");
             window.minSize = new Vector2(400, 300);
         }
 
@@ -48,7 +48,7 @@ namespace CAT.Util
             var animation = command.context as DG.Tweening.DOTweenAnimation;
             if (animation != null)
             {
-                var window = GetWindow<DOTweenEasingSelectorWindow>("DOTween 이징 선택기");
+                var window = GetWindow<DOTweenEaseWindow>("DOTween 이징 선택기");
                 window.minSize = new Vector2(400, 300);
                 window.targetAnimation = animation;
             }

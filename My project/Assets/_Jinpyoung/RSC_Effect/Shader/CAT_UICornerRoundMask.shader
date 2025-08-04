@@ -5,13 +5,13 @@ Shader "CAT/UI/CornerRoundMask"
         [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
 
-        // ¶ó¿îµå ÄÚ³Ê °ü·Ã ÇÁ·ÎÆÛÆ¼
+        // ëª¨ì„œë¦¬ ë°˜ê²½ ì„¤ì •
         _RadiusTL ("Top-Left Radius", Range(0, 50)) = 10
         _RadiusTR ("Top-Right Radius", Range(0, 50)) = 10
         _RadiusBL ("Bottom-Left Radius", Range(0, 50)) = 10
         _RadiusBR ("Bottom-Right Radius", Range(0, 50)) = 10
         
-        // Unity UI ±âº» ÇÁ·ÎÆÛÆ¼ (Mask ÄÄÆ÷³ÍÆ®¿Í È£È¯)
+        // ìŠ¤í…ì‹¤ ë§ˆìŠ¤í¬ ì§€ì›ì„ ìœ„í•œ í”„ë¡œí¼í‹° ì¶”ê°€
         _StencilComp ("Stencil Comparison", Float) = 8
         _Stencil ("Stencil ID", Float) = 0
         _StencilOp ("Stencil Operation", Float) = 0
@@ -85,7 +85,7 @@ Shader "CAT/UI/CornerRoundMask"
             float4 _ClipRect;
             float4 _MainTex_ST;
             
-            // ¶ó¿îµå ÄÚ³Ê °ü·Ã º¯¼ö
+            // ëª¨ì„œë¦¬ ë°˜ê²½ ì„¤ì •
             float _RadiusTL;
             float _RadiusTR;
             float _RadiusBL;
@@ -107,21 +107,21 @@ Shader "CAT/UI/CornerRoundMask"
 
             sampler2D _MainTex;
             
-            // °¢ ²ÀÁöÁ¡¿¡ ´ëÇÑ ¹İ°æÀ» °¡Á®¿À´Â ÇÔ¼ö
+            // ê° ê¼­ì§€ì ì— ëŒ€í•œ ë°˜ê²½ì„ ê°€ì ¸ì˜¤ëŠ” í•¨ìˆ˜
             float GetCornerRadius(float2 uv)
             {
-                // °¢ »çºĞ¸é¿¡ µû¶ó ´Ù¸¥ ¹İ°æ °ªÀ» ¹İÈ¯ (UV ÁÂÇ¥ ±âÁØ)
+                // ê° ì‚¬ë¶„ë©´ì— ë”°ë¼ ë‹¤ë¥¸ ë°˜ê²½ ê°’ì„ ë°˜í™˜
                 if (uv.x < 0.5 && uv.y >= 0.5) {
-                    // ¿ŞÂÊ »ó´Ü (Top-Left)
+                    // (Top-Left)
                     return _RadiusTL;
                 } else if (uv.x >= 0.5 && uv.y >= 0.5) {
-                    // ¿À¸¥ÂÊ »ó´Ü (Top-Right)
+                    // (Top-Right)
                     return _RadiusTR;
                 } else if (uv.x < 0.5 && uv.y < 0.5) {
-                    // ¿ŞÂÊ ÇÏ´Ü (Bottom-Left)
+                    // (Bottom-Left)
                     return _RadiusBL;
                 } else {
-                    // ¿À¸¥ÂÊ ÇÏ´Ü (Bottom-Right)
+                    // (Bottom-Right)
                     return _RadiusBR;
                 }
             }
@@ -130,54 +130,52 @@ Shader "CAT/UI/CornerRoundMask"
             {
                 half4 color = (tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd) * IN.color;
                 
-                // ¿ø·¡ UIÀÇ Å¬¸®ÇÎ Àû¿ë
+                // UI í´ë¦¬í•‘ ì˜ì—­ ì ìš©
                 #ifdef UNITY_UI_CLIP_RECT
                 color.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif
                 
-                // Áß¾ÓÀÌ (0,0)ÀÌ µÇµµ·Ï ÁÂÇ¥ º¯È¯ (-0.5~0.5 ¹üÀ§)
                 float2 pos = IN.texcoord - 0.5;
                 
-                // ÇöÀç À§Ä¡¿¡ Àû¿ëÇÒ ¹İ°æ °¡Á®¿À±â
-                float radius = GetCornerRadius(IN.texcoord) * 0.01; // 0-50 ¹üÀ§¸¦ 0-0.5 ¹üÀ§·Î º¯È¯
+                // ê° ê¼­ì§€ì ì— ëŒ€í•œ ë°˜ê²½ì„ ê°€ì ¸ì˜´
+                float radius = GetCornerRadius(IN.texcoord) * 0.01; // 0.01ì€ UV ì¢Œí‘œë¥¼ í”½ì…€ ë‹¨ìœ„ë¡œ ë³€í™˜í•˜ê¸° ìœ„í•œ ìŠ¤ì¼€ì¼ë§
                 
                 if (radius > 0) {
-                    // ÇöÀç ÇÈ¼¿ÀÌ ÀÖ´Â ÄÚ³Ê °áÁ¤
                     float2 cornerPos;
                     
-                    // °¢ ÄÚ³Ê¿¡ ´ëÇÑ ÁÂÇ¥ °è»ê
-                    if (pos.x < 0 && pos.y >= 0) { // ¿ŞÂÊ »ó´Ü
+                    // í˜„ì¬ í”½ì…€ì´ ì†í•œ ì‚¬ë¶„ë©´ì— ë”°ë¼ ì½”ë„ˆ ìœ„ì¹˜ ê³„ì‚°
+                    if (pos.x < 0 && pos.y >= 0) { // ì™¼ìª½ ìƒë‹¨
                         cornerPos = float2(-0.5 + radius, 0.5 - radius);
-                    } else if (pos.x >= 0 && pos.y >= 0) { // ¿À¸¥ÂÊ »ó´Ü
+                    } else if (pos.x >= 0 && pos.y >= 0) { // ì˜¤ë¥¸ìª½ ìƒë‹¨
                         cornerPos = float2(0.5 - radius, 0.5 - radius);
-                    } else if (pos.x < 0 && pos.y < 0) { // ¿ŞÂÊ ÇÏ´Ü
+                    } else if (pos.x < 0 && pos.y < 0) { // ì™¼ìª½ í•˜ë‹¨
                         cornerPos = float2(-0.5 + radius, -0.5 + radius);
-                    } else { // ¿À¸¥ÂÊ ÇÏ´Ü
+                    } else { // ì˜¤ë¥¸ìª½ í•˜ë‹¨
                         cornerPos = float2(0.5 - radius, -0.5 + radius);
                     }
                     
-                    // ÄÚ³Ê ¿µ¿ª¿¡ ÀÖ´ÂÁö È®ÀÎ
+                    // í˜„ì¬ í”½ì…€ì´ ì½”ë„ˆ ì˜ì—­ì— ì†í•˜ëŠ”ì§€ í™•ì¸
                     bool inCorner = (abs(pos.x) > 0.5 - radius) && (abs(pos.y) > 0.5 - radius);
                     
-                    // ÄÚ³Ê ¶Ç´Â °¡ÀåÀÚ¸® ¿µ¿ª¿¡ ÀÖ´Â °æ¿ì
+                    // ì½”ë„ˆ ì˜ì—­ì— ì†í•˜ëŠ” ê²½ìš°
                     if (inCorner) {
-                        // ÄÚ³Ê±îÁöÀÇ °Å¸® °è»ê
+                        // í˜„ì¬ í”½ì…€ê³¼ ì½”ë„ˆ ìœ„ì¹˜ ì‚¬ì´ì˜ ê±°ë¦¬ ê³„ì‚°
                         float dist = distance(pos, cornerPos);
                         
-                        // ¹Ù±ùÂÊ °æ°è (¶ó¿îµå ÄÚ³Ê)
+                        // ì½”ë„ˆ ì˜ì—­ì˜ ì™¸ê³½ì„  ê±°ë¦¬ ê³„ì‚°
                         float outerEdge = radius;
                         
                         if (dist > outerEdge) {
-                            // ÄÚ³Ê ¹Ù±ù (Åõ¸í)
+                            // ì½”ë„ˆ ì˜ì—­ ì™¸ê³½ì„  ë°”ê¹¥ì— ìˆëŠ” ê²½ìš°
                             color.a = 0;
                         }
                     } else if (abs(pos.x) > 0.5 || abs(pos.y) > 0.5) {
-                        // »ç°¢Çü ¹Ù±ù (Åõ¸í)
+                        // ë³€ ìœ„ì— ìˆëŠ” ê²½ìš°
                         color.a = 0;
                     }
                 }
                 
-                // ¾ËÆÄ Å¬¸®ÇÎ
+                // ì•ŒíŒŒ í´ë¦¬í•‘ ì ìš©
                 #ifdef UNITY_UI_ALPHACLIP
                 clip(color.a - 0.001);
                 #endif
