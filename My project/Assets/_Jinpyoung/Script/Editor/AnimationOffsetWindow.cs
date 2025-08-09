@@ -1,13 +1,9 @@
-// C#
-// 이 스크립트는 반드시 Assets 폴더 하위의 "Editor"라는 이름의 폴더 안에 위치해야 합니다.
-// 만약 Editor 폴더가 없다면 새로 생성해주세요. (예: Assets/Editor/AnimationOffset.cs)
-
 using UnityEngine;
 using UnityEditor;
-using UnityEditor.Animations;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace CAT.Utility
 {
@@ -31,11 +27,50 @@ namespace CAT.Utility
 
         private void OnEnable()
         {
-            SetInitialTimeValues();
+            EditorApplication.update += RepaintOnFocus;
+        }
+
+        private void OnDisable()
+        {
+            EditorApplication.update -= RepaintOnFocus;
+        }
+        
+        private void RepaintOnFocus()
+        {
+            if (EditorWindow.focusedWindow == this)
+            {
+                Repaint();
+            }
+        }
+
+        private void UpdateRangeFromSelection()
+        {
+            List<float> selectedKeyTimes = GetSelectedKeyTimesFromDopesheet();
+            if (selectedKeyTimes == null || selectedKeyTimes.Count == 0) return;
+
+            float minTime = selectedKeyTimes.Min();
+            float maxTime = selectedKeyTimes.Max();
+
+            AnimationClip activeClip = GetActiveAnimationClipFromState(GetAnimationWindowState());
+            if (activeClip == null) return;
+            
+            startTime = minTime;
+            endTime = maxTime;
+            startFrame = Mathf.RoundToInt(minTime * activeClip.frameRate);
+            endFrame = Mathf.RoundToInt(maxTime * activeClip.frameRate);
         }
 
         private void OnGUI()
         {
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                e.Use(); 
+                UpdateRangeFromSelection();
+            }
+            
+            EditorGUILayout.HelpBox("Dopesheet에서 키 선택 후, 이 창을 클릭하고 Enter 키를 누르면 범위가 갱신됩니다.", MessageType.Info);
+            
             GameObject selectedObject = Selection.activeGameObject;
             string selectedObjectName = (selectedObject != null) ? selectedObject.name : "없음";
             
@@ -47,6 +82,15 @@ namespace CAT.Utility
 
             EditorGUILayout.LabelField("Offset 적용 범위", EditorStyles.boldLabel);
             
+            GUI.backgroundColor = new Color(0.9f, 0.9f, 0.5f);
+            if (GUILayout.Button("선택된 키 범위 가져오기"))
+            {
+                UpdateRangeFromSelection();
+            }
+            GUI.backgroundColor = Color.white;
+            
+            EditorGUILayout.Space(2);
+
             Color defaultColor = GUI.backgroundColor;
             GUI.backgroundColor = isTimeBased ? Color.green : Color.yellow;
             string toggleText = isTimeBased ? "Time 활성중" : "Frame 활성중";
@@ -57,15 +101,15 @@ namespace CAT.Utility
             EditorGUILayout.LabelField("Start", GUILayout.Width(40));
             if (isTimeBased)
             {
-                startTime = EditorGUILayout.FloatField(startTime, GUILayout.MinWidth(80));
+                startTime = EditorGUILayout.FloatField(startTime);
                 EditorGUILayout.LabelField("End", GUILayout.Width(30));
-                endTime = EditorGUILayout.FloatField(endTime, GUILayout.MinWidth(80));
+                endTime = EditorGUILayout.FloatField(endTime);
             }
             else
             {
-                startFrame = EditorGUILayout.IntField(startFrame, GUILayout.MinWidth(80));
+                startFrame = EditorGUILayout.IntField(startFrame);
                 EditorGUILayout.LabelField("End", GUILayout.Width(30));
-                endFrame = EditorGUILayout.IntField(endFrame, GUILayout.MinWidth(80));
+                endFrame = EditorGUILayout.IntField(endFrame);
             }
             EditorGUILayout.EndHorizontal();
             
@@ -95,26 +139,33 @@ namespace CAT.Utility
             }
         }
 
-        private void SetInitialTimeValues()
-        {
-            AnimationClip activeClip = GetActiveAnimationClipFromWindow();
-            if (activeClip != null)
-            {
-                endFrame = Mathf.RoundToInt(activeClip.length * activeClip.frameRate);
-                endTime = activeClip.length;
-            }
-        }
-
         private void ApplyOffsets()
         {
-            Debug.Log("--- Offset 적용 시작 ---");
+            int originalFrame = GetCurrentFrame();
 
-            AnimationClip activeClip = GetActiveAnimationClipFromWindow();
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogError("오프셋을 적용할 오브젝트를 Hierarchy에서 선택해주세요.");
+                return;
+            }
+
+            object state = GetAnimationWindowState();
+            AnimationClip activeClip = GetActiveAnimationClipFromState(state);
             if (activeClip == null)
             {
                 Debug.LogError("활성화된 Animation Clip이 없습니다. Animation 창을 열고 클립을 선택해주세요.");
                 return;
             }
+            
+            GameObject rootObject = GetActiveRootGameObjectFromState(state);
+            if (rootObject == null)
+            {
+                Debug.LogError("애니메이션의 루트 오브젝트를 찾을 수 없습니다.");
+                return;
+            }
+
+            string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform);
 
             float frameRate = activeClip.frameRate;
             float startTimeInSeconds = isTimeBased ? startTime : startFrame / frameRate;
@@ -127,118 +178,133 @@ namespace CAT.Utility
             }
 
             Undo.RecordObject(activeClip, "Apply Animation Key Offsets");
-
             EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(activeClip);
-
-            Debug.Log($"--- '{activeClip.name}'의 키에 Offset 적용 시작 (Time: {startTimeInSeconds:F3}s ~ {endTimeInSeconds:F3}s) ---");
             bool anyKeyModified = false;
 
             foreach (var binding in bindings)
             {
-                AnimationCurve curve = AnimationUtility.GetEditorCurve(activeClip, binding);
-                if (curve == null) continue;
-
-                Keyframe[] keys = curve.keys;
-                bool curveModified = false;
-
-                for (int i = 0; i < keys.Length; i++)
+                if (binding.path == selectedObjectPath)
                 {
-                    if (keys[i].time >= startTimeInSeconds && keys[i].time <= endTimeInSeconds)
+                    AnimationCurve curve = AnimationUtility.GetEditorCurve(activeClip, binding);
+                    if (curve == null) continue;
+                    Keyframe[] keys = curve.keys;
+                    bool curveModified = false;
+                    for (int i = 0; i < keys.Length; i++)
                     {
-                        float originalValue = keys[i].value;
-                        float offsetToAdd = GetValueForProperty(binding.propertyName, positionOffset, rotationOffset, scaleOffset);
-                        
-                        if (!Mathf.Approximately(offsetToAdd, 0))
+                        if (keys[i].time >= startTimeInSeconds && keys[i].time <= endTimeInSeconds)
                         {
-                            keys[i].value += offsetToAdd;
-                            curveModified = true;
-                            anyKeyModified = true;
-                            Debug.Log($"  [Property: {binding.propertyName}] Time: {keys[i].time:F3} | Original: {originalValue:F3} -> New: {keys[i].value:F3} (Offset: {offsetToAdd:F3})");
+                            float offsetToAdd = GetValueForProperty(binding.propertyName, positionOffset, rotationOffset, scaleOffset);
+                            if (!Mathf.Approximately(offsetToAdd, 0))
+                            {
+                                keys[i].value += offsetToAdd;
+                                curveModified = true;
+                                anyKeyModified = true;
+                            }
                         }
                     }
-                }
-
-                if (curveModified)
-                {
-                    curve.keys = keys;
-                    AnimationUtility.SetEditorCurve(activeClip, binding, curve);
+                    if (curveModified)
+                    {
+                        curve.keys = keys;
+                        AnimationUtility.SetEditorCurve(activeClip, binding, curve);
+                    }
                 }
             }
             
             if (!anyKeyModified)
             {
-                Debug.Log("적용할 키를 찾지 못했습니다. 오브젝트, 속성, 프레임 범위를 확인해주세요.");
+                Debug.Log($"'{selectedObject.name}' 오브젝트에서 적용할 키를 찾지 못했습니다. 오브젝트, 속성, 시간 범위를 확인해주세요.");
             }
 
             EditorUtility.SetDirty(activeClip);
-            Debug.Log("--- Offset 적용 완료 ---");
+            ForceRefreshAnimationWindow(originalFrame);
         }
 
         private float GetValueForProperty(string propertyName, Vector3 positionOffset, Vector3 rotationOffset, Vector3 scaleOffset)
         {
             char lastChar = propertyName.Length > 0 ? propertyName[propertyName.Length - 1] : ' ';
-
             if (propertyName.Contains("m_LocalPosition") || propertyName.Contains("m_AnchoredPosition"))
             {
-                if (lastChar == 'x') return positionOffset.x;
-                if (lastChar == 'y') return positionOffset.y;
-                if (lastChar == 'z') return positionOffset.z;
+                if (lastChar == 'x') return positionOffset.x; if (lastChar == 'y') return positionOffset.y; if (lastChar == 'z') return positionOffset.z;
             }
             else if (propertyName.Contains("localEulerAnglesRaw"))
             {
-                if (lastChar == 'x') return rotationOffset.x;
-                if (lastChar == 'y') return rotationOffset.y;
-                if (lastChar == 'z') return rotationOffset.z;
+                if (lastChar == 'x') return rotationOffset.x; if (lastChar == 'y') return rotationOffset.y; if (lastChar == 'z') return rotationOffset.z;
             }
             else if (propertyName.Contains("m_LocalScale"))
             {
-                if (lastChar == 'x') return scaleOffset.x;
-                if (lastChar == 'y') return scaleOffset.y;
-                if (lastChar == 'z') return scaleOffset.z;
+                if (lastChar == 'x') return scaleOffset.x; if (lastChar == 'y') return scaleOffset.y; if (lastChar == 'z') return scaleOffset.z;
             }
             return 0f;
         }
 
-        #region Helper Methods (Reflection)
-        
         private object GetAnimationWindowState()
         {
             var animationWindowType = typeof(EditorWindow).Assembly.GetType("UnityEditor.AnimationWindow");
             if (animationWindowType == null) return null;
-            var animationWindows = Resources.FindObjectsOfTypeAll(animationWindowType);
-            if (animationWindows == null || animationWindows.Length == 0) return null;
-            var window = animationWindows[0];
-            var stateProperty = animationWindowType.GetProperty("state", BindingFlags.NonPublic | BindingFlags.Instance);
+            var window = GetWindow(animationWindowType, false, null, false);
+            if (window == null) return null;
+            var stateProperty = animationWindowType.GetProperty("state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             return stateProperty?.GetValue(window);
         }
 
-        private AnimationClip GetActiveAnimationClipFromWindow()
+        private AnimationClip GetActiveAnimationClipFromState(object state)
         {
-            var state = GetAnimationWindowState();
             if (state == null) return null;
-            var stateType = state.GetType();
-
-            var allMembers = stateType.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var member in allMembers)
-            {
-                if ((member.MemberType == MemberTypes.Property || member.MemberType == MemberTypes.Field) && member.Name.Contains("activeAnimationClip"))
-                {
-                    object value = null;
-                    if (member.MemberType == MemberTypes.Property)
-                        value = ((PropertyInfo)member).GetValue(state);
-                    else
-                        value = ((FieldInfo)member).GetValue(state);
-                    
-                    if (value is AnimationClip)
-                    {
-                         Debug.Log($"활성 클립을 '{member.Name}'에서 찾았습니다.");
-                        return value as AnimationClip;
-                    }
-                }
-            }
-            return null;
+            var activeClipProperty = state.GetType().GetProperty("activeAnimationClip", BindingFlags.Public | BindingFlags.Instance);
+            return activeClipProperty?.GetValue(state) as AnimationClip;
+        }
+        
+        private GameObject GetActiveRootGameObjectFromState(object state)
+        {
+            if (state == null) return null;
+            var rootGoProperty = state.GetType().GetProperty("activeRootGameObject", BindingFlags.Public | BindingFlags.Instance);
+            return rootGoProperty?.GetValue(state) as GameObject;
         }
 
-        #endregion
+        private List<float> GetSelectedKeyTimesFromDopesheet()
+        {
+            var selectedKeyTimes = new List<float>();
+            object state = GetAnimationWindowState();
+            if (state == null) return null;
+            var dopesheetKeysProperty = state.GetType().GetProperty("selectedKeys", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var dopesheetKeyObjectList = dopesheetKeysProperty?.GetValue(state) as IEnumerable;
+            if (dopesheetKeyObjectList != null)
+            {
+                foreach (object keyObject in dopesheetKeyObjectList)
+                {
+                    var timeProperty = keyObject.GetType().GetProperty("time", BindingFlags.Public | BindingFlags.Instance);
+                    if (timeProperty != null) selectedKeyTimes.Add((float)timeProperty.GetValue(keyObject));
+                }
+            }
+            return selectedKeyTimes;
+        }
+        
+        private int GetCurrentFrame()
+        {
+            object state = GetAnimationWindowState();
+            if (state == null) return -1;
+            // [수정된 부분] Binding.Instance -> BindingFlags.Instance
+            var frameProperty = state.GetType().GetProperty("currentFrame", BindingFlags.Public | BindingFlags.Instance);
+            if (frameProperty == null) return -1;
+            return (int)frameProperty.GetValue(state, null);
+        }
+
+        private void ForceRefreshAnimationWindow(int originalFrame)
+        {
+            if (originalFrame < 0) return;
+            object state = GetAnimationWindowState();
+            if (state == null) return;
+            var frameProperty = state.GetType().GetProperty("currentFrame", BindingFlags.Public | BindingFlags.Instance);
+            if (frameProperty == null) return;
+            
+            frameProperty.SetValue(state, originalFrame + 1, null);
+            EditorApplication.delayCall += () =>
+            {
+                if (frameProperty != null && state != null)
+                {
+                    frameProperty.SetValue(state, originalFrame, null);
+                }
+            };
+        }
     }
 }
