@@ -1,4 +1,4 @@
-Shader "CAT/Particles/UIWindable"
+Shader "CAT/Effects/Windable"
 {
     Properties
     {

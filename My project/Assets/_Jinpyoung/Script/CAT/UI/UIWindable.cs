@@ -1,23 +1,22 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// UIWindable 클래스는 이 여는 중괄호 '{'로 시작합니다.
-[RequireComponent(typeof(Graphic)), AddComponentMenu("CAT/UIEffect/UIWindable"), DisallowMultipleComponent]
+[RequireComponent(typeof(Graphic)), AddComponentMenu("CAT/UI/UIWindable"), DisallowMultipleComponent]
 public class UIWindable : MonoBehaviour
 {
-    public static readonly string SHADER_NAME = "CAT/Particles/UIWindable";
+    public static readonly string SHADER_NAME = "CAT/Effects/Windable";
 
     // 아래 변수들은 모두 UIWindable 클래스에 속합니다.
     [SerializeField, HideInInspector] private Texture _MainTex;
     [SerializeField, Range(0, 360)] private float _RotateUV;
     [SerializeField] private Texture _NoiseTex;
     [SerializeField] private float _WindSpeed = 0.2f;
-    [SerializeField] private float _WindStrength = 1.0f;
+    [SerializeField] private float _WindStrength = 0.5f;
     [SerializeField] private float _WindFrequency = 0.2f;
     [SerializeField] private Vector4 _WindDirection = new Vector4(1, 1, 0, 0);
     [SerializeField] private float _WindScale = 1.0f;
     [SerializeField, HideInInspector] private Vector4 _ClipRect = new Vector4(-2147.0f, -2147.0f, 2147.0f, 2147.0f);
-    [SerializeField] private float _ImageOffsetX = 0.8f;
+    [SerializeField] private float _ImageOffsetX = 0.3f;
     [SerializeField] private float _ImageOffsetY = 0.3f;
     [SerializeField] private float _ImageScale = 1.1f;
 
