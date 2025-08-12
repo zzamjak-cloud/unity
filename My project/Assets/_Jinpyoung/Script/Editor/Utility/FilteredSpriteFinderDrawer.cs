@@ -3,31 +3,35 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.IO;
 
 namespace CAT.Utility
 {
-    // 특정 에디터를 상속받지 않는, 순수 C# 헬퍼 클래스
     public class FilteredSpriteFinderDrawer
     {
-        private const string FOLDERS_PREFS_KEY = "FilteredSpriteFinder_Folders";
+        private const string FOLDERS_JSON_PATH = "ProjectSettings/FilteredSpriteFolders.json";
         private const string FOLDOUT_STATE_KEY = "FilteredSpriteFinder_Foldout";
+
+        [Serializable]
+        private class FolderData
+        {
+            public List<string> folderGUIDs = new List<string>();
+        }
 
         private static List<DefaultAsset> searchFolders = new List<DefaultAsset>();
         private static bool isInitialized = false;
         private static bool isFoldedOut = true;
 
-        // 에디터가 활성화될 때 한 번만 초기화
         public void Initialize()
         {
             if (!isInitialized)
             {
-                LoadFolders();
+                LoadFoldersFromJson();
                 isFoldedOut = EditorPrefs.GetBool(FOLDOUT_STATE_KEY, true);
                 isInitialized = true;
             }
         }
 
-        // 인스펙터에 UI를 그리는 메인 메서드
         public void DrawInspectorGUI(Action<Sprite> onSpriteSelectedAction)
         {
             EditorGUILayout.Space();
@@ -51,16 +55,16 @@ namespace CAT.Utility
                     if (!searchFolders.Contains(folderToAdd))
                     {
                         searchFolders.Add(folderToAdd);
-                        SaveFolders();
+                        SaveFoldersToJson();
                     }
                 }
 
                 EditorGUILayout.Space();
-
                 EditorGUILayout.LabelField("Registered Folders", EditorStyles.miniBoldLabel);
+
                 if (searchFolders.RemoveAll(f => f == null) > 0)
                 {
-                    SaveFolders();
+                    SaveFoldersToJson();
                 }
 
                 for (int i = 0; i < searchFolders.Count; i++)
@@ -71,13 +75,14 @@ namespace CAT.Utility
                     if (GUILayout.Button("Find", GUILayout.Width(50)))
                     {
                         string path = AssetDatabase.GetAssetPath(searchFolders[i]);
-                        FilteredSpriteSelector.ShowWindow(new List<string> { path }, onSpriteSelectedAction);
+                        // 변경된 부분: 경로를 리스트가 아닌 단일 문자열로 전달합니다.
+                        FilteredSpriteSelector.ShowWindow(path, onSpriteSelectedAction);
                     }
 
                     if (GUILayout.Button("X", GUILayout.Width(25)))
                     {
                         searchFolders.RemoveAt(i);
-                        SaveFolders();
+                        SaveFoldersToJson();
                         i--;
                     }
                     EditorGUILayout.EndHorizontal();
@@ -86,28 +91,40 @@ namespace CAT.Utility
             }
         }
 
-        private void SaveFolders()
+        private void SaveFoldersToJson()
         {
-            string data = string.Join(";", searchFolders.Where(f => f != null).Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f))));
-            EditorPrefs.SetString(FOLDERS_PREFS_KEY, data);
+            FolderData data = new FolderData();
+            data.folderGUIDs = searchFolders
+                .Where(f => f != null)
+                .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
+                .ToList();
+
+            string json = JsonUtility.ToJson(data, true);
+            File.WriteAllText(FOLDERS_JSON_PATH, json);
+            AssetDatabase.Refresh();
         }
 
-        private void LoadFolders()
+        private void LoadFoldersFromJson()
         {
             searchFolders.Clear();
-            string data = EditorPrefs.GetString(FOLDERS_PREFS_KEY, "");
-            if (string.IsNullOrEmpty(data)) return;
-
-            string[] guids = data.Split(';');
-            foreach (var guid in guids)
+            if (File.Exists(FOLDERS_JSON_PATH))
             {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (!string.IsNullOrEmpty(path))
+                string json = File.ReadAllText(FOLDERS_JSON_PATH);
+                FolderData data = JsonUtility.FromJson<FolderData>(json);
+
+                if (data != null)
                 {
-                    DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
-                    if (folder != null)
+                    foreach (var guid in data.folderGUIDs)
                     {
-                        searchFolders.Add(folder);
+                        string path = AssetDatabase.GUIDToAssetPath(guid);
+                        if (!string.IsNullOrEmpty(path))
+                        {
+                            DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
+                            if (folder != null)
+                            {
+                                searchFolders.Add(folder);
+                            }
+                        }
                     }
                 }
             }
