@@ -6,16 +6,9 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 
 namespace CAT.Utility
 {
-    /// <summary>
-    /// 메인 하이어라키와 프리팹 편집 모드 양쪽 모두에서 참조 관계 아이콘을 표시합니다.
-    /// 아이콘 클릭 시, 부모 컴포넌트를 선택하고 콘솔에 참조 필드 이름을 출력합니다.
-    /// ScrollView/ScrollRect 컴포넌트에도 아이콘을 표시합니다.
-    /// Unity 기본 UI 컴포넌트의 참조는 제외합니다.
-    /// </summary>
     [InitializeOnLoad]
     public static class HierarchyMarker
     {
@@ -28,16 +21,10 @@ namespace CAT.Utility
         }
 
         private static readonly Dictionary<int, List<ParentInfo>> childToParentMap = new Dictionary<int, List<ParentInfo>>();
-        private static readonly Texture2D defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
-        private static readonly Texture2D prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
-        private static readonly Texture2D scrollViewIcon = EditorGUIUtility.IconContent("console.infoicon").image as Texture2D;
-
-        // [수정됨] 네임스페이스 대신 제외할 '어셈블리' 목록으로 변경
-        private static readonly List<string> excludedAssemblies = new List<string>
-        {
-            "UnityEngine.UI",
-            "UnityEngine.EventSystems"
-        };
+        
+        // 지연 초기화로 GUI 에러 방지
+        private static Texture2D defaultIcon;
+        private static Texture2D prefabRootIcon;
 
         static HierarchyMarker()
         {
@@ -73,14 +60,6 @@ namespace CAT.Utility
             foreach (var script in scriptsToScan)
             {
                 if (script == null) continue;
-
-                // [수정됨] 네임스페이스 대신 '어셈블리' 이름으로 필터링하는 로직
-                var assemblyName = script.GetType().Assembly.GetName().Name;
-                if (excludedAssemblies.Contains(assemblyName))
-                {
-                    continue;
-                }
-
                 GameObject parentObject = script.gameObject;
                 int parentID = parentObject.GetInstanceID();
                 bool isParentPrefabRoot = currentPrefabStage != null
@@ -88,8 +67,18 @@ namespace CAT.Utility
                     : PrefabUtility.IsPartOfPrefabInstance(parentObject) && PrefabUtility.GetNearestPrefabInstanceRoot(parentObject) == parentObject;
 
                 FieldInfo[] fields = script.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                
+                // === 수정된 부분: 인스펙터에 표시되는 필드만 검사 ===
                 foreach (var field in fields)
                 {
+                    // 이 필드가 인스펙터에 표시되는 필드인지 확인합니다. (public 이거나, [SerializeField] 속성이 붙은 private 필드)
+                    bool isSerializable = field.IsPublic || field.IsDefined(typeof(SerializeField), false);
+                    // 인스펙터에 표시되지 않는 필드는 건너뜁니다.
+                    if (!isSerializable) continue;
+                    
+                    // [HideInInspector] 또는 [NonSerialized] 속성이 붙은 필드는 건너뜁니다.
+                    if (field.IsDefined(typeof(HideInInspector), false) || field.IsDefined(typeof(System.NonSerializedAttribute), false)) continue;
+
                     if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
                     {
                         object value = field.GetValue(script);
@@ -118,20 +107,24 @@ namespace CAT.Utility
 
         private static void HandleHierarchyItemGUI(int instanceID, Rect selectionRect)
         {
-            float iconOffset = 20f;
+            if (defaultIcon == null || prefabRootIcon == null)
+            {
+                defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
+                prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
+            }
 
             if (childToParentMap.TryGetValue(instanceID, out List<ParentInfo> parentInfos))
             {
                 bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
                 Texture2D iconToDraw = hasPrefabRootParent ? prefabRootIcon : defaultIcon;
 
-                Rect iconRect = new Rect(selectionRect.xMax - iconOffset, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
+                Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
                 if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
 
                 Event currentEvent = Event.current;
                 if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && iconRect.Contains(currentEvent.mousePosition))
                 {
-                    currentEvent.Use();
+                    currentEvent.Use(); 
 
                     ParentInfo targetParentInfo = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
                     GameObject parentObject = EditorUtility.InstanceIDToObject(targetParentInfo.parentId) as GameObject;
@@ -142,28 +135,6 @@ namespace CAT.Utility
                         Selection.activeObject = targetParentInfo.script;
                         Debug.Log($"[HierarchyMarker] <b>{parentObject.name}</b> 오브젝트의 <b>{targetParentInfo.script.GetType().Name}</b> 컴포넌트가 <b>'{targetParentInfo.fieldName}'</b> 필드를 통해 참조합니다.", parentObject);
                     }
-                }
-                iconOffset += 12f;
-            }
-
-            GameObject currentGo = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
-            bool hasScrollComponent = false;
-
-            if (currentGo != null)
-            {
-                #if UNITY_6000_0_OR_NEWER
-                if (currentGo.GetComponent<ScrollRect>() != null) hasScrollComponent = true;
-                #else
-                if (currentGo.GetComponent<ScrollView>() != null) hasScrollComponent = true;
-                #endif
-            }
-            
-            if (hasScrollComponent)
-            {
-                Rect iconRect = new Rect(selectionRect.xMax - iconOffset, selectionRect.y + (selectionRect.height - 12f) / 2, 16f, 16f);
-                if (scrollViewIcon != null)
-                {
-                    GUI.DrawTexture(iconRect, scrollViewIcon);
                 }
             }
         }
