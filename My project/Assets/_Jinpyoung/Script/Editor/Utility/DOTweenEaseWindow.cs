@@ -340,7 +340,8 @@ namespace CAT.Utility
             {
                 // 이징 타입에 대한 텍스처 생성
                 Texture2D texture = new Texture2D(PREVIEW_WIDTH, PREVIEW_HEIGHT, TextureFormat.RGBA32, false);
-
+                texture.hideFlags = HideFlags.HideAndDontSave;
+                
                 // 텍스처를 흰색으로 초기화
                 Color[] pixels = new Color[PREVIEW_WIDTH * PREVIEW_HEIGHT];
                 for (int i = 0; i < pixels.Length; i++)
