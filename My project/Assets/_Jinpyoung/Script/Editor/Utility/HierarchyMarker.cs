@@ -6,67 +6,66 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace CAT.Utility
 {
     /// <summary>
-    /// 메인 하이어라키와 프리팹 편집 모드 양쪽 모두에서 참조 관계 아이콘을 표시해주는 에디터 스크립트입니다.
+    /// 메인 하이어라키와 프리팹 편집 모드 양쪽 모두에서 참조 관계 아이콘을 표시합니다.
+    /// 아이콘 클릭 시, 부모 컴포넌트를 선택하고 콘솔에 참조 필드 이름을 출력합니다.
+    /// ScrollView/ScrollRect 컴포넌트에도 아이콘을 표시합니다.
+    /// Unity 기본 UI 컴포넌트의 참조는 제외합니다.
     /// </summary>
     [InitializeOnLoad]
     public static class HierarchyMarker
     {
-        private struct ParentInfo
+        private class ParentInfo
         {
-            public int id;
+            public int parentId;
             public bool isPrefabRoot;
+            public MonoBehaviour script;
+            public string fieldName;
         }
 
         private static readonly Dictionary<int, List<ParentInfo>> childToParentMap = new Dictionary<int, List<ParentInfo>>();
-        private static readonly Texture2D defaultIcon = EditorGUIUtility.IconContent("sv_icon_dot1_pix16_gizmo").image as Texture2D;
-        private static readonly Texture2D prefabRootIcon = EditorGUIUtility.IconContent("sv_icon_dot3_pix16_gizmo").image as Texture2D;
+        private static readonly Texture2D defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
+        private static readonly Texture2D prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
+        private static readonly Texture2D scrollViewIcon = EditorGUIUtility.IconContent("console.infoicon").image as Texture2D;
+
+        // [수정됨] 네임스페이스 대신 제외할 '어셈블리' 목록으로 변경
+        private static readonly List<string> excludedAssemblies = new List<string>
+        {
+            "UnityEngine.UI",
+            "UnityEngine.EventSystems"
+        };
 
         static HierarchyMarker()
         {
-            // 메인 하이어라키 및 프리팹 하이어라키의 UI 그리기 이벤트에 함수를 등록합니다.
             EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyItemGUI;
-
-            // === 변경점 1: 이벤트 구독 방식 변경 ===
-            // 메인 씬의 하이어라키가 변경될 때 캐시 업데이트
             EditorApplication.hierarchyChanged += UpdateMarkedObjectsCache;
-            // 프리팹 편집 모드에 들어가거나 나올 때 캐시 업데이트
             PrefabStage.prefabStageOpened += OnPrefabStageOpened;
             PrefabStage.prefabStageClosing += OnPrefabStageClosing;
-
-            // 에디터 로드 시 최초 캐시 업데이트
             UpdateMarkedObjectsCache();
         }
 
-        // 프리팹 편집 모드 진입 시 호출
         private static void OnPrefabStageOpened(PrefabStage stage) => UpdateMarkedObjectsCache();
-
-        // 프리팹 편집 모드 종료 시 호출
         private static void OnPrefabStageClosing(PrefabStage stage) => UpdateMarkedObjectsCache();
 
         private static void UpdateMarkedObjectsCache()
         {
             childToParentMap.Clear();
-
-            // === 변경점 2: 현재 활성화된 씬의 스크립트만 가져오도록 로직 수정 ===
             var currentPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
             IEnumerable<MonoBehaviour> scriptsToScan;
 
             if (currentPrefabStage != null)
             {
-                // 현재 프리팹 편집 모드일 경우, 프리팹 씬 내부의 오브젝트만 가져옵니다.
                 scriptsToScan = currentPrefabStage.scene.GetRootGameObjects()
                     .SelectMany(go => go.GetComponentsInChildren<MonoBehaviour>(true));
             }
             else
             {
-                // 메인 씬일 경우, 로드된 모든 씬의 오브젝트를 가져옵니다.
                 scriptsToScan = Enumerable.Range(0, SceneManager.sceneCount)
-                    .Select(SceneManager.GetSceneAt)
-                    .Where(s => s.isLoaded)
+                    .Select(SceneManager.GetSceneAt).Where(s => s.isLoaded)
                     .SelectMany(s => s.GetRootGameObjects())
                     .SelectMany(go => go.GetComponentsInChildren<MonoBehaviour>(true));
             }
@@ -75,25 +74,26 @@ namespace CAT.Utility
             {
                 if (script == null) continue;
 
+                // [수정됨] 네임스페이스 대신 '어셈블리' 이름으로 필터링하는 로직
+                var assemblyName = script.GetType().Assembly.GetName().Name;
+                if (excludedAssemblies.Contains(assemblyName))
+                {
+                    continue;
+                }
+
                 GameObject parentObject = script.gameObject;
                 int parentID = parentObject.GetInstanceID();
-
-                // 프리팹의 루트인지 확인. 프리팹 편집 모드에서는 GetNearestPrefabInstanceRoot 대신 isInstantiatedPrefab 필터를 사용합니다.
                 bool isParentPrefabRoot = currentPrefabStage != null
                     ? parentObject.transform.parent == currentPrefabStage.prefabContentsRoot.transform
                     : PrefabUtility.IsPartOfPrefabInstance(parentObject) && PrefabUtility.GetNearestPrefabInstanceRoot(parentObject) == parentObject;
 
-                var parentInfo = new ParentInfo { id = parentID, isPrefabRoot = isParentPrefabRoot };
-
                 FieldInfo[] fields = script.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
                 foreach (var field in fields)
                 {
                     if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
                     {
                         object value = field.GetValue(script);
                         if (value == null) continue;
-
                         GameObject referencedObject = null;
                         if (value is GameObject go && go != null) referencedObject = go;
                         else if (value is Component component && component != null) referencedObject = component.gameObject;
@@ -102,7 +102,8 @@ namespace CAT.Utility
                         {
                             int childID = referencedObject.GetInstanceID();
                             if (parentID == childID) continue;
-
+                            
+                            var parentInfo = new ParentInfo { parentId = parentID, isPrefabRoot = isParentPrefabRoot, script = script, fieldName = field.Name };
                             if (!childToParentMap.ContainsKey(childID))
                             {
                                 childToParentMap[childID] = new List<ParentInfo>();
@@ -112,37 +113,60 @@ namespace CAT.Utility
                     }
                 }
             }
-
-            // 하이어라키 창을 강제로 다시 그리도록 요청
             EditorApplication.RepaintHierarchyWindow();
         }
 
         private static void HandleHierarchyItemGUI(int instanceID, Rect selectionRect)
         {
+            float iconOffset = 20f;
+
             if (childToParentMap.TryGetValue(instanceID, out List<ParentInfo> parentInfos))
             {
                 bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
                 Texture2D iconToDraw = hasPrefabRootParent ? prefabRootIcon : defaultIcon;
 
-                Rect iconRect = new Rect(selectionRect.x + selectionRect.width - 20f, selectionRect.y, 10f, 10f);
-                if (iconToDraw != null)
-                {
-                    GUI.DrawTexture(iconRect, iconToDraw);
-                }
+                Rect iconRect = new Rect(selectionRect.xMax - iconOffset, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
+                if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
 
                 Event currentEvent = Event.current;
                 if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && iconRect.Contains(currentEvent.mousePosition))
                 {
                     currentEvent.Use();
-                    ParentInfo targetParent = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
-                    var parentObject = EditorUtility.InstanceIDToObject(targetParent.id);
+
+                    ParentInfo targetParentInfo = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
+                    GameObject parentObject = EditorUtility.InstanceIDToObject(targetParentInfo.parentId) as GameObject;
+
                     if (parentObject != null)
                     {
                         EditorGUIUtility.PingObject(parentObject);
+                        Selection.activeObject = targetParentInfo.script;
+                        Debug.Log($"[HierarchyMarker] <b>{parentObject.name}</b> 오브젝트의 <b>{targetParentInfo.script.GetType().Name}</b> 컴포넌트가 <b>'{targetParentInfo.fieldName}'</b> 필드를 통해 참조합니다.", parentObject);
                     }
+                }
+                iconOffset += 12f;
+            }
+
+            GameObject currentGo = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
+            bool hasScrollComponent = false;
+
+            if (currentGo != null)
+            {
+                #if UNITY_6000_0_OR_NEWER
+                if (currentGo.GetComponent<ScrollRect>() != null) hasScrollComponent = true;
+                #else
+                if (currentGo.GetComponent<ScrollView>() != null) hasScrollComponent = true;
+                #endif
+            }
+            
+            if (hasScrollComponent)
+            {
+                Rect iconRect = new Rect(selectionRect.xMax - iconOffset, selectionRect.y + (selectionRect.height - 12f) / 2, 16f, 16f);
+                if (scrollViewIcon != null)
+                {
+                    GUI.DrawTexture(iconRect, scrollViewIcon);
                 }
             }
         }
     }
-#endif
 }
+#endif

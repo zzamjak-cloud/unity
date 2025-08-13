@@ -37,7 +37,7 @@ namespace CAT.Utility
 
     public class UIGuidesWindow : EditorWindow
     {
-        private const string SETTINGS_PATH = "Assets/_Jinpyoung/Script/Editor/UIGuidesSettings.asset";
+        private const string SETTINGS_PATH = "Assets/_Jinpyoung/Script/Editor/Utility/UIGuidesSettings.asset";
         private UIGuidesSettings settings;
 
         // UI 카메라 참조
