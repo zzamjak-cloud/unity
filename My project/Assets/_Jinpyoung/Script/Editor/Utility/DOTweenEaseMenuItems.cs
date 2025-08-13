@@ -7,7 +7,7 @@ namespace CAT.Utility
     public static class DOTweenEaseMenuItems
     {
         // DOTween Animation 컴포넌트가 선택됐을 때만 메뉴 활성화
-        [MenuItem("Tools/DOTween/이징 그래프 선택기 열기 %#e", true)]
+        //[MenuItem("Tools/DOTween/이징 그래프 선택기 열기 %#e", true)]
         private static bool ValidateOpenEasingSelector()
         {
             // 선택된 게임 오브젝트 중 DOTweenAnimation 컴포넌트가 있는지 확인
@@ -98,7 +98,7 @@ namespace CAT.Utility
         }
 
         // 컨텍스트 메뉴 (컴포넌트 우클릭 메뉴)에도 추가
-        [MenuItem("CONTEXT/DOTweenAnimation/이징 그래프 선택기 열기")]
+        //[MenuItem("CONTEXT/DOTweenAnimation/이징 그래프 선택기 열기")]
         private static void ContextMenu(MenuCommand command)
         {
             DOTweenAnimation animation = command.context as DOTweenAnimation;
