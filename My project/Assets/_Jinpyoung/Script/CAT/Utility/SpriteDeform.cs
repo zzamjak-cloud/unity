@@ -259,6 +259,13 @@ namespace CAT.Utility
                     
                     Material mat = new Material(shader);
                     mat.mainTexture = sprite.texture;
+
+                    #if UNITY_EDITOR
+                    // 이 플래그는 머티리얼이 씬에 저장되거나 언로드되지 않도록 하여
+                    // 플레이 모드 종료 시 파괴되는 것을 방지합니다.
+                    mat.hideFlags = HideFlags.HideAndDontSave;
+                    #endif
+
                     sharedMaterials[textureID] = mat;
                 }
                 
