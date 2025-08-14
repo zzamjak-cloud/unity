@@ -22,7 +22,6 @@ namespace CAT.Utility
 
         private static readonly Dictionary<int, List<ParentInfo>> childToParentMap = new Dictionary<int, List<ParentInfo>>();
         
-        // 지연 초기화로 GUI 에러 방지
         private static Texture2D defaultIcon;
         private static Texture2D prefabRootIcon;
 
@@ -60,6 +59,18 @@ namespace CAT.Utility
             foreach (var script in scriptsToScan)
             {
                 if (script == null) continue;
+
+                // === 최종 수정: 시스템/라이브러리 네임스페이스 필터링 ===
+                // 스크립트의 네임스페이스를 확인하여 Unity 기본 컴포넌트나 TMP 같은 라이브러리 컴포넌트는 건너뜁니다.
+                var scriptNamespace = script.GetType().Namespace;
+                if (!string.IsNullOrEmpty(scriptNamespace) && (
+                    scriptNamespace.StartsWith("UnityEngine") || 
+                    scriptNamespace.StartsWith("UnityEditor") || 
+                    scriptNamespace.StartsWith("TMPro")))
+                {
+                    continue;
+                }
+
                 GameObject parentObject = script.gameObject;
                 int parentID = parentObject.GetInstanceID();
                 bool isParentPrefabRoot = currentPrefabStage != null
@@ -67,16 +78,11 @@ namespace CAT.Utility
                     : PrefabUtility.IsPartOfPrefabInstance(parentObject) && PrefabUtility.GetNearestPrefabInstanceRoot(parentObject) == parentObject;
 
                 FieldInfo[] fields = script.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                
-                // === 수정된 부분: 인스펙터에 표시되는 필드만 검사 ===
                 foreach (var field in fields)
                 {
-                    // 이 필드가 인스펙터에 표시되는 필드인지 확인합니다. (public 이거나, [SerializeField] 속성이 붙은 private 필드)
                     bool isSerializable = field.IsPublic || field.IsDefined(typeof(SerializeField), false);
-                    // 인스펙터에 표시되지 않는 필드는 건너뜁니다.
                     if (!isSerializable) continue;
                     
-                    // [HideInInspector] 또는 [NonSerialized] 속성이 붙은 필드는 건너뜁니다.
                     if (field.IsDefined(typeof(HideInInspector), false) || field.IsDefined(typeof(System.NonSerializedAttribute), false)) continue;
 
                     if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
@@ -118,7 +124,7 @@ namespace CAT.Utility
                 bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
                 Texture2D iconToDraw = hasPrefabRootParent ? prefabRootIcon : defaultIcon;
 
-                Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
+                Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 12f, 12f);
                 if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
 
                 Event currentEvent = Event.current;
