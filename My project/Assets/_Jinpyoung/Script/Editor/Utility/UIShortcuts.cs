@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using TMPro;
 
-namespace CAT.UI
+namespace CAT.Utility
 {
     public class UIShortcuts
     {
