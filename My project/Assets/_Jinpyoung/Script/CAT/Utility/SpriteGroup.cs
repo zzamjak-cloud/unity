@@ -5,6 +5,11 @@ using System;
 // 주요 기능 :
 // 자식 스프라이트 그룹의 알파값을 일괄 조정하는 컴포넌트(부모의 알파값과 곱해짐)
 
+// 성능 이슈 :
+// 런타임과 에디터 모두에서 groupAlpha가 변경된 경우나 명시적으로 dirtyFlag가 설정된 경우에만 알파값을 업데이트
+// OnTransformChildrenChanged 콜백을 사용하여 자식 구조가 변경되었을 때 업데이트 플래그를 설정
+// 데이터가 실제로 변경된 경우에만 직렬화 작업을 수행
+
 namespace CAT.Effects
 {
     [ExecuteInEditMode]
