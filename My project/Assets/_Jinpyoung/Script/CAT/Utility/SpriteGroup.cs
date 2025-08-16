@@ -1,14 +1,10 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System;
+using System.Linq; // <-- 1. 필터링(Where) 기능을 사용하기 위해 이 줄을 추가합니다.
 
 // 주요 기능 :
 // 자식 스프라이트 그룹의 알파값을 일괄 조정하는 컴포넌트(부모의 알파값과 곱해짐)
-
-// 성능 이슈 :
-// 런타임과 에디터 모두에서 groupAlpha가 변경된 경우나 명시적으로 dirtyFlag가 설정된 경우에만 알파값을 업데이트
-// OnTransformChildrenChanged 콜백을 사용하여 자식 구조가 변경되었을 때 업데이트 플래그를 설정
-// 데이터가 실제로 변경된 경우에만 직렬화 작업을 수행
 
 namespace CAT.Effects
 {
@@ -60,8 +56,6 @@ namespace CAT.Effects
         
         private void SaveAlphaDataToList()
         {
-            // This method now checks for actual changes before marking the object dirty,
-            // which is more efficient for serialization.
             bool dataHasChanged = false;
             bool[] used = new bool[spriteData.Count];
             
@@ -113,19 +107,16 @@ namespace CAT.Effects
         
         void Update()
         {
-            // In the Editor, continuously check for external color changes on children
-            // that don't trigger OnValidate (e.g., changing a child's color directly).
+            // 에디터 모드일 때, 자식 스프라이트의 색상이 외부에서 직접 변경되는지 계속 확인합니다.
             if (!Application.isPlaying)
             {
                 CheckForColorChanges();
             }
 
-            // Unified update logic for both Editor and Runtime.
-            // This executes every frame if the groupAlpha value is changing (e.g., via animation)
-            // or if the hierarchy has changed (dirtyFlag).
+            // groupAlpha 값이 변경되거나 dirtyFlag가 설정되었을 때만 업데이트를 수행하는 통합 로직
             if (Mathf.Abs(groupAlpha - lastGroupAlpha) > 0.001f || dirtyFlag)
             {
-                // If the dirty flag is set, it's safest to re-scan for children.
+                // dirtyFlag가 설정되었다면 자식 구조에 변경이 있었을 가능성이 있으므로 목록을 갱신합니다.
                 if (dirtyFlag)
                 {
                     RefreshRendererList(false);
@@ -133,32 +124,32 @@ namespace CAT.Effects
                 
                 ApplyGroupAlpha();
                 lastGroupAlpha = groupAlpha;
-                dirtyFlag = false; // Reset the flag after handling it.
+                dirtyFlag = false; // 플래그 처리 완료 후 초기화
             }
         }
         
         void OnValidate()
         {
-            // When a value is changed in the Inspector, ensure data is consistent and flag for update.
+            // 인스펙터에서 값이 변경될 때마다 데이터를 로드하고 업데이트 플래그를 설정합니다.
             LoadAlphaDataToDictionary();
             dirtyFlag = true;
         }
         
         private void RefreshRendererList(bool resetAlphas)
         {
-            childRenderers = GetComponentsInChildren<SpriteRenderer>(true); // Include inactive children
+            // <-- 2. 오류를 해결하기 위해 수정된 부분
+            // LINQ를 사용하여 모든 렌더러를 가져온 뒤, 에디터용 임시 오브젝트를 걸러냅니다.
+            var allRenderers = GetComponentsInChildren<SpriteRenderer>(true);
+            childRenderers = allRenderers.Where(r => r != null && (r.gameObject.hideFlags & (HideFlags.DontSaveInEditor | HideFlags.DontSave)) == 0).ToArray();
             
             var currentRenderersInDict = new HashSet<SpriteRenderer>(originalAlphas.Keys);
             
             foreach (SpriteRenderer renderer in childRenderers)
             {
-                if (renderer == null) continue;
-                
                 currentRenderersInDict.Remove(renderer);
                 
                 if (resetAlphas || !originalAlphas.ContainsKey(renderer))
                 {
-                    // If resetting, or if it's a new renderer, calculate its original alpha based on the current state.
                     float originalAlpha = groupAlpha > 0.001f ? 
                         renderer.color.a / groupAlpha : renderer.color.a;
                     originalAlphas[renderer] = Mathf.Clamp01(originalAlpha);
@@ -167,7 +158,7 @@ namespace CAT.Effects
                 lastColors[renderer] = renderer.color;
             }
             
-            // Remove renderers that are no longer children
+            // 더 이상 자식이 아닌 렌더러는 목록에서 제거합니다.
             foreach (var oldRenderer in currentRenderersInDict)
             {
                 if (oldRenderer != null)
@@ -192,7 +183,7 @@ namespace CAT.Effects
                 {
                     if (renderer.color != lastColor)
                     {
-                        // If the alpha value was changed externally, recalculate the originalAlpha
+                        // 알파값이 외부에서 변경되었다면, originalAlpha 값을 다시 계산합니다.
                         if (Mathf.Abs(renderer.color.a - lastColor.a) > 0.001f)
                         {
                             float newOriginalAlpha = groupAlpha > 0.001f ? 
@@ -226,7 +217,6 @@ namespace CAT.Effects
                 {
                     if (!originalAlphas.ContainsKey(renderer))
                     {
-                        // This case is a fallback, RefreshRendererList should handle it.
                         originalAlphas[renderer] = 1.0f;
                         lastColors[renderer] = renderer.color;
                     }
@@ -239,14 +229,14 @@ namespace CAT.Effects
             }
         }
         
-        // 트랜스폼 변경 감지
+        // 자식 트랜스폼 변경 감지
         void OnTransformChildrenChanged()
         {
-            // Set the dirty flag so Update() can refresh the renderer list.
+            // 자식 계층 구조가 변경되었음을 표시하여 Update에서 렌더러 목록을 갱신하도록 합니다.
             dirtyFlag = true;
         }
         
-        // 공개 메서드
+        // 외부 호출용 공개 메서드
         public void Refresh()
         {
             RefreshRendererList(false);
