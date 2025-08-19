@@ -126,10 +126,6 @@ namespace CAT.Utility
             }
 
             Texture2D texture = new Texture2D(width, height);
-            
-            // [수정] 생성된 텍스처가 저장되지 않도록 하여 에러를 방지합니다.
-            texture.hideFlags = HideFlags.HideAndDontSave;
-            
             texture.SetPixels(pixels);
             texture.Apply();
 

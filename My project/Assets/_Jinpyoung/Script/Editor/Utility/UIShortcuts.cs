@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using TMPro;
 
-namespace CAT.Utility
+namespace CAT.UI
 {
     public class UIShortcuts
     {
@@ -29,56 +29,6 @@ namespace CAT.Utility
             CreateTextMeshProElement();
         }
 
-        // =================================================================
-        // ===== 수정된 부분 시작 =====
-        // =================================================================
-
-        // Square Sprite 생성 (Mac: Command+Option+S, Windows: Ctrl+Alt+S)
-        [MenuItem("GameObject/2D Object/Custom Square Sprite %&s", false, 0)]
-        static void CreateSquareSprite()
-        {
-            // 현재 선택된 오브젝트를 부모로 사용하기 위해 기억해 둡니다.
-            GameObject parentObject = Selection.activeGameObject;
-
-            // Unity의 기본 'Square' 스프라이트 생성 메뉴를 실행합니다.
-            // 이 방법은 런타임에 텍스처를 생성할 때 발생하는 에셋 지속성 문제를 해결합니다.
-            try
-            {
-                EditorApplication.ExecuteMenuItem("GameObject/2D Object/Sprites/Square");
-            }
-            catch (System.Exception)
-            {
-                Debug.LogError("메뉴 항목 'GameObject/2D Object/Sprites/Square'를 실행하지 못했습니다. 현재 Unity 버전과 메뉴 경로가 다를 수 있습니다.");
-                return;
-            }
-
-            // 메뉴 실행 후 새로 생성된 오브젝트가 현재 선택된 오브젝트가 됩니다.
-            GameObject squareGO = Selection.activeGameObject;
-
-            // 만약 처음에 선택된 부모 오브젝트가 있었고, 새 오브젝트가 성공적으로 생성되었다면 부모-자식 관계를 설정합니다.
-            if (parentObject != null && squareGO != null)
-            {
-                // 부모를 설정합니다. (worldPositionStays: false)
-                squareGO.transform.SetParent(parentObject.transform, false);
-                // 자식으로 설정된 후 로컬 위치를 초기화합니다.
-                squareGO.transform.localPosition = Vector3.zero;
-            }
-
-            // 새로 생성된 오브젝트가 선택된 상태를 유지합니다.
-            Selection.activeGameObject = squareGO;
-
-            // 씬의 변경사항을 저장하도록 표시합니다.
-            if(squareGO != null)
-            {
-                EditorSceneManager.MarkSceneDirty(squareGO.scene);
-            }
-        }
-
-        // =================================================================
-        // ===== 수정된 부분 끝 =====
-        // =================================================================
-
-
         // 제네릭 메소드로 UI 요소 생성
         private static void CreateUIElement<T>(string elementName) where T : Graphic
         {
@@ -93,8 +43,6 @@ namespace CAT.Utility
 
             // Raycast Target 비활성화
             graphic.raycastTarget = false;
-
-
 
             // 현재 선택된 오브젝트 확인
             GameObject parentObject = Selection.activeGameObject;
