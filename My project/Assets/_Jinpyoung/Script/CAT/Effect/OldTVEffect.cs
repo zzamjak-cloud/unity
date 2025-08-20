@@ -84,17 +84,9 @@ namespace CAT.Effects
             // 시스템 메모리가 적거나 저사양 GPU 감지시 저사양 모드 활성화
             if (autoDetectPerformance)
             {
-                bool isLowEndDevice = SystemInfo.graphicsMemorySize < 2048;
-                bool isOldGLES = false;
-
-                // OpenGLES2 체크를 다양한 유니티 버전에서 작동하도록 수정
-#if UNITY_2017_1_OR_NEWER
-                isOldGLES = SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLES2;
-#else
-                isOldGLES = SystemInfo.graphicsDeviceVersion.StartsWith("OpenGL ES 2");
-#endif
-
-                if (isLowEndDevice || isOldGLES)
+                bool isLowEndDevice = IsLowEndDevice();
+                
+                if (isLowEndDevice)
                 {
                     lowPerformanceMode = true;
                 }
@@ -107,6 +99,72 @@ namespace CAT.Effects
             {
                 ApplyEffectSettings();
             }
+        }
+
+        /// <summary>
+        /// 저사양 디바이스인지 확인하는 메서드
+        /// </summary>
+        private bool IsLowEndDevice()
+        {
+            // GPU 메모리가 2GB 미만인 경우
+            bool isLowGpuMemory = SystemInfo.graphicsMemorySize < 2048;
+            
+            // 시스템 메모리가 4GB 미만인 경우
+            bool isLowSystemMemory = SystemInfo.systemMemorySize < 4096;
+            
+            // 구형 그래픽스 API 사용 여부 확인
+            bool isOldGraphicsAPI = IsOldGraphicsAPI();
+            
+            // 모바일 플랫폼에서 추가 체크
+            bool isMobileLowEnd = false;
+#if UNITY_ANDROID || UNITY_IOS
+            // 모바일에서는 더 엄격한 기준 적용
+            isMobileLowEnd = SystemInfo.graphicsMemorySize < 1024 || 
+                           SystemInfo.systemMemorySize < 3072;
+#endif
+            
+            return isLowGpuMemory || isLowSystemMemory || isOldGraphicsAPI || isMobileLowEnd;
+        }
+
+        /// <summary>
+        /// 구형 그래픽스 API 사용 여부 확인
+        /// </summary>
+        private bool IsOldGraphicsAPI()
+        {
+            GraphicsDeviceType deviceType = SystemInfo.graphicsDeviceType;
+            
+            // 구형 또는 성능이 제한적인 그래픽스 API들
+            switch (deviceType)
+            {
+                case GraphicsDeviceType.OpenGLES3:
+                    // OpenGL ES 3.0은 여전히 지원되지만 성능이 제한적일 수 있음
+                    return true;
+                    
+                case GraphicsDeviceType.OpenGLCore:
+                    // 구형 OpenGL 버전 확인
+                    string version = SystemInfo.graphicsDeviceVersion;
+                    if (version.Contains("OpenGL") && !version.Contains("4."))
+                    {
+                        return true; // OpenGL 4.0 미만은 구형으로 간주
+                    }
+                    break;
+                    
+                case GraphicsDeviceType.Direct3D11:
+                    // DirectX 11은 일반적으로 충분한 성능을 제공
+                    return false;
+                    
+                case GraphicsDeviceType.Direct3D12:
+                case GraphicsDeviceType.Vulkan:
+                case GraphicsDeviceType.Metal:
+                    // 최신 API들은 고성능
+                    return false;
+                    
+                default:
+                    // 알 수 없는 API는 안전하게 저사양으로 간주
+                    return true;
+            }
+            
+            return false;
         }
 
         private void InitializeShaders()
