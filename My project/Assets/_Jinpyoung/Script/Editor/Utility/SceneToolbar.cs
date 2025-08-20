@@ -23,7 +23,7 @@ namespace CAT.Utility
 
         static SceneToolbar()
         {
-            // [수정] 에디터가 로드될 때 EditorPrefs에서 저장된 인덱스를 불러옵니다.
+            // 에디터가 로드될 때 EditorPrefs에서 저장된 인덱스를 불러옵니다.
             selectedSceneIndex = EditorPrefs.GetInt(SelectedSceneIndexKey, 0);
 
             UpdateSceneList();
@@ -41,16 +41,15 @@ namespace CAT.Utility
                 selectedSceneIndex = 0;
             }
 
-            // [수정] 드롭다운의 값이 변경되는지 감지합니다.
+            // 드롭다운의 값이 변경되는지 감지하고 값이 변경되면 EditorPrefs에 저장합니다.
             EditorGUI.BeginChangeCheck();
-            selectedSceneIndex = EditorGUILayout.Popup(selectedSceneIndex, sceneNames, GUILayout.Width(150));
+            selectedSceneIndex = EditorGUILayout.Popup(selectedSceneIndex, sceneNames, GUILayout.Width(120));
             if (EditorGUI.EndChangeCheck())
             {
-                // 값이 변경되었다면, 새로운 인덱스를 EditorPrefs에 저장합니다.
                 EditorPrefs.SetInt(SelectedSceneIndexKey, selectedSceneIndex);
             }
 
-            if (GUILayout.Button("Open Scene", GUILayout.Width(90)))
+            if (GUILayout.Button("Open", GUILayout.Width(90)))
             {
                 if (scenePaths != null && selectedSceneIndex >= 0 && selectedSceneIndex < scenePaths.Length)
                 {
@@ -122,7 +121,8 @@ namespace CAT.Utility
             if (m_currentToolbar != null)
             {
                 var root = m_currentToolbar.GetType().GetField("m_Root", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(m_currentToolbar) as VisualElement;
-                var toolbarZone = root.Q("ToolbarZoneLeftAlign");
+                var toolbarZone = root.Q("ToolbarZonePlayMode");
+                //var toolbarZone = root.Q("ToolbarZoneLeftAlign");
 
                 var container = toolbarZone?.Q<IMGUIContainer>("SceneToolbarContainer");
 

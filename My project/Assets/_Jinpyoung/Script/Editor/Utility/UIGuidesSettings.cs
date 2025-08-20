@@ -332,7 +332,7 @@ namespace CAT.Utility
         private void FindUICamera()
         {
             // UI 카메라 자동 찾기
-            Camera[] cameras = FindObjectsOfType<Camera>();
+            Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
             foreach (Camera cam in cameras)
             {
                 if (cam.gameObject.layer == LayerMask.NameToLayer("UI") ||
@@ -346,7 +346,7 @@ namespace CAT.Utility
             // Canvas 자동 찾기
             if (uiCamera != null)
             {
-                Canvas[] canvases = FindObjectsOfType<Canvas>();
+                Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
                 foreach (Canvas canvas in canvases)
                 {
                     if (canvas.worldCamera == uiCamera ||

@@ -18,11 +18,11 @@ namespace CAT.Effects
         // 애니메이션 미리보기 관련 변수
         private bool isAnimating = false;
         private float animationTime = 0.0f;
-        private readonly float previewFPS = 60.0f;
+        //private readonly float previewFPS = 60.0f;
         private readonly float previewDeltaTime = 1.0f / 60.0f;
         private float previewTimeBetweenFlips = 1.0f;
         private List<Texture2D> cachedPreviewFrames;
-        private int currentPreviewFrame = 0;
+        //private int currentPreviewFrame = 0;
 
         // 프로퍼티 캐싱
         private SerializedProperty firstSpriteProperty;
