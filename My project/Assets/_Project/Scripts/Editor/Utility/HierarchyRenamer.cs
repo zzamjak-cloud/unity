@@ -10,7 +10,7 @@ namespace CAT.Utility
     {
         // --- UI 설정 변수 ---
         private float buttonHeight = 20f;  // 버튼 높이
-        private float labelWidth = 50f;    // 라벨 너비
+        private float labelWidth = 30f;    // 라벨 너비
 
         // --- 데이터 변수 ---
         private string inputText = "";
@@ -33,47 +33,49 @@ namespace CAT.Utility
             float originalLabelWidth = EditorGUIUtility.labelWidth;
             EditorGUIUtility.labelWidth = labelWidth;
 
+            EditorGUILayout.BeginHorizontal();
             inputText = EditorGUILayout.TextField(" 입력 :", inputText);
             replaceText = EditorGUILayout.TextField(" 대체 :", replaceText);
 
             EditorGUIUtility.labelWidth = originalLabelWidth;
+            EditorGUILayout.EndHorizontal();
             
             EditorGUILayout.Space(10);
 
             // --- 이름 변경 버튼들 ---
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Rename", GUILayout.Height(buttonHeight)))
+            if (GUILayout.Button("Rn", GUILayout.Height(buttonHeight)))
             {
                 RenameObjects(RenameAction.Rename);
             }
-            if (GUILayout.Button("Replace", GUILayout.Height(buttonHeight)))
+            if (GUILayout.Button("Rp", GUILayout.Height(buttonHeight)))
             {
                 RenameObjects(RenameAction.Replace);
             }
-            EditorGUILayout.EndHorizontal();
+            // EditorGUILayout.EndHorizontal();
             
-            EditorGUILayout.Space(2);
+            // EditorGUILayout.Space(2);
 
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Prefix", GUILayout.Height(buttonHeight)))
+            // EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("T_", GUILayout.Height(buttonHeight)))
             {
                 RenameObjects(RenameAction.Prefix);
             }
-            if (GUILayout.Button("Suffix", GUILayout.Height(buttonHeight)))
+            if (GUILayout.Button("_T", GUILayout.Height(buttonHeight)))
             {
                 RenameObjects(RenameAction.Suffix);
             }
-            EditorGUILayout.EndHorizontal();
+            // EditorGUILayout.EndHorizontal();
             
-            EditorGUILayout.Space(10);
+            // EditorGUILayout.Space(10);
 
             // --- 넘버링 버튼 ---
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Number", GUILayout.Height(buttonHeight)))
+            // EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Num", GUILayout.Height(buttonHeight)))
             {
                 RenameObjects(RenameAction.Number);
             }
-            numberPadding = EditorGUILayout.IntField(numberPadding, GUILayout.Height(buttonHeight), GUILayout.Width(50));
+            numberPadding = EditorGUILayout.IntField(numberPadding, GUILayout.Height(buttonHeight), GUILayout.Width(30));
             EditorGUILayout.EndHorizontal();
         }
 
