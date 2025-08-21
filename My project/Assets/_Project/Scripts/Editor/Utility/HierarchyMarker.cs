@@ -39,6 +39,9 @@ namespace CAT.Utility
 
         private static void UpdateMarkedObjectsCache()
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+            
             childToParentMap.Clear();
             var currentPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
             IEnumerable<MonoBehaviour> scriptsToScan;
@@ -113,6 +116,9 @@ namespace CAT.Utility
 
         private static void HandleHierarchyItemGUI(int instanceID, Rect selectionRect)
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+            
             if (defaultIcon == null || prefabRootIcon == null)
             {
                 defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
