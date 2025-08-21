@@ -86,6 +86,8 @@ namespace CAT.Utility
 
         private void RenameObjects(RenameAction action)
         {
+            GUI.FocusControl(null);  // 포커스를 해제하여 입력 필드가 닫히지 않도록 합니다.
+
             GameObject[] selectedObjects = Selection.gameObjects;
             // 버튼을 눌렀을 때 선택된 오브젝트가 없으면 알림을 표시하고 작업을 중단합니다.
             if (selectedObjects.Length == 0)
@@ -115,8 +117,17 @@ namespace CAT.Utility
                     case RenameAction.Prefix: obj.name = inputText + obj.name; break;
                     case RenameAction.Suffix: obj.name = obj.name + inputText; break;
                     case RenameAction.Number:
-                        string numberStr = counter.ToString("D" + Mathf.Max(1, numberPadding));
-                        obj.name = $"{obj.name}_{numberStr}";
+                        // 자릿수(numberPadding)가 0이면 이름을 숫자로 완전히 대체
+                        if (numberPadding == 0)
+                        {
+                            obj.name = counter.ToString();
+                        }
+                        // 0이 아니면 기존 방식대로 이름 뒤에 _숫자 붙이기
+                        else
+                        {
+                            string numberStr = counter.ToString("D" + Mathf.Max(1, numberPadding));
+                            obj.name = $"{obj.name}_{numberStr}";
+                        }
                         break;
                 }
                 counter++;
