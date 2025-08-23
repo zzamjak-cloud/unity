@@ -8,22 +8,11 @@ namespace CAT.Utility
 {
     public class AnimationOffsetWindow : EditorWindow
     {
-        private float offsetValue = 0f; 
-        private bool isTimeInputMode = false; 
+        private float offsetValue = 0f;
+        private bool isTimeInputMode = false;
 
         private enum PropertyType { Position, Rotation, Scale }
 
-        // ==========================================================
-        // UI 레이아웃 제어를 위한 변수들
-        // ==========================================================
-        private float objectNameWidth = 120f;
-        private float inputFieldWidth = 100f;
-        private float modeButtonWidth = 50f;
-        private float resetButtonWidth = 50f;
-        private float actionButtonWidth = 150f;
-        private float sectionSpacing = 20f; // 섹션 간 여백
-
-        // 마지막으로 감지된 애니메이션 창의 루트 오브젝트
         private GameObject lastKnownAnimRootObject;
 
         [MenuItem("CAT/Utility/Animation Offset Window")]
@@ -32,32 +21,20 @@ namespace CAT.Utility
             GetWindow<AnimationOffsetWindow>("Offset").Show();
         }
 
-        // ==========================================================
-        // [수정] OnEnable: 선택 변경 감지를 위한 이벤트 구독
-        // ==========================================================
         private void OnEnable()
         {
-            // 하이어라키 창 또는 프로젝트 창의 선택 변경을 감지
             Selection.selectionChanged += Repaint;
-            // 애니메이션 창의 선택 변경 등 에디터의 지속적인 업데이트를 감지
             EditorApplication.update += OnEditorUpdate;
         }
 
-        // ==========================================================
-        // [수정] OnDisable: 이벤트 구독 해제
-        // ==========================================================
         private void OnDisable()
         {
             Selection.selectionChanged -= Repaint;
             EditorApplication.update -= OnEditorUpdate;
         }
 
-        // ==========================================================
-        // [수정] OnEditorUpdate: 애니메이션 창의 선택 변경을 감지하여 UI 갱신
-        // ==========================================================
         private void OnEditorUpdate()
         {
-            // 애니메이션 창이 열려 있고, 그 안에서 선택된 루트 게임오브젝트가 변경되었는지 확인
             object state = GetAnimationWindowState();
             if (state != null)
             {
@@ -69,104 +46,100 @@ namespace CAT.Utility
                 }
             }
         }
-        
+
+        // ==========================================================
+        // [수정] OnGUI: 텍스트 및 레이아웃 수정
+        // ==========================================================
         private void OnGUI()
         {
-            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar, GUILayout.Height(22));
+            EditorGUILayout.BeginVertical(new GUIStyle { padding = new RectOffset(5, 5, 5, 5) });
 
-            // 1. 선택된 오브젝트명 (고정 너비)
+            // --- 섹션 1: 타겟 정보 ---
+            EditorGUILayout.LabelField("Target", EditorStyles.boldLabel);
             GameObject selectedObject = Selection.activeGameObject;
             string selectedObjectName = (selectedObject != null) ? selectedObject.name : "None";
-            EditorGUILayout.LabelField(new GUIContent(selectedObjectName, "Currently selected GameObject"), GUILayout.Width(objectNameWidth));
+            EditorGUILayout.HelpBox(new GUIContent(selectedObjectName, "Currently selected GameObject in the Hierarchy"), true);
 
-            // 유연한 공간을 두어 오른쪽 정렬 효과
-            // GUILayout.FlexibleSpace(); 
-            
-            // 2. 입력 모드 전환 버튼 (색상 및 텍스트 변경)
+            EditorGUILayout.Space(10);
+
+            // --- 섹션 2: 오프셋 입력 ---
+            EditorGUILayout.LabelField("Offset", EditorStyles.boldLabel);
+
+            // 오프셋 입력 필드를 한 줄에 단독으로 배치
+            string inputTooltip = isTimeInputMode ? "Time (s) offset value" : "Frame offset value";
+            offsetValue = EditorGUILayout.FloatField(new GUIContent("", inputTooltip), offsetValue);
+
+            // 버튼들을 입력 필드 아래에 별도의 가로 그룹으로 배치
+            EditorGUILayout.BeginHorizontal();
+
+            // 입력 모드 전환 버튼
             Color originalColor = GUI.backgroundColor;
             string modeText;
             if (isTimeInputMode)
             {
-                // Time 모드일 때: 빨간색 버튼
-                GUI.backgroundColor = new Color(1.0f, 0.6f, 0.6f); 
+                GUI.backgroundColor = new Color(1.0f, 0.6f, 0.6f);
                 modeText = "Time";
             }
             else
             {
-                // Frame 모드일 때: 파란색 버튼
-                GUI.backgroundColor = new Color(0.5f, 0.7f, 1.0f); 
+                GUI.backgroundColor = new Color(0.5f, 0.7f, 1.0f);
                 modeText = "Frame";
             }
 
-            if (GUILayout.Button(new GUIContent(modeText, "Switch input between Frames and Seconds"), EditorStyles.toolbarButton, GUILayout.Width(modeButtonWidth)))
+            if (GUILayout.Button(new GUIContent(modeText, "Switch input between Frames and Seconds"), GUILayout.Width(60)))
             {
                 if (offsetValue != 0)
                 {
                     object state = GetAnimationWindowState();
                     AnimationClip activeClip = GetActiveAnimationClipFromState(state);
-                    // 클립이 있으면 해당 클립의 frameRate 사용, 없으면 기본값 60 사용
                     float frameRate = (activeClip != null) ? activeClip.frameRate : 60f;
 
-                    // 현재 Time 모드 -> Frame 모드로 전환
-                    if (isTimeInputMode) 
+                    if (isTimeInputMode) // Time -> Frame
                     {
                         offsetValue *= frameRate;
                     }
-                    // 현재 Frame 모드 -> Time 모드로 전환
-                    else 
+                    else // Frame -> Time
                     {
                         offsetValue /= frameRate;
                     }
                 }
-                
-                isTimeInputMode = !isTimeInputMode; // 모드 전환
-                GUI.FocusControl(null); // 포커스를 해제하여 필드 값 즉시 갱신
-            }
-            
-            GUI.backgroundColor = originalColor; // GUI 색상 원상 복구
-
-            // 3. 오프셋 입력 필드 (고정 너비)
-            string inputTooltip = isTimeInputMode ? "Time (s) offset value" : "Frame offset value";
-            offsetValue = EditorGUILayout.FloatField(new GUIContent("", inputTooltip), offsetValue, EditorStyles.toolbarTextField, GUILayout.Width(inputFieldWidth));
-
-            // 섹션 간 여백
-            // GUILayout.Space(sectionSpacing);
-
-            
-
-            // 4. 리셋 버튼 (모드 버튼 바로 옆)
-            if (GUILayout.Button(new GUIContent("Reset", "Reset offset value to 0"), EditorStyles.toolbarButton, GUILayout.Width(resetButtonWidth)))
-            {
-                offsetValue = 0f;
-                GUI.FocusControl(null); 
-            }
-
-            // 섹션 간 여백
-            GUILayout.Space(sectionSpacing);
-
-            // 5. 적용 버튼들 (고정 너비)
-            //GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
-            if (GUILayout.Button(new GUIContent("Position", "Apply offset to Position curves"), EditorStyles.toolbarButton, GUILayout.Width(actionButtonWidth)))
-            {
-                ApplyLoopOffset(PropertyType.Position);
-            }
-
-            //GUI.backgroundColor = new Color(0.9f, 0.9f, 0.6f);
-            if (GUILayout.Button(new GUIContent("Rotation", "Apply offset to Rotation curves"), EditorStyles.toolbarButton, GUILayout.Width(actionButtonWidth)))
-            {
-                ApplyLoopOffset(PropertyType.Rotation);
-            }
-
-            //GUI.backgroundColor = new Color(0.9f, 0.6f, 0.6f);
-            if (GUILayout.Button(new GUIContent("Scale", "Apply offset to Scale curves"), EditorStyles.toolbarButton, GUILayout.Width(actionButtonWidth)))
-            {
-                ApplyLoopOffset(PropertyType.Scale);
+                isTimeInputMode = !isTimeInputMode;
+                GUI.FocusControl(null);
             }
             GUI.backgroundColor = originalColor;
 
+            // 유연한 공간을 추가하여 리셋 버튼을 오른쪽으로 밀어냄
+            GUILayout.FlexibleSpace();
+
+            // 리셋 버튼
+            if (GUILayout.Button(new GUIContent("Reset", "Reset offset value to 0"), GUILayout.Width(50)))
+            {
+                offsetValue = 0f;
+                GUI.FocusControl(null);
+            }
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
+
+            // --- 섹션 3: 적용 ---
+            EditorGUILayout.LabelField("Apply", EditorStyles.boldLabel);
+
+            if (GUILayout.Button(new GUIContent("Position", "Apply offset to Position curves"), GUILayout.Height(25)))
+            {
+                ApplyLoopOffset(PropertyType.Position);
+            }
+            if (GUILayout.Button(new GUIContent("Rotation", "Apply offset to Rotation curves"), GUILayout.Height(25)))
+            {
+                ApplyLoopOffset(PropertyType.Rotation);
+            }
+            if (GUILayout.Button(new GUIContent("Scale", "Apply offset to Scale curves"), GUILayout.Height(25)))
+            {
+                ApplyLoopOffset(PropertyType.Scale);
+            }
+
+            EditorGUILayout.EndVertical();
         }
-        
+
         private void ApplyLoopOffset(PropertyType propertyType)
         {
             if (offsetValue == 0)
@@ -254,30 +227,30 @@ namespace CAT.Utility
                 Debug.LogWarning($"'{selectedObject.name}' 오브젝트에서 '{propertyType}' 속성의 애니메이션 커브를 찾지 못했습니다.");
             }
         }
-        
+
         private AnimationCurve CreateOffsetCurve(AnimationCurve originalCurve, float timeOffset, float loopDuration)
         {
             if (originalCurve.keys.Length == 0) return null;
 
             var offsetKeys = new List<Keyframe>();
-            
+
             foreach (var originalKey in originalCurve.keys)
             {
                 float newTime = originalKey.time + timeOffset;
-                
+
                 while (newTime >= loopDuration) newTime -= loopDuration;
                 while (newTime < 0) newTime += loopDuration;
-                
+
                 var newKey = new Keyframe(newTime, originalKey.value, originalKey.inTangent, originalKey.outTangent)
                 {
                     inWeight = originalKey.inWeight,
                     outWeight = originalKey.outWeight,
                     weightedMode = originalKey.weightedMode
                 };
-                
+
                 offsetKeys.Add(newKey);
             }
-            
+
             offsetKeys.Sort((a, b) => a.time.CompareTo(b.time));
 
             var finalKeys = new List<Keyframe>();
@@ -294,17 +267,17 @@ namespace CAT.Utility
                         break;
                     }
                 }
-                
+
                 if (!isDuplicate)
                 {
                     finalKeys.Add(key);
                 }
             }
-            
+
             if (finalKeys.Count > 0)
             {
                 float valueAt0 = originalCurve.Evaluate((0 - timeOffset + loopDuration * 100) % loopDuration);
-                
+
                 bool hasKeyAt0 = false;
                 for (int i = 0; i < finalKeys.Count; i++)
                 {
@@ -314,7 +287,7 @@ namespace CAT.Utility
                         break;
                     }
                 }
-                
+
                 if (!hasKeyAt0)
                 {
                     float originalTimeAt0 = (0 - timeOffset + loopDuration * 100) % loopDuration;
@@ -322,7 +295,7 @@ namespace CAT.Utility
                     float valueBefore = originalCurve.Evaluate((originalTimeAt0 - deltaTime + loopDuration) % loopDuration);
                     float valueAfter = originalCurve.Evaluate((originalTimeAt0 + deltaTime) % loopDuration);
                     float tangent = (valueAfter - valueBefore) / (2f * deltaTime);
-                    
+
                     finalKeys.Insert(0, new Keyframe(0f, valueAt0, tangent, tangent));
                 }
 
@@ -335,7 +308,7 @@ namespace CAT.Utility
                         break;
                     }
                 }
-                
+
                 if (!hasKeyAtEnd)
                 {
                     float originalTimeAtEnd = (loopDuration - timeOffset + loopDuration * 100) % loopDuration;
@@ -343,7 +316,7 @@ namespace CAT.Utility
                     float valueBefore = originalCurve.Evaluate((originalTimeAtEnd - deltaTime + loopDuration) % loopDuration);
                     float valueAfter = originalCurve.Evaluate((originalTimeAtEnd + deltaTime) % loopDuration);
                     float tangent = (valueAfter - valueBefore) / (2f * deltaTime);
-                    
+
                     finalKeys.Add(new Keyframe(loopDuration, valueAt0, tangent, tangent));
                 }
                 else
@@ -360,27 +333,27 @@ namespace CAT.Utility
                     }
                 }
             }
-            
+
             finalKeys.Sort((a, b) => a.time.CompareTo(b.time));
-            
+
             var newCurve = new AnimationCurve(finalKeys.ToArray());
-            
+
             newCurve.preWrapMode = originalCurve.preWrapMode;
             newCurve.postWrapMode = originalCurve.postWrapMode;
 
             return newCurve;
         }
-        
+
         private bool IsPropertyTypeMatch(string propertyName, PropertyType type)
         {
             switch (type)
             {
                 case PropertyType.Position:
-                    return propertyName.Contains("m_LocalPosition") || 
+                    return propertyName.Contains("m_LocalPosition") ||
                            propertyName.Contains("m_AnchoredPosition") ||
                            propertyName.Contains("localPosition");
                 case PropertyType.Rotation:
-                    return propertyName.Contains("localEulerAnglesRaw") || 
+                    return propertyName.Contains("localEulerAnglesRaw") ||
                            propertyName.Contains("localEulerAngles") ||
                            propertyName.Contains("m_LocalRotation");
                 case PropertyType.Scale:
@@ -398,11 +371,11 @@ namespace CAT.Utility
             {
                 var animationWindowType = typeof(EditorWindow).Assembly.GetType("UnityEditor.AnimationWindow");
                 if (animationWindowType == null) return null;
-                
+
                 var window = GetWindow(animationWindowType, false, null, false);
                 if (window == null) return null;
-                
-                var stateProperty = animationWindowType.GetProperty("state", 
+
+                var stateProperty = animationWindowType.GetProperty("state",
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 return stateProperty?.GetValue(window);
             }
@@ -416,10 +389,10 @@ namespace CAT.Utility
         private AnimationClip GetActiveAnimationClipFromState(object state)
         {
             if (state == null) return null;
-            
+
             try
             {
-                var activeClipProperty = state.GetType().GetProperty("activeAnimationClip", 
+                var activeClipProperty = state.GetType().GetProperty("activeAnimationClip",
                     BindingFlags.Public | BindingFlags.Instance);
                 return activeClipProperty?.GetValue(state) as AnimationClip;
             }
@@ -433,10 +406,10 @@ namespace CAT.Utility
         private GameObject GetActiveRootGameObjectFromState(object state)
         {
             if (state == null) return null;
-            
+
             try
             {
-                var rootGoProperty = state.GetType().GetProperty("activeRootGameObject", 
+                var rootGoProperty = state.GetType().GetProperty("activeRootGameObject",
                     BindingFlags.Public | BindingFlags.Instance);
                 return rootGoProperty?.GetValue(state) as GameObject;
             }
@@ -453,13 +426,13 @@ namespace CAT.Utility
             {
                 object state = GetAnimationWindowState();
                 if (state == null) return;
-                
-                var frameProperty = state.GetType().GetProperty("currentFrame", 
+
+                var frameProperty = state.GetType().GetProperty("currentFrame",
                     BindingFlags.Public | BindingFlags.Instance);
                 if (frameProperty == null) return;
 
                 int currentFrame = (int)frameProperty.GetValue(state, null);
-                
+
                 frameProperty.SetValue(state, currentFrame + 1, null);
                 EditorApplication.delayCall += () =>
                 {
