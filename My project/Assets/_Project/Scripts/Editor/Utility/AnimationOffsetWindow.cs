@@ -8,19 +8,21 @@ namespace CAT.Utility
 {
     public class AnimationOffsetWindow : EditorWindow
     {
-        private float offsetValue = 0f;
-        private bool isTimeInputMode = false;
+        private float offsetValue = 0f;     // 오프셋 값
+        private bool isTimeInputMode = false;  // true: seconds, false: frames
 
         private enum PropertyType { Position, Rotation, Scale }
 
-        private GameObject lastKnownAnimRootObject;
+        private GameObject lastKnownAnimRootObject;  // 마지막으로 알려진 애니메이션 루트 오브젝트
 
         [MenuItem("CAT/Utility/Animation Offset Window")]
         private static void ShowWindow()
         {
             GetWindow<AnimationOffsetWindow>("Offset").Show();
         }
-
+        // ==========================================================
+        // OnEnable, OnDisable, OnEditorUpdate: 애니메이션 윈도우 상태 추적
+        // ==========================================================
         private void OnEnable()
         {
             Selection.selectionChanged += Repaint;
@@ -47,23 +49,20 @@ namespace CAT.Utility
             }
         }
 
-        // ==========================================================
-        // [수정] OnGUI: 텍스트 및 레이아웃 수정
-        // ==========================================================
         private void OnGUI()
         {
             EditorGUILayout.BeginVertical(new GUIStyle { padding = new RectOffset(5, 5, 5, 5) });
 
             // --- 섹션 1: 타겟 정보 ---
-            EditorGUILayout.LabelField("Target", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Target :", EditorStyles.boldLabel);
             GameObject selectedObject = Selection.activeGameObject;
             string selectedObjectName = (selectedObject != null) ? selectedObject.name : "None";
-            EditorGUILayout.HelpBox(new GUIContent(selectedObjectName, "Currently selected GameObject in the Hierarchy"), true);
+            EditorGUILayout.HelpBox(new GUIContent(selectedObjectName, "Selected Object"), true);
 
             EditorGUILayout.Space(10);
 
             // --- 섹션 2: 오프셋 입력 ---
-            EditorGUILayout.LabelField("Offset", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Offset :", EditorStyles.boldLabel);
 
             // 오프셋 입력 필드를 한 줄에 단독으로 배치
             string inputTooltip = isTimeInputMode ? "Time (s) offset value" : "Frame offset value";
@@ -72,7 +71,7 @@ namespace CAT.Utility
             // 버튼들을 입력 필드 아래에 별도의 가로 그룹으로 배치
             EditorGUILayout.BeginHorizontal();
 
-            // 입력 모드 전환 버튼
+            // 입력 모드 전환 토글 버튼 (프레임 <-> 시간)
             Color originalColor = GUI.backgroundColor;
             string modeText;
             if (isTimeInputMode)
@@ -85,8 +84,8 @@ namespace CAT.Utility
                 GUI.backgroundColor = new Color(0.5f, 0.7f, 1.0f);
                 modeText = "Frame";
             }
-
-            if (GUILayout.Button(new GUIContent(modeText, "Switch input between Frames and Seconds"), GUILayout.Width(60)))
+            
+            if (GUILayout.Button(new GUIContent(modeText, "Switch Frames <-> Seconds"), GUILayout.Width(60)))
             {
                 if (offsetValue != 0)
                 {
@@ -108,11 +107,11 @@ namespace CAT.Utility
             }
             GUI.backgroundColor = originalColor;
 
-            // 유연한 공간을 추가하여 리셋 버튼을 오른쪽으로 밀어냄
+            // 리셋 버튼을 오른쪽으로 배치
             GUILayout.FlexibleSpace();
 
             // 리셋 버튼
-            if (GUILayout.Button(new GUIContent("Reset", "Reset offset value to 0"), GUILayout.Width(50)))
+            if (GUILayout.Button(new GUIContent("Reset", "offset value to 0"), GUILayout.Width(50)))
             {
                 offsetValue = 0f;
                 GUI.FocusControl(null);
@@ -122,7 +121,7 @@ namespace CAT.Utility
             EditorGUILayout.Space(10);
 
             // --- 섹션 3: 적용 ---
-            EditorGUILayout.LabelField("Apply", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Apply :", EditorStyles.boldLabel);
 
             if (GUILayout.Button(new GUIContent("Position", "Apply offset to Position curves"), GUILayout.Height(25)))
             {
@@ -140,6 +139,9 @@ namespace CAT.Utility
             EditorGUILayout.EndVertical();
         }
 
+        // ==========================================================
+        // ApplyLoopOffset: 선택된 오브젝트와 애니메이션 클립에 오프셋 적용
+        // ==========================================================
         private void ApplyLoopOffset(PropertyType propertyType)
         {
             if (offsetValue == 0)
@@ -227,7 +229,9 @@ namespace CAT.Utility
                 Debug.LogWarning($"'{selectedObject.name}' 오브젝트에서 '{propertyType}' 속성의 애니메이션 커브를 찾지 못했습니다.");
             }
         }
-
+        // ==========================================================
+        // CreateOffsetCurve: 오프셋이 적용된 새로운 애니메이션 커브 생성
+        // ==========================================================
         private AnimationCurve CreateOffsetCurve(AnimationCurve originalCurve, float timeOffset, float loopDuration)
         {
             if (originalCurve.keys.Length == 0) return null;
@@ -343,7 +347,9 @@ namespace CAT.Utility
 
             return newCurve;
         }
-
+        // ==========================================================
+        // IsPropertyTypeMatch: 바인딩된 속성이 지정된 타입과 일치하는지 확인
+        // ==========================================================
         private bool IsPropertyTypeMatch(string propertyName, PropertyType type)
         {
             switch (type)
@@ -365,6 +371,10 @@ namespace CAT.Utility
         }
 
         #region Animation Window Reflection Utilities
+
+        // ==========================================================
+        // 애니메이션 윈도우 State에 접근
+        // ==========================================================
         private object GetAnimationWindowState()
         {
             try
@@ -386,6 +396,9 @@ namespace CAT.Utility
             }
         }
 
+        // ==========================================================
+        // State에서 활성 애니메이션 클립 가져오기
+        // ==========================================================
         private AnimationClip GetActiveAnimationClipFromState(object state)
         {
             if (state == null) return null;
@@ -403,6 +416,9 @@ namespace CAT.Utility
             }
         }
 
+        // ==========================================================
+        // State에서 활성 Root 게임오브젝트 가져오기
+        // ==========================================================
         private GameObject GetActiveRootGameObjectFromState(object state)
         {
             if (state == null) return null;
@@ -420,6 +436,9 @@ namespace CAT.Utility
             }
         }
 
+        // ==========================================================
+        // 애니메이션 윈도우 강제 새로고침
+        // ==========================================================
         private void ForceRefreshAnimationWindow()
         {
             try
