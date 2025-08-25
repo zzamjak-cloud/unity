@@ -46,7 +46,7 @@ namespace CAT.Effects
         }
 
         // ===== 필드 선언 =====
-        [Header("변형 모드")]
+        // [Header("변형 모드")]
         [SerializeField] private DeformMode deformMode = DeformMode.UIImage;
 
         [Header("Vertex 앵커 설정")]
@@ -1217,6 +1217,7 @@ namespace CAT.Effects
             serializedObject.Update();
             ImageDeform imageDeform = (ImageDeform)target;
 
+            /*
             // 변형 모드 선택
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(deformModeProp, new GUIContent("변형 모드"));
@@ -1227,6 +1228,7 @@ namespace CAT.Effects
             }
 
             EditorGUILayout.Space();
+            */
 
             // 앵커 설정
             DrawPropertiesExcluding(serializedObject, 
