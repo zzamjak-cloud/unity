@@ -89,7 +89,7 @@ namespace CAT.Utility
         private int dragSourceCategoryIndex = -1;
         private int dragSourceFolderIndex = -1;
         private Rect dragRect;
-        private bool showUIElements = true;
+        private bool showUIElements = false;
 
         // GUI 스타일
         private GUIStyle handleStyle;
