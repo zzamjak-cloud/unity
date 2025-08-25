@@ -287,6 +287,7 @@ namespace CAT.Utility
             stylesInitialized = true;
         }
 
+        // 헤더 그리기
         private void DrawHeader()
         {
             EditorGUILayout.BeginHorizontal();
@@ -305,7 +306,7 @@ namespace CAT.Utility
 
             // Edit 토글의 최소 너비 보장
             float minEditWidth = 40f;
-            float availableWidth = position.width - 80f; // 여유 공간 고려
+            float availableWidth = position.width - 40f; // 여유 공간 고려
 
             if (availableWidth >= minEditWidth)
             {
@@ -313,13 +314,13 @@ namespace CAT.Utility
                 if (newShowUIElements != showUIElements)
                 {
                     showUIElements = newShowUIElements;
-                    
+
                     // Edit 체크 해제시 자동 저장
                     if (!showUIElements)
                     {
                         SaveToJson();
                     }
-                    
+
                     Repaint();
                 }
             }
@@ -330,13 +331,13 @@ namespace CAT.Utility
                 if (newShowUIElements != showUIElements)
                 {
                     showUIElements = newShowUIElements;
-                    
+
                     // Edit 체크 해제시 자동 저장
                     if (!showUIElements)
                     {
                         SaveToJson();
                     }
-                    
+
                     Repaint();
                 }
             }
@@ -353,6 +354,7 @@ namespace CAT.Utility
             Debug.Log($"새 카테고리 추가: {newName}");
         }
 
+        // 카테고리 목록 그리기
         private void DrawCategories()
         {
             if (categories == null) return;
@@ -379,6 +381,7 @@ namespace CAT.Utility
             }
         }
 
+        // 단일 카테고리 그리기
         private bool DrawCategory(FavoriteCategory category, int categoryIndex, out int categoryToDelete)
         {
             categoryToDelete = -1;
@@ -387,6 +390,7 @@ namespace CAT.Utility
 
             EditorGUILayout.BeginHorizontal();
 
+            // 카테고리 헤더 배경
             if (showUIElements)
             {
                 GUILayout.Label("☰", handleStyle, GUILayout.Width(20));
@@ -394,6 +398,7 @@ namespace CAT.Utility
                 HandleReordering(categoryDragHandleRect, categoryIndex, -1);
             }
 
+            // 카테고리 이름 (편집 모드일 때만 텍스트 필드)
             if (showUIElements)
             {
                 string newName = EditorGUILayout.TextField(category.name, categoryNameStyle);
@@ -411,12 +416,13 @@ namespace CAT.Utility
 
             GUILayout.FlexibleSpace();
 
+            // 삭제 버튼 (편집 모드일 때만 표시)
             if (showUIElements)
             {
                 GUI.backgroundColor = Color.red;
                 if (GUILayout.Button("×", GUILayout.Width(20), GUILayout.Height(20)))
                 {
-                    if (EditorUtility.DisplayDialog("카테고리 삭제", 
+                    if (EditorUtility.DisplayDialog("카테고리 삭제",
                         $"'{category.name}' 카테고리를 삭제하시겠습니까?", "Yes", "No"))
                     {
                         categoryToDelete = categoryIndex;
@@ -429,6 +435,7 @@ namespace CAT.Utility
 
             EditorGUILayout.EndHorizontal();
 
+            // 폴더 목록 및 드래그 앤 드롭 영역
             if (category.isExpanded || showUIElements)
             {
                 // 폴더 영역 그리기 (드래그 앤 드롭 영역 포함)
@@ -443,6 +450,7 @@ namespace CAT.Utility
             return false;
         }
 
+        // 폴더 목록 그리기
         private void DrawFolders(FavoriteCategory category, int categoryIndex)
         {
             if (category.folders == null) return;
@@ -460,7 +468,7 @@ namespace CAT.Utility
 
                 EditorGUILayout.BeginHorizontal();
 
-                GUILayout.Space(25);
+                GUILayout.Space(10);  // 들여쓰기
 
                 if (showUIElements)
                 {
@@ -476,16 +484,16 @@ namespace CAT.Utility
                 var folder = category.folders[j];
                 if (folder != null)
                 {
-                    if (GUILayout.Button(folder.name, EditorStyles.label)) 
-                    { 
-                        EditorGUIUtility.PingObject(folder); 
+                    if (GUILayout.Button(folder.name, EditorStyles.label))
+                    {
+                        EditorGUIUtility.PingObject(folder);
                     }
                 }
                 else
                 {
                     GUI.color = Color.gray;
-                    if (GUILayout.Button("[Missing Folder]", EditorStyles.label)) 
-                    { 
+                    if (GUILayout.Button("[Missing Folder]", EditorStyles.label))
+                    {
                         folderToDelete = j;
                     }
                     GUI.color = Color.white;
