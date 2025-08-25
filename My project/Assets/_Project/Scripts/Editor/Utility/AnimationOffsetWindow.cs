@@ -77,7 +77,7 @@ namespace CAT.Utility
             if (isTimeInputMode)
             {
                 GUI.backgroundColor = new Color(1.0f, 0.6f, 0.6f);
-                modeText = "Time";
+                modeText = "Sec";
             }
             else
             {
@@ -85,7 +85,7 @@ namespace CAT.Utility
                 modeText = "Frame";
             }
             
-            if (GUILayout.Button(new GUIContent(modeText, "Switch Frames <-> Seconds"), GUILayout.Width(60)))
+            if (GUILayout.Button(new GUIContent(modeText, "Switch Frames <-> Seconds"), GUILayout.Width(56)))
             {
                 if (offsetValue != 0)
                 {
@@ -108,10 +108,10 @@ namespace CAT.Utility
             GUI.backgroundColor = originalColor;
 
             // 리셋 버튼을 오른쪽으로 배치
-            GUILayout.FlexibleSpace();
+            // GUILayout.FlexibleSpace();
 
             // 리셋 버튼
-            if (GUILayout.Button(new GUIContent("Reset", "offset value to 0"), GUILayout.Width(50)))
+            if (GUILayout.Button(new GUIContent("R", "offset value to 0"), GUILayout.Width(30)))
             {
                 offsetValue = 0f;
                 GUI.FocusControl(null);

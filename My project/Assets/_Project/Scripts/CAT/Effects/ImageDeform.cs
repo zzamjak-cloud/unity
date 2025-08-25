@@ -76,7 +76,7 @@ namespace CAT.Effects
         [SerializeField] private bool useSharedMaterial = true;
 
         [Header("디버그")]
-        [SerializeField] private bool showPerformanceInfo = true;
+        [SerializeField] private bool showPerformanceInfo = false;
         [SerializeField] private bool showVertices = true;
         [SerializeField] private float gizmoSize = 0.05f;
 
