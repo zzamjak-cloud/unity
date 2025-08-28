@@ -11,8 +11,7 @@ namespace CAT.Effects
     [AddComponentMenu("CAT/Effects/ColorReplace")]
     public class ColorReplace : MonoBehaviour
     {
-        public static readonly string SPRITE_SHADER_NAME = "CAT/Effects/ColorReplaceSprite";
-        public static readonly string UI_SHADER_NAME = "CAT/Effects/ColorReplaceUI";
+        public static readonly string SHADER_NAME = "CAT/Effects/ColorReplace";
 
         // 정적인 머티리얼을 캐싱해서 드로우콜 낮추기
         private static Dictionary<int, Material> materialCache = new Dictionary<int, Material>();
@@ -125,10 +124,10 @@ namespace CAT.Effects
             SpriteRenderer spriteRenderer = targetRenderer as SpriteRenderer;
             if (spriteRenderer == null || spriteRenderer.sprite == null) return;
 
-            Shader shader = Shader.Find(SPRITE_SHADER_NAME);
+            Shader shader = Shader.Find(SHADER_NAME);
             if (shader == null)
             {
-                Debug.LogError($"Cannot find shader: {SPRITE_SHADER_NAME} on {gameObject.name}");
+                Debug.LogError($"Cannot find shader: {SHADER_NAME} on {gameObject.name}");
                 return;
             }
 
@@ -141,10 +140,10 @@ namespace CAT.Effects
         {
             if (uiGraphic == null) return;
 
-            Shader shader = Shader.Find(UI_SHADER_NAME);
+            Shader shader = Shader.Find(SHADER_NAME);
             if (shader == null)
             {
-                Debug.LogError($"Cannot find shader: {UI_SHADER_NAME} on {gameObject.name}");
+                Debug.LogError($"Cannot find shader: {SHADER_NAME} on {gameObject.name}");
                 return;
             }
 
@@ -177,7 +176,7 @@ namespace CAT.Effects
             }
 
             // 신규 머티리얼 생성하기
-            if (currentMaterial != null && currentMaterial.shader.name != SPRITE_SHADER_NAME && currentMaterial.shader.name != UI_SHADER_NAME)
+            if (currentMaterial != null && currentMaterial.shader.name != SHADER_NAME)
             {
                 originalMaterial = currentMaterial;
                 colorReplaceMaterial = new Material(shader);
