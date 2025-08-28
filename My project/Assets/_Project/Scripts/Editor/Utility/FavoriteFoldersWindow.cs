@@ -1,27 +1,28 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
-using System.IO;
+using System.IO; // 이제 필요 없지만, 다른 용도로 쓸 수 있으니 남겨둘 수 있습니다.
 using System.Linq;
 
 namespace CAT.Utility
 {
-    // JSON 저장용 데이터 클래스
+    // JSON 저장용 데이터 클래스 (구조는 동일)
     [System.Serializable]
     public class FavoriteFoldersJsonData
     {
         public List<FavoriteCategoryData> categories = new List<FavoriteCategoryData>();
     }
-
+    
+    // JSON 저장용 폴더 카테고리 데이터 클래스 (구조는 동일)
     [System.Serializable]
     public class FavoriteCategoryData
     {
         public string name;
         public bool isExpanded = true;
-        public List<string> folderGUIDs = new List<string>(); // GUID로 저장하여 안정성 확보
+        public List<string> folderGUIDs = new List<string>();
     }
 
-    // 런타임에서 사용할 폴더 카테고리 클래스
+    // Editor 실행중에 사용할 폴더 카테고리 클래스 (구조는 동일)
     public class FavoriteCategory
     {
         public string name;
@@ -33,13 +34,10 @@ namespace CAT.Utility
             this.name = name;
         }
 
-        // JSON 데이터에서 변환
         public static FavoriteCategory FromJsonData(FavoriteCategoryData jsonData)
         {
             var category = new FavoriteCategory(jsonData.name);
             category.isExpanded = jsonData.isExpanded;
-
-            // GUID를 실제 폴더 에셋으로 변환
             foreach (string guid in jsonData.folderGUIDs)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -55,20 +53,16 @@ namespace CAT.Utility
             return category;
         }
 
-        // JSON 데이터로 변환
         public FavoriteCategoryData ToJsonData()
         {
             var jsonData = new FavoriteCategoryData();
             jsonData.name = this.name;
             jsonData.isExpanded = this.isExpanded;
-
-            // 폴더 에셋을 GUID로 변환
             jsonData.folderGUIDs = folders
                 .Where(f => f != null)
                 .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
                 .Where(guid => !string.IsNullOrEmpty(guid))
                 .ToList();
-
             return jsonData;
         }
     }
@@ -76,7 +70,8 @@ namespace CAT.Utility
     // 즐겨찾기 폴더를 관리하는 에디터 창
     public class FavoriteFoldersWindow : EditorWindow
     {
-        private const string JSON_PATH = "ProjectSettings/FavoriteFolders.json";
+        // 변경: JSON 파일 경로 대신 PlayerPrefs 키를 사용합니다.
+        private const string PREFS_KEY = "CAT_FavoriteFoldersData"; 
         private Color handleColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 
         private List<FavoriteCategory> categories = new List<FavoriteCategory>();
@@ -101,22 +96,23 @@ namespace CAT.Utility
 
         private void OnEnable()
         {
-            LoadFromJson();
+            LoadFromPlayerPrefs(); // 변경
         }
 
         private void OnDisable()
         {
-            SaveToJson(); 
+            SaveToPlayerPrefs(); // 변경
         }
-
-        private void LoadFromJson()
+        
+        // 변경: LoadFromJson -> LoadFromPlayerPrefs
+        private void LoadFromPlayerPrefs()
         {
             categories.Clear();
-            if (File.Exists(JSON_PATH))
+            if (PlayerPrefs.HasKey(PREFS_KEY))
             {
                 try
                 {
-                    string json = File.ReadAllText(JSON_PATH);
+                    string json = PlayerPrefs.GetString(PREFS_KEY);
                     var jsonData = JsonUtility.FromJson<FavoriteFoldersJsonData>(json);
                     if (jsonData != null && jsonData.categories != null)
                     {
@@ -130,8 +126,9 @@ namespace CAT.Utility
                 }
             }
         }
-
-        private void SaveToJson()
+        
+        // 변경: SaveToJson -> SaveToPlayerPrefs
+        private void SaveToPlayerPrefs()
         {
             try
             {
@@ -141,19 +138,17 @@ namespace CAT.Utility
                 };
 
                 string json = JsonUtility.ToJson(jsonData, true);
-                string directory = Path.GetDirectoryName(JSON_PATH);
-                if (!Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-                File.WriteAllText(JSON_PATH, json);
-                Debug.Log($"Favorite 폴더 데이터 저장 완료 - 카테고리 수: {categories.Count}");
+                PlayerPrefs.SetString(PREFS_KEY, json);
+                PlayerPrefs.Save();
+                // Debug.Log($"Favorite 폴더 데이터 저장 완료 (PlayerPrefs) - 카테고리 수: {categories.Count}");
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Favorite 폴더 데이터 저장 실패: {e.Message}");
+                Debug.LogError($"Favorite 폴더 데이터 저장 실패 (PlayerPrefs): {e.Message}");
             }
         }
+
+        // --- 이하 OnGUI 및 다른 로직들은 변경할 필요가 없습니다. ---
 
         private void OnGUI()
         {
@@ -232,7 +227,7 @@ namespace CAT.Utility
                 showUIElements = newShowUIElements;
                 if (!showUIElements)
                 {
-                    SaveToJson();
+                    SaveToPlayerPrefs(); // 변경: 편집 모드 종료 시 저장
                 }
                 Repaint();
             }

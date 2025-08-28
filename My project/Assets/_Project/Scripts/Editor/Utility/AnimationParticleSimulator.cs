@@ -6,7 +6,6 @@ using Object = UnityEngine.Object;
 using UnityEditor;
 using UnityEngine.UIElements;
 
-[InitializeOnLoad]
 public static class AnimationParticleSimulator 
 {
     private struct AnimFrameInfo
@@ -15,18 +14,19 @@ public static class AnimationParticleSimulator
         public float value;
     }
     
-    private static AnimationClip _animationClip;
-    private static EditorWindow _cachedEditorWindow;
-    private static int _editorFrame;
-    private static Dictionary<string, AnimFrameInfo> _propertyDirties = new();
-    private static IMGUIContainer _imguiContainer;
-    private static IMGUIContainer _timelineContainer;
-    private static bool _isOnSimulation;
-    private static GUIContent _iconContent;
-    private static object _stateField;
-    private static bool _isForceClearDirty;
+    private static AnimationClip _animationClip;  // AnimationWindowState를 가져오기 위한 변수
+    private static EditorWindow _cachedEditorWindow;  // AnimationWindow 위젯의 state 정보를 가져오기 위한 변수
+    private static int _editorFrame;  // 현재 에디터 프레임(현재 프레임)
+    private static Dictionary<string, AnimFrameInfo> _propertyDirties = new();  // 프로퍼티 변화 정보
+    private static IMGUIContainer _imguiContainer;  // 파티클 시뮬레이션 토글 버튼
+    private static IMGUIContainer _timelineContainer;  // 타임라인 컨트롤 위젯
+    private static bool _isOnSimulation;  // 파티클 시뮬레이션 상태 토글 위젯의 상태
+    private static GUIContent _iconContent;  // 파티클 시뮬레이션 아이콘 컨텐트(타이틀)
+    private static object _stateField;  // 파티클 시뮬레이션 토글 위젯의 상태(isOnSimulation)
+    private static bool _isForceClearDirty;  // 파티클 시뮬레이션 토글 위젯의 상태(isOnSimulation)
 
-    static AnimationParticleSimulator()
+    [InitializeOnLoadMethod]
+    private static void Initialize()
     {
         EditorApplication.update -= Update;
         EditorApplication.update += Update;
@@ -36,7 +36,7 @@ public static class AnimationParticleSimulator
     {
         var bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         
-        if (_cachedEditorWindow == null)
+        if (_cachedEditorWindow == null)  // 캐시된 에디터 윈도우가 없으면 초기화
         {
             var editorAssembly = typeof(Editor).Assembly;
             var animationWindows =

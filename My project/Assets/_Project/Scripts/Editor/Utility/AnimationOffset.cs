@@ -14,7 +14,6 @@ namespace CAT.Utility
     /// - Offset 적용 시 Animation Clip이 수정되며, Undo가 지원됩니다.
     /// - Animation Window가 열려 있어야 하며, Animation Clip이 선택되어 있어야 합니다.
     /// </summary>
-    [InitializeOnLoad]
     public static class AnimationOffset
     {
         private static float offsetValue = 0f;
@@ -31,7 +30,8 @@ namespace CAT.Utility
         private static bool _isRefreshPending = false;
 
         // [수정] EditorApplication.update를 제거하고, 에디터 초기화 후 단 한 번만 실행되도록 변경
-        static AnimationOffset()
+        [InitializeOnLoadMethod]
+        private static void Initialize()
         {
             EditorApplication.delayCall += InjectUI;
         }
