@@ -27,70 +27,53 @@ namespace CAT.Utility
         private static float resetButtonWidth = 50f;
         private static float actionButtonWidth = 70f;
         private static float sectionSpacing = 10f;
-
-        private static EditorWindow _cachedAnimationWindow;
-        private static bool _isUiInjected = false;
         
-        // [수정] 성능 저하 방지를 위한 플래그 추가
         private static bool _isRefreshPending = false;
 
-        // Animation Window가 열려 있는지 확인하고, UI를 주입합니다.
+        // [수정] EditorApplication.update를 제거하고, 에디터 초기화 후 단 한 번만 실행되도록 변경
         static AnimationOffset()
         {
-            EditorApplication.update -= OnUpdate;
-            EditorApplication.update += OnUpdate;
+            EditorApplication.delayCall += InjectUI;
         }
 
-        private static void OnUpdate()
+        /// <summary>
+        /// 애니메이션 창을 찾아 UI를 주입하는 핵심 로직. 에디터 시작 시 한 번만 호출됩니다.
+        /// </summary>
+        private static void InjectUI()
         {
-            // [수정] 창이 캐시되어 있다면, 닫혔는지 여부만 가볍게 확인합니다.
-            if (_cachedAnimationWindow != null)
+            var editorAssembly = typeof(Editor).Assembly;
+            var animationWindows = Resources.FindObjectsOfTypeAll(editorAssembly.GetType("UnityEditor.AnimationWindow"));
+            if (animationWindows.Length == 0) return;
+
+            var animationWindow = (EditorWindow)animationWindows[0];
+            var rawRoot = animationWindow.rootVisualElement;
+            if (rawRoot == null) return;
+
+            // 스크립트 리컴파일 시 UI가 중복으로 추가되는 것을 방지
+            if (rawRoot.Q<VisualElement>("AnimationOffsetContainer") != null)
             {
-                // 창이 닫혔으면 캐시를 초기화합니다.
-                if (_cachedAnimationWindow.rootVisualElement.parent == null)
+                return;
+            }
+
+            var parentContainer = new VisualElement
+            {
+                name = "AnimationOffsetContainer", // 중복 주입 방지를 위한 이름 지정
+                style =
                 {
-                    _cachedAnimationWindow = null;
-                    _isUiInjected = false;
+                    position = Position.Absolute,
+                    right = 25f,
+                    bottom = 15f,
+                    width = 550f,
+                    height = 22f,
+                    flexDirection = FlexDirection.Row
                 }
-            }
-            // [수정] 창이 캐시되어 있지 않을 때만 창을 찾는 무거운 작업을 수행합니다.
-            else
-            {
-                var editorAssembly = typeof(Editor).Assembly;
-                var animationWindows = Resources.FindObjectsOfTypeAll(editorAssembly.GetType("UnityEditor.AnimationWindow"));
-                if (animationWindows.Length > 0)
-                {
-                    _cachedAnimationWindow = (EditorWindow)animationWindows[0];
-                }
-            }
+            };
 
-            // 창이 존재하고, 아직 UI가 주입되지 않았다면 주입을 시도합니다.
-            if (!_isUiInjected && _cachedAnimationWindow != null)
-            {
-                var rawRoot = _cachedAnimationWindow.rootVisualElement;
-                if (rawRoot == null) return;
+            var imguiContainer = new IMGUIContainer(OnInjectedGUI);
+            imguiContainer.style.flexGrow = 1;
 
-                var parentContainer = new VisualElement
-                {
-                    style =
-                    {
-                        position = Position.Absolute,
-                        right = 25f,
-                        bottom = 15f,
-                        width = 550f,
-                        height = 22f,
-                        flexDirection = FlexDirection.Row
-                    }
-                };
-
-                var imguiContainer = new IMGUIContainer(OnInjectedGUI);
-                imguiContainer.style.flexGrow = 1;
-
-                parentContainer.Add(imguiContainer);
-                rawRoot.Add(parentContainer);
-
-                _isUiInjected = true;
-            }
+            parentContainer.Add(imguiContainer);
+            rawRoot.Add(parentContainer);
         }
 
         // Animation Window에 Offset UI를 그립니다.
@@ -159,7 +142,6 @@ namespace CAT.Utility
             EditorGUILayout.EndHorizontal();
         }
 
-        // ... ApplyLoopOffset 및 다른 헬퍼 메서드들은 이전과 동일하게 유지 ...
         private static void ApplyLoopOffset(PropertyType propertyType)
         {
             if (offsetValue == 0) { Debug.LogWarning("Offset value is 0."); return; }
@@ -213,7 +195,6 @@ namespace CAT.Utility
 
             if (anyCurveModified)
             {
-                // [수정] EditorUtility.SetDirty(sourceClip); 라인 제거
                 Debug.Log($"Loop offset applied successfully: {offsetValue} " + (isTimeInputMode ? "s" : "frames"));
                 ForceRefreshAnimationWindow();
             }
@@ -223,7 +204,6 @@ namespace CAT.Utility
             }
         }
 
-        // 선택된 속성에 대해 오프셋이 적용된 새로운 AnimationCurve를 생성합니다.
         private static AnimationCurve CreateOffsetCurve(AnimationCurve originalCurve, float timeOffset, float loopDuration)
         {
             if (originalCurve.keys.Length == 0) return null;
@@ -237,7 +217,6 @@ namespace CAT.Utility
             }
             offsetKeys.Sort((a, b) => a.time.CompareTo(b.time));
 
-            // [수정] 중복 키 제거를 위한 더 안정적인 로직
             var finalKeys = new List<Keyframe>();
             const float epsilon = 0.0001f;
 
@@ -246,7 +225,6 @@ namespace CAT.Utility
                 finalKeys.Add(offsetKeys[0]);
                 for (int i = 1; i < offsetKeys.Count; i++)
                 {
-                    // 이전 키와 시간 값이 거의 동일하면 추가하지 않음
                     if (Mathf.Abs(offsetKeys[i].time - offsetKeys[i - 1].time) > epsilon)
                     {
                         finalKeys.Add(offsetKeys[i]);
@@ -254,12 +232,10 @@ namespace CAT.Utility
                 }
             }
 
-            // 루핑을 위한 시작/끝 지점의 값과 탄젠트를 계산
             float originalTimeAt0 = (0 - timeOffset + loopDuration * 100) % loopDuration;
             float valueAt0 = originalCurve.Evaluate(originalTimeAt0);
             float tangentAt0 = CalculateTangent(originalCurve, originalTimeAt0);
 
-            // 시작점에 키가 있는지 확인하고, 없으면 추가, 있으면 값/탄젠트 업데이트
             bool hasKeyAtStart = finalKeys.Count > 0 && Mathf.Abs(finalKeys[0].time) < epsilon;
             if (!hasKeyAtStart)
             {
@@ -274,7 +250,6 @@ namespace CAT.Utility
                 finalKeys[0] = key;
             }
 
-            // 끝점에 키가 있는지 확인하고, 없으면 추가, 있으면 값/탄젠트 업데이트
             bool hasKeyAtEnd = finalKeys.Count > 0 && Mathf.Abs(finalKeys[finalKeys.Count - 1].time - loopDuration) < epsilon;
             if (!hasKeyAtEnd)
             {
@@ -295,19 +270,16 @@ namespace CAT.Utility
             return newCurve;
         }
 
-        // [추가] 특정 시간의 커브 탄젠트를 계산하는 헬퍼 메서드
         private static float CalculateTangent(AnimationCurve curve, float time)
         {
             const float deltaTime = 0.0001f;
             float valueBefore = curve.Evaluate(time - deltaTime);
             float valueAfter = curve.Evaluate(time + deltaTime);
-            // 분모가 0이 되는 것을 방지
             float divisor = 2 * deltaTime;
             if (divisor == 0) return 0;
             return (valueAfter - valueBefore) / divisor;
         }
 
-        // 속성 이름이 지정된 PropertyType과 일치하는지 확인합니다.
         private static bool IsPropertyTypeMatch(string propertyName, PropertyType type)
         {
             switch (type)
@@ -321,7 +293,6 @@ namespace CAT.Utility
 
         #region Animation Window Reflection Utilities
 
-        // Animation Window의 상태 객체를 가져옵니다.
         private static object GetAnimationWindowState()
         {
             var animationWindowType = typeof(EditorWindow).Assembly.GetType("UnityEditor.AnimationWindow");
@@ -332,7 +303,6 @@ namespace CAT.Utility
             return stateProperty?.GetValue(window);
         }
 
-        // 상태 객체에서 현재 활성화된 AnimationClip을 가져옵니다.
         private static AnimationClip GetActiveAnimationClipFromState(object state)
         {
             if (state == null) return null;
@@ -340,7 +310,6 @@ namespace CAT.Utility
             return activeClipProperty?.GetValue(state) as AnimationClip;
         }
 
-        // 상태 객체에서 현재 활성화된 루트 GameObject를 가져옵니다.
         private static GameObject GetActiveRootGameObjectFromState(object state)
         {
             if (state == null) return null;
@@ -348,10 +317,8 @@ namespace CAT.Utility
             return rootGoProperty?.GetValue(state) as GameObject;
         }
 
-        // Animation Window를 강제로 새로고침하여 변경 사항을 반영합니다.
         private static void ForceRefreshAnimationWindow()
         {
-            // [수정] 새로고침이 이미 예약된 경우 중복 실행을 방지합니다.
             if (_isRefreshPending) return;
 
             try
@@ -362,17 +329,16 @@ namespace CAT.Utility
                 if (frameProperty == null) return;
                 int currentFrame = (int)frameProperty.GetValue(state, null);
                 
-                _isRefreshPending = true; // 새로고침 예약 플래그 설정
+                _isRefreshPending = true;
                 frameProperty.SetValue(state, currentFrame + 1, null);
                 
                 EditorApplication.delayCall += () => 
                 { 
                     if (state != null) 
                     {
-                        // 프레임을 원위치로 돌려놓습니다.
                         frameProperty.SetValue(state, currentFrame, null);
                     }
-                    _isRefreshPending = false; // 작업 완료 후 플래그 해제
+                    _isRefreshPending = false;
                 };
             }
             catch { /* Fails silently */ }
