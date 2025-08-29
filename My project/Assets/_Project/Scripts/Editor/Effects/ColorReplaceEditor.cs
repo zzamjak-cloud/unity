@@ -37,54 +37,53 @@ namespace CAT.Effects
                 isUIComponent = renderer != null;
             }
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel("Renderer Type");
-            EditorGUILayout.LabelField(isUIComponent ? "UI Graphic" : "Sprite Renderer", EditorStyles.boldLabel);
-            EditorGUILayout.EndHorizontal();
-
             EditorGUILayout.Space(5);
 
-            // 메인 컬러 필드 (의미있게 활용)
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            // 컬러 피커 --------------------------------------------------------------------------------------------
+            EditorGUILayout.LabelField("Replace Color", EditorStyles.boldLabel);
+            EditorGUILayout.Space(3);
             EditorGUI.BeginChangeCheck();
-            Color newColor = EditorGUILayout.ColorField(new GUIContent("Replace Color", "선택한 색상을 기준으로 HSV 범위를 자동 설정합니다"), color.colorValue);
+            EditorGUI.indentLevel++;
+            Color newColor = EditorGUILayout.ColorField(new GUIContent("Picker", "선택한 색상을 기준으로 HSV 범위를 자동 설정합니다"), color.colorValue);
             if (EditorGUI.EndChangeCheck())
             {
                 color.colorValue = newColor;
-                // 색상이 변경되면 HSV 범위를 자동으로 설정
-                SetHSVRangeFromColor(newColor);
+                SetHSVRangeFromColor(newColor);  // 색상이 변경되면 HSV 범위를 자동으로 설정
             }
-            
+            EditorGUI.indentLevel--;
+            EditorGUILayout.Space(3);
+
+            // compact, similar, wide 버튼 ------------------------------------------------------------------------
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("정확한 색상만", GUILayout.Width(100)))
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Compact", GUILayout.Width(80)))
             {
                 SetHSVRangeFromColor(color.colorValue, 0.02f); // 매우 좁은 범위
             }
-            if (GUILayout.Button("유사한 색상", GUILayout.Width(100)))
+            if (GUILayout.Button("Similar", GUILayout.Width(80)))
             {
                 SetHSVRangeFromColor(color.colorValue, 0.1f); // 중간 범위
             }
-            if (GUILayout.Button("넓은 범위", GUILayout.Width(100)))
+            if (GUILayout.Button("Wide", GUILayout.Width(80)))
             {
                 SetHSVRangeFromColor(color.colorValue, 0.2f); // 넓은 범위
             }
             EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndVertical();
+            // EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("HSV Range", EditorStyles.boldLabel);
+            EditorGUILayout.Space(3);
 
-            // 툴팁 추가
-            EditorGUILayout.HelpBox("HSV Range defines which hue values will be affected. Set Min and Max to target specific color ranges.", MessageType.Info);
-
-            // HSV 색상 다이어그램 (개선된 버전 - 어두운 표시)
+            // HSV 색상 다이어그램 (개선된 버전 - 어두운 표시) ------------------------------------------------------------------------
             DrawImprovedHSVDiagram(hsvRangeMin.floatValue, hsvRangeMax.floatValue);
 
-            // HSV Range Min/Max 슬라이더
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            float newMinValue = EditorGUILayout.Slider(new GUIContent("Min Range", "Minimum HSV range (0.0 ~ 1.0)"), hsvRangeMin.floatValue, 0f, 1f);
-            float newMaxValue = EditorGUILayout.Slider(new GUIContent("Max Range", "Maximum HSV range (0.0 ~ 1.0)"), hsvRangeMax.floatValue, 0f, 1f);
-            EditorGUILayout.EndVertical();
+            // HSV Min/Max 슬라이더
+            EditorGUILayout.Space(3);
+            EditorGUI.indentLevel++;
+            float newMinValue = EditorGUILayout.Slider(new GUIContent("Min", "Minimum HSV range (0.0 ~ 1.0)"), hsvRangeMin.floatValue, 0f, 1f);
+            float newMaxValue = EditorGUILayout.Slider(new GUIContent("Max", "Maximum HSV range (0.0 ~ 1.0)"), hsvRangeMax.floatValue, 0f, 1f);
+            EditorGUI.indentLevel--;
 
             // 슬라이더 값이 변경되었으면 SerializedProperty 업데이트
             if (Mathf.Abs(newMinValue - hsvRangeMin.floatValue) > 0.001f)
@@ -102,10 +101,10 @@ namespace CAT.Effects
             EditorGUI.indentLevel++;
 
             Vector4 currentAdjust = hsvAdjust.vector4Value;
-            currentAdjust.x = EditorGUILayout.Slider(new GUIContent("Hue", "Adjusts color hue"), currentAdjust.x, -1f, 1f);
-            currentAdjust.y = EditorGUILayout.Slider(new GUIContent("Saturation", "Adjusts color saturation"), currentAdjust.y, -1f, 1f);
-            currentAdjust.z = EditorGUILayout.Slider(new GUIContent("Value (Brightness)", "Adjusts brightness"), currentAdjust.z, -1f, 1f);
-            currentAdjust.w = EditorGUILayout.Slider(new GUIContent("Alpha", "Adjusts transparency"), currentAdjust.w, -1f, 1f);
+            currentAdjust.x = EditorGUILayout.Slider(new GUIContent("H", "Adjusts color hue"), currentAdjust.x, -1f, 1f);
+            currentAdjust.y = EditorGUILayout.Slider(new GUIContent("S", "Adjusts color saturation"), currentAdjust.y, -1f, 1f);
+            currentAdjust.z = EditorGUILayout.Slider(new GUIContent("V", "Adjusts brightness"), currentAdjust.z, -1f, 1f);
+            // currentAdjust.w = EditorGUILayout.Slider(new GUIContent("Alpha", "Adjusts transparency"), currentAdjust.w, -1f, 1f);
 
             EditorGUI.indentLevel--;
             hsvAdjust.vector4Value = currentAdjust;
@@ -115,7 +114,7 @@ namespace CAT.Effects
                 serializedObject.ApplyModifiedProperties();
                 EditorUtility.SetDirty(target);
                 
-                // This will trigger the OnValidate method in the component for live preview
+                // 프리팹 수정 기록
                 if (PrefabUtility.IsPartOfAnyPrefab(target))
                 {
                     PrefabUtility.RecordPrefabInstancePropertyModifications(target);
@@ -124,8 +123,8 @@ namespace CAT.Effects
 
             EditorGUILayout.Space(10);
 
-            // Reset Button (Quick Presets 기능 제거, Reset All Values만 남김)
-            if (GUILayout.Button("Reset All Values"))
+            // Reset Button (Quick Presets 기능 제거, Reset All Values만 남김) ------------------------------------------------------------------------
+            if (GUILayout.Button("Reset"))
             {
                 Undo.RecordObject(target, "Reset ColorReplace Values");
 
@@ -149,9 +148,6 @@ namespace CAT.Effects
                 }
             }
 
-            // Show info about material sharing for optimization
-            EditorGUILayout.Space(10);
-            EditorGUILayout.HelpBox("Objects with identical ColorReplace settings share materials to optimize draw calls. Changes made in play mode affect all objects using the same settings.", MessageType.Info);
         }
 
         /// <summary>
@@ -160,9 +156,9 @@ namespace CAT.Effects
         private void DrawImprovedHSVDiagram(float minRange, float maxRange)
         {
             Rect rect = GUILayoutUtility.GetRect(0, 20, GUILayout.ExpandWidth(true));
-            rect.height = 20;
-            rect.x += 2;
-            rect.width -= 4;
+            rect.height = 15;  // 높이 고정
+            rect.x += 14;      // 좌측 패딩
+            rect.width -= 8;  // 우측 패딩
 
             // 배경 그리기 (HSV 색상환)
             DrawHSVBackground(rect);
