@@ -663,10 +663,11 @@ namespace CAT.Effects
         {
             Bounds spriteBounds = sprite.bounds;
             
-            Vector2 tl = GetAnchorWorldPosition(topLeft, new Vector2(spriteBounds.min.x, spriteBounds.max.y));
-            Vector2 tr = GetAnchorWorldPosition(topRight, new Vector2(spriteBounds.max.x, spriteBounds.max.y));
-            Vector2 bl = GetAnchorWorldPosition(bottomLeft, new Vector2(spriteBounds.min.x, spriteBounds.min.y));
-            Vector2 br = GetAnchorWorldPosition(bottomRight, new Vector2(spriteBounds.max.x, spriteBounds.min.y));
+            // 앵커 위치를 로컬 좌표 기준으로 계산
+            Vector2 tl = GetAnchorLocalPosition(topLeft, new Vector2(spriteBounds.min.x, spriteBounds.max.y));
+            Vector2 tr = GetAnchorLocalPosition(topRight, new Vector2(spriteBounds.max.x, spriteBounds.max.y));
+            Vector2 bl = GetAnchorLocalPosition(bottomLeft, new Vector2(spriteBounds.min.x, spriteBounds.min.y));
+            Vector2 br = GetAnchorLocalPosition(bottomRight, new Vector2(spriteBounds.max.x, spriteBounds.min.y));
 
             InitializeArrays(spriteVertices.Length);
 
@@ -707,10 +708,10 @@ namespace CAT.Effects
                 uvMax = Vector2.Max(uvMax, uv);
             }
 
-            Vector2 tl = GetAnchorWorldPosition(topLeft, Vector2.zero);
-            Vector2 tr = GetAnchorWorldPosition(topRight, Vector2.zero);
-            Vector2 bl = GetAnchorWorldPosition(bottomLeft, Vector2.zero);
-            Vector2 br = GetAnchorWorldPosition(bottomRight, Vector2.zero);
+            Vector2 tl = GetAnchorLocalPosition(topLeft, Vector2.zero);
+            Vector2 tr = GetAnchorLocalPosition(topRight, Vector2.zero);
+            Vector2 bl = GetAnchorLocalPosition(bottomLeft, Vector2.zero);
+            Vector2 br = GetAnchorLocalPosition(bottomRight, Vector2.zero);
 
             int vertexIndex = 0;
             for (int y = 0; y <= subdivisions; y++)
@@ -795,7 +796,45 @@ namespace CAT.Effects
                 return originalPosition;
             }
 
-            return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+            if (deformMode == DeformMode.Sprite)
+            {
+                // Sprite 모드에서는 앵커의 월드 위치를 직접 사용
+                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+            }
+            else
+            {
+                // UI 모드에서는 기존 로직 유지
+                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+            }
+        }
+
+        private Vector2 GetAnchorLocalPosition(VertexAnchor anchor, Vector2 originalPosition)
+        {
+            if (!anchor.useAnchor || anchor.anchorTarget == null)
+            {
+                return originalPosition;
+            }
+
+            if (deformMode == DeformMode.Sprite)
+            {
+                // Sprite 모드에서는 앵커의 로컬 위치를 계산
+                // 앵커가 자식인 경우 로컬 위치 사용, 그렇지 않으면 월드 위치를 로컬로 변환
+                if (anchor.anchorTarget.IsChildOf(transform))
+                {
+                    return (Vector2)anchor.anchorTarget.localPosition + anchor.localOffset;
+                }
+                else
+                {
+                    // 월드 위치를 로컬 위치로 변환
+                    Vector3 worldPos = anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                    return transform.InverseTransformPoint(worldPos);
+                }
+            }
+            else
+            {
+                // UI 모드에서는 기존 로직 유지
+                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+            }
         }
 
         private Vector3 CalculateBilinearPosition(float x, float y)
@@ -823,10 +862,10 @@ namespace CAT.Effects
             }
             else
             {
-                Vector2 tl = GetAnchorWorldPosition(topLeft, Vector2.zero);
-                Vector2 tr = GetAnchorWorldPosition(topRight, Vector2.zero);
-                Vector2 bl = GetAnchorWorldPosition(bottomLeft, Vector2.zero);
-                Vector2 br = GetAnchorWorldPosition(bottomRight, Vector2.zero);
+                Vector2 tl = GetAnchorLocalPosition(topLeft, Vector2.zero);
+                Vector2 tr = GetAnchorLocalPosition(topRight, Vector2.zero);
+                Vector2 bl = GetAnchorLocalPosition(bottomLeft, Vector2.zero);
+                Vector2 br = GetAnchorLocalPosition(bottomRight, Vector2.zero);
                 
                 return BilinearInterpolate(bl, br, tl, tr, x, y);
             }
@@ -941,7 +980,9 @@ namespace CAT.Effects
             {
                 if (sprite == null) return;
                 
+                // Sprite 모드에서는 로컬 좌표 기준으로 앵커 위치 계산
                 Bounds bounds = sprite.bounds;
+                // 스프라이트의 로컬 바운드를 기준으로 앵커 위치 설정
                 topLeftPos = new Vector2(bounds.min.x, bounds.max.y);
                 topRightPos = new Vector2(bounds.max.x, bounds.max.y);
                 bottomLeftPos = new Vector2(bounds.min.x, bounds.min.y);
