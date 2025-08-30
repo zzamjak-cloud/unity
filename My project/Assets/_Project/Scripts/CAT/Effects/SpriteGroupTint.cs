@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace CAT.Effects
 {
-    [ExecuteAlways] // Unity 2018.2 이상에서 권장
     // [ExecuteInEditMode] // 구버전 Unity 사용 시 이것으로 교체
+    [ExecuteAlways] // Unity 2018.2 이상에서 권장
     public class SpriteGroupTint : MonoBehaviour
     {
         [SerializeField] private Color tintColor = Color.white;
@@ -36,6 +36,7 @@ namespace CAT.Effects
             CheckForColorChange();
         }
 
+        // MaterialPropertyBlock 초기화
         private void InitializeMPB()
         {
             if (mpb == null)
@@ -44,9 +45,9 @@ namespace CAT.Effects
             }
         }
 
+        // 색상 변경 확인
         private void CheckForColorChange()
         {
-            // 색상이 변경된 경우에만 적용
             if (tintColor != previousTintColor)
             {
                 ApplyTintToChildren();
@@ -54,11 +55,12 @@ namespace CAT.Effects
             }
         }
 
+        // 하위 오브젝트에 색상 적용
         public void ApplyTintToChildren()
         {
             InitializeMPB();
             
-            // SpriteRenderer 처리
+            // SpriteRenderer 인 경우에만 처리
             SpriteRenderer[] spriteRenderers = GetComponentsInChildren<SpriteRenderer>(true);
             foreach (SpriteRenderer renderer in spriteRenderers)
             {
@@ -76,7 +78,7 @@ namespace CAT.Effects
                 }
             }
 
-            // MeshRenderer 처리
+            // MeshRenderer 인 경우에만 처리
             MeshRenderer[] meshRenderers = GetComponentsInChildren<MeshRenderer>(true);
             foreach (MeshRenderer renderer in meshRenderers)
             {
@@ -114,7 +116,6 @@ namespace CAT.Effects
             ApplyTintToChildren();
         }
 
-        // 애니메이터에서 개별 색상 채널 제어용
         public void SetTintColorR(float r)
         {
             tintColor.r = r;
