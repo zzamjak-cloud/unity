@@ -117,8 +117,13 @@ namespace CAT.Effects
             Initialize();
             
 #if UNITY_EDITOR
-            // SpriteRenderer가 있다면 자동 변환 (백업 없이)
-            ConvertFromSpriteRenderer();
+            // SpriteRenderer가 있다면 자동 변환
+            if (GetComponent<SpriteRenderer>() != null)
+            {
+                ConvertFromSpriteRenderer();
+                // 변환 후 메시 업데이트
+                RefreshMesh();
+            }
 #endif
         }
 
@@ -327,6 +332,9 @@ namespace CAT.Effects
                 
                 // RectTransform을 일반 Transform으로 변환 (필요한 경우)
                 ConvertRectTransformToTransform();
+                
+                // 머티리얼 설정
+                SetupMaterial();
             }
         }
 
@@ -630,7 +638,15 @@ namespace CAT.Effects
         // ===== Sprite 메시 처리 =====
         private void UpdateSpriteMesh()
         {
-            if (sprite == null || meshFilter == null) return;
+            if (meshFilter == null) return;
+            
+            // sprite가 null인 경우 기본 사각형 메시 생성
+            if (sprite == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] sprite가 null입니다. 기본 메시를 생성합니다.");
+                CreateDefaultRectangleMesh();
+                return;
+            }
 
             CreateMesh();
 
@@ -690,6 +706,69 @@ namespace CAT.Effects
             {
                 triangles[i] = spriteTriangles[i];
             }
+        }
+
+        private void CreateDefaultRectangleMesh()
+        {
+            // sprite가 null인 경우 기본 1x1 사각형 메시 생성
+            int subdivisions = 1;
+            int vertexCount = (subdivisions + 1) * (subdivisions + 1);
+            
+            InitializeArrays(vertexCount);
+
+            Vector2 tl = GetAnchorLocalPosition(topLeft, new Vector2(-0.5f, 0.5f));
+            Vector2 tr = GetAnchorLocalPosition(topRight, new Vector2(0.5f, 0.5f));
+            Vector2 bl = GetAnchorLocalPosition(bottomLeft, new Vector2(-0.5f, -0.5f));
+            Vector2 br = GetAnchorLocalPosition(bottomRight, new Vector2(0.5f, -0.5f));
+
+            int vertexIndex = 0;
+            for (int y = 0; y <= subdivisions; y++)
+            {
+                float v = y / (float)subdivisions;
+                
+                for (int x = 0; x <= subdivisions; x++)
+                {
+                    float u = x / (float)subdivisions;
+                    
+                    Vector2 position = BilinearInterpolate(bl, br, tl, tr, u, v);
+                    vertices[vertexIndex] = new Vector3(position.x, position.y, 0);
+                    
+                    uvs[vertexIndex] = new Vector2(u, v);
+                    colors[vertexIndex] = spriteColor;
+                    vertexIndex++;
+                }
+            }
+            
+            triangles = new int[subdivisions * subdivisions * 6];
+            int triangleIndex = 0;
+            for (int y = 0; y < subdivisions; y++)
+            {
+                for (int x = 0; x < subdivisions; x++)
+                {
+                    int bottomLeftIndex = y * (subdivisions + 1) + x;
+                    int bottomRightIndex = bottomLeftIndex + 1;
+                    int topLeftIndex = bottomLeftIndex + subdivisions + 1;
+                    int topRightIndex = topLeftIndex + 1;
+                    
+                    triangles[triangleIndex++] = bottomLeftIndex;
+                    triangles[triangleIndex++] = topLeftIndex;
+                    triangles[triangleIndex++] = bottomRightIndex;
+                    
+                    triangles[triangleIndex++] = bottomRightIndex;
+                    triangles[triangleIndex++] = topLeftIndex;
+                    triangles[triangleIndex++] = topRightIndex;
+                }
+            }
+            
+            CreateMesh();
+            mesh.vertices = vertices;
+            mesh.uv = uvs;
+            mesh.colors = colors;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            
+            meshFilter.mesh = mesh;
         }
 
         private void CreateRectangleSpriteMesh()
@@ -1090,27 +1169,47 @@ namespace CAT.Effects
 
         private void SetupMaterial()
         {
-            if (deformMode != DeformMode.Sprite || meshRenderer == null || sprite == null)
+            if (deformMode != DeformMode.Sprite || meshRenderer == null)
                 return;
+                
+            // sprite가 null인 경우 기본 머티리얼 설정
+            if (sprite == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] sprite가 null입니다. 기본 머티리얼을 설정합니다.");
+                Material defaultMaterial = new Material(Shader.Find("Sprites/Default"));
+                meshRenderer.material = defaultMaterial;
+                meshRenderer.sortingLayerName = sortingLayerName;
+                meshRenderer.sortingOrder = sortingOrder;
+                return;
+            }
 
             Material targetMaterial = null;
 
-            if (useSharedMaterial)
+            // 항상 sprite의 texture를 사용하여 머티리얼 생성
+            if (sprite != null && sprite.texture != null)
             {
-                Texture2D spriteTexture = sprite.texture;
-                if (!sharedMaterials.TryGetValue(spriteTexture, out targetMaterial))
+                if (useSharedMaterial)
                 {
-                    targetMaterial = CreateSpriteMaterial(spriteTexture);
-                    sharedMaterials[spriteTexture] = targetMaterial;
+                    Texture2D spriteTexture = sprite.texture;
+                    if (!sharedMaterials.TryGetValue(spriteTexture, out targetMaterial))
+                    {
+                        targetMaterial = CreateSpriteMaterial(spriteTexture);
+                        sharedMaterials[spriteTexture] = targetMaterial;
+                    }
+                }
+                else
+                {
+                    if (instanceMaterial == null)
+                    {
+                        instanceMaterial = CreateSpriteMaterial(sprite.texture);
+                    }
+                    targetMaterial = instanceMaterial;
                 }
             }
             else
             {
-                if (instanceMaterial == null)
-                {
-                    instanceMaterial = CreateSpriteMaterial(sprite.texture);
-                }
-                targetMaterial = instanceMaterial;
+                Debug.LogWarning($"[{gameObject.name}] sprite 또는 texture가 null입니다. 기본 머티리얼을 사용합니다.");
+                targetMaterial = new Material(Shader.Find("Sprites/Default"));
             }
 
             meshRenderer.material = targetMaterial;
@@ -1121,8 +1220,17 @@ namespace CAT.Effects
         private Material CreateSpriteMaterial(Texture2D texture)
         {
             Material mat = new Material(Shader.Find("Sprites/Default"));
-            mat.mainTexture = texture;
-            mat.name = $"Sprite Deform Material ({texture.name})";
+            if (texture != null)
+            {
+                mat.mainTexture = texture;
+                mat.name = $"Sprite Deform Material ({texture.name})";
+            }
+            else
+            {
+                mat.name = "Sprite Deform Material (No Texture)";
+                Debug.LogWarning($"[{gameObject.name}] texture가 null입니다. 기본 머티리얼을 생성합니다.");
+            }
+            
             return mat;
         }
 
@@ -1421,12 +1529,14 @@ namespace CAT.Effects
             };
             hasBackupData = true;
 
-            // ImageDeform 설정 적용
+            // ImageDeform 설정 적용 (deformMode를 먼저 설정)
             deformMode = DeformMode.Sprite;
             sprite = spriteRendererBackup.sprite;
             spriteColor = spriteRendererBackup.color;
             sortingLayerName = spriteRendererBackup.sortingLayerName;
             sortingOrder = spriteRendererBackup.sortingOrder;
+            
+            Debug.Log($"[{gameObject.name}] 변환된 정보 - deformMode: {deformMode}, sprite: {(sprite != null ? sprite.name : "null")}, color: {spriteColor}");
 
             // Undo 시스템에 등록
             Undo.RecordObject(this, "Convert SpriteRenderer to ImageDeform");
@@ -1435,11 +1545,17 @@ namespace CAT.Effects
             // 필요한 컴포넌트 추가
             ValidateComponents();
 
+            // 머티리얼 즉시 설정
+            SetupMaterial();
+
             // 플립 적용 (필요시)
             if (spriteRendererBackup.flipX || spriteRendererBackup.flipY)
             {
                 ApplyFlip(spriteRendererBackup.flipX, spriteRendererBackup.flipY);
             }
+
+            // 메시 즉시 업데이트
+            RefreshMesh();
 
             EditorUtility.SetDirty(this);
             Debug.Log($"[{gameObject.name}] SpriteRenderer → ImageDeform 변환 완료!");

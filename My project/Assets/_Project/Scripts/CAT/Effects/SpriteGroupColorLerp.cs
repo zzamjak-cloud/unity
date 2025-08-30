@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// 그룹의 하위 자식 스프라이트 전체에 대한 타겟 컬러 Lerp 처리
+/// 그룹의 하위 자식 스프라이트와 메시 렌더러 전체에 대한 타겟 컬러 Lerp 처리
 /// 에디터와 런타임에서 실시간 업데이트 지원
 /// </summary>
 
@@ -20,12 +20,15 @@ namespace CAT.Effects
         [Header("Target 설정")]
         [SerializeField] private bool includeInactive = false;  // 비활성화된 오브젝트 포함 여부
         [SerializeField] private bool includeUIImages = true;  // UI 이미지 포함 여부
+        [SerializeField] private bool includeMeshRenderers = true;  // Mesh Renderer 포함 여부
         [SerializeField] private bool autoRefresh = true;  // 자식 오브젝트 변경시 자동 리프레시 여부
         
         // 캐시된 컴포넌트들과 PropertyBlock
         private List<SpriteRenderer> spriteRenderers = new List<SpriteRenderer>();
         private List<Image> uiImages = new List<Image>();
+        private List<MeshRenderer> meshRenderers = new List<MeshRenderer>();
         private List<MaterialPropertyBlock> spritePropertyBlocks = new List<MaterialPropertyBlock>();
+        private List<MaterialPropertyBlock> meshPropertyBlocks = new List<MaterialPropertyBlock>();
         
         // 공유 머티리얼 (성능 최적화)
         private static Material sharedSpriteMaterial;
@@ -126,7 +129,7 @@ namespace CAT.Effects
         {
             // 에디터에서 Inspector 값이 변경될 때
             // 컴포넌트가 초기화되지 않았으면 초기화
-            if (spriteRenderers == null || spritePropertyBlocks == null)
+            if (spriteRenderers == null || spritePropertyBlocks == null || meshRenderers == null)
             {
                 RefreshComponents();
             }
@@ -207,7 +210,7 @@ namespace CAT.Effects
             lastEditorUpdateTime = currentTime;
             
             // 컴포넌트가 초기화되지 않았으면 초기화
-            if (spriteRenderers == null || spritePropertyBlocks == null)
+            if (spriteRenderers == null || spritePropertyBlocks == null || meshRenderers == null)
             {
                 RefreshComponents();
             }
@@ -279,19 +282,23 @@ namespace CAT.Effects
         }
         
         /// <summary>
-        /// 모든 자식 스프라이트와 UI 이미지를 찾아서 캐시합니다.
+        /// 모든 자식 스프라이트, UI 이미지, 메시 렌더러를 찾아서 캐시합니다.
         /// </summary>
         public void RefreshComponents()
         {
             // 리스트 초기화 (null 체크)
             if (spriteRenderers == null) spriteRenderers = new List<SpriteRenderer>();
             if (uiImages == null) uiImages = new List<Image>();
+            if (meshRenderers == null) meshRenderers = new List<MeshRenderer>();
             if (spritePropertyBlocks == null) spritePropertyBlocks = new List<MaterialPropertyBlock>();
+            if (meshPropertyBlocks == null) meshPropertyBlocks = new List<MaterialPropertyBlock>();
             
             // 기존 데이터 클리어
             spriteRenderers.Clear();
             uiImages.Clear();
+            meshRenderers.Clear();
             spritePropertyBlocks.Clear();
+            meshPropertyBlocks.Clear();
             
             // SpriteRenderer 찾기
             SpriteRenderer[] sprites = GetComponentsInChildren<SpriteRenderer>(includeInactive);
@@ -326,10 +333,67 @@ namespace CAT.Effects
                 }
             }
             
+            // MeshRenderer 찾기
+            if (includeMeshRenderers)
+            {
+                MeshRenderer[] meshes = GetComponentsInChildren<MeshRenderer>(includeInactive);
+                foreach (var mesh in meshes)
+                {
+                    meshRenderers.Add(mesh);
+                    
+                    // PropertyBlock 생성
+                    MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
+                    meshPropertyBlocks.Add(propertyBlock);
+                    
+                    // 기존 머티리얼의 MainTexture를 보존하면서 공유 머티리얼 적용
+                    if (sharedSpriteMaterial != null)
+                    {
+                        // 기존 머티리얼의 MainTexture 저장
+                        Texture originalMainTex = null;
+                        
+                        #if UNITY_EDITOR
+                        if (!Application.isPlaying)
+                        {
+                            // 에디터 모드에서는 sharedMaterial 사용
+                            if (mesh.sharedMaterial != null && mesh.sharedMaterial.HasProperty("_MainTex"))
+                            {
+                                originalMainTex = mesh.sharedMaterial.GetTexture("_MainTex");
+                            }
+                        }
+                        else
+                        {
+                            // 런타임에서는 material 사용
+                            if (mesh.material != null && mesh.material.HasProperty("_MainTex"))
+                            {
+                                originalMainTex = mesh.material.GetTexture("_MainTex");
+                            }
+                        }
+                        #else
+                        // 빌드에서는 material 사용
+                        if (mesh.material != null && mesh.material.HasProperty("_MainTex"))
+                        {
+                            originalMainTex = mesh.material.GetTexture("_MainTex");
+                        }
+                        #endif
+                        
+                        // 공유 머티리얼을 복사하여 새로운 머티리얼 생성
+                        Material newMaterial = new Material(sharedSpriteMaterial);
+                        
+                        // 기존 MainTexture가 있으면 복사
+                        if (originalMainTex != null)
+                        {
+                            newMaterial.SetTexture("_MainTex", originalMainTex);
+                        }
+                        
+                        mesh.material = newMaterial;
+                    }
+                }
+            }
+            
             UpdateLastValues();
             
             #if UNITY_EDITOR
-            Debug.Log($"RefreshComponents 완료 - SpriteRenderer: {spriteRenderers.Count}개, UI Image: {uiImages.Count}개");
+            Debug.Log($"RefreshComponents 완료 - SpriteRenderer: {spriteRenderers.Count}개, UI Image: {uiImages.Count}개, MeshRenderer: {meshRenderers.Count}개");
             #endif
         }
         
@@ -338,6 +402,7 @@ namespace CAT.Effects
         /// </summary>
         private void ValidatePropertyBlockConnections()
         {
+            // SpriteRenderer PropertyBlock 검증
             for (int i = 0; i < spriteRenderers.Count && i < spritePropertyBlocks.Count; i++)
             {
                 var sprite = spriteRenderers[i];
@@ -357,14 +422,35 @@ namespace CAT.Effects
                     }
                 }
             }
+            
+            // MeshRenderer PropertyBlock 검증
+            for (int i = 0; i < meshRenderers.Count && i < meshPropertyBlocks.Count; i++)
+            {
+                var mesh = meshRenderers[i];
+                var propertyBlock = meshPropertyBlocks[i];
+                
+                if (mesh != null && propertyBlock != null)
+                {
+                    var checkPropertyBlock = new MaterialPropertyBlock();
+                    mesh.GetPropertyBlock(checkPropertyBlock);
+                    
+                    // PropertyBlock이 비어있거나 연결이 끊어진 경우 재연결
+                    if (checkPropertyBlock.isEmpty)
+                    {
+                        propertyBlock.SetColor(TargetColorProperty, targetColor);
+                        propertyBlock.SetFloat(LerpValueProperty, blendAmount);
+                        mesh.SetPropertyBlock(propertyBlock);
+                    }
+                }
+            }
         }
         
         /// <summary>
-        /// PropertyBlock을 스프라이트에 재적용합니다.
+        /// PropertyBlock을 스프라이트와 메시에 재적용합니다.
         /// </summary>
         private void RefreshPropertyBlocks()
         {
-            // PropertyBlock이 제대로 연결되어 있는지 확인하고 재연결
+            // SpriteRenderer PropertyBlock 재연결
             for (int i = 0; i < spriteRenderers.Count && i < spritePropertyBlocks.Count; i++)
             {
                 var sprite = spriteRenderers[i];
@@ -393,6 +479,36 @@ namespace CAT.Effects
                     }
                 }
             }
+            
+            // MeshRenderer PropertyBlock 재연결
+            for (int i = 0; i < meshRenderers.Count && i < meshPropertyBlocks.Count; i++)
+            {
+                var mesh = meshRenderers[i];
+                var propertyBlock = meshPropertyBlocks[i];
+                
+                if (mesh != null && propertyBlock != null)
+                {
+                    // 현재 설정값으로 PropertyBlock 업데이트
+                    propertyBlock.SetColor(TargetColorProperty, targetColor);
+                    propertyBlock.SetFloat(LerpValueProperty, blendAmount);
+                    
+                    // PropertyBlock을 메시에 강제 재적용
+                    mesh.SetPropertyBlock(propertyBlock);
+                    
+                    // 추가 검증: PropertyBlock이 제대로 적용되었는지 확인
+                    if (blendAmount > 0.1f)
+                    {
+                        // PropertyBlock이 실제로 적용되었는지 확인
+                        var appliedPropertyBlock = new MaterialPropertyBlock();
+                        mesh.GetPropertyBlock(appliedPropertyBlock);
+                        if (appliedPropertyBlock.isEmpty)
+                        {
+                            // PropertyBlock이 비어있으면 다시 적용
+                            mesh.SetPropertyBlock(propertyBlock);
+                        }
+                    }
+                }
+            }
         }
         
         /// <summary>
@@ -401,7 +517,7 @@ namespace CAT.Effects
         public void UpdateBlending()
         {
             // 안전성 검사: 컴포넌트가 초기화되지 않았으면 스킵
-            if (spriteRenderers == null || spritePropertyBlocks == null || uiImages == null)
+            if (spriteRenderers == null || spritePropertyBlocks == null || uiImages == null || meshRenderers == null || meshPropertyBlocks == null)
             {
                 return;
             }
@@ -434,6 +550,32 @@ namespace CAT.Effects
                         {
                             // PropertyBlock이 연결되지 않았으면 재연결
                             sprite.SetPropertyBlock(propertyBlock);
+                        }
+                    }
+                }
+            }
+            
+            // MeshRenderer 업데이트 (PropertyBlock 사용 - 성능 최적화)
+            for (int i = 0; i < meshRenderers.Count && i < meshPropertyBlocks.Count; i++)
+            {
+                var mesh = meshRenderers[i];
+                var propertyBlock = meshPropertyBlocks[i];
+                
+                if (mesh != null && propertyBlock != null)
+                {
+                    propertyBlock.SetColor(TargetColorProperty, targetColor);
+                    propertyBlock.SetFloat(LerpValueProperty, blendAmount);
+                    mesh.SetPropertyBlock(propertyBlock);
+                    
+                    // PropertyBlock 연결 상태 확인 및 재연결
+                    if (blendAmount > 0.1f)
+                    {
+                        var checkPropertyBlock = new MaterialPropertyBlock();
+                        mesh.GetPropertyBlock(checkPropertyBlock);
+                        if (checkPropertyBlock.isEmpty)
+                        {
+                            // PropertyBlock이 연결되지 않았으면 재연결
+                            mesh.SetPropertyBlock(propertyBlock);
                         }
                     }
                 }
@@ -528,6 +670,7 @@ namespace CAT.Effects
             
             // PropertyBlock 정리
             spritePropertyBlocks?.Clear();
+            meshPropertyBlocks?.Clear();
         }
         
         #region 에디터 전용 메서드
@@ -539,7 +682,7 @@ namespace CAT.Effects
         {
             RefreshComponents();
             UpdateBlending();
-            Debug.Log($"컴포넌트 새로고침 완료 - SpriteRenderer: {spriteRenderers.Count}개, UI Image: {uiImages.Count}개");
+            Debug.Log($"컴포넌트 새로고침 완료 - SpriteRenderer: {spriteRenderers.Count}개, UI Image: {uiImages.Count}개, MeshRenderer: {meshRenderers.Count}개");
         }
 
         #endif

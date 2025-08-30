@@ -5,7 +5,7 @@ using UnityEditor.SceneManagement;
 using System.IO;
 #endif
 
-namespace CAT.Utility
+namespace CAT.Effects
 {
     [ExecuteAlways]
     [RequireComponent(typeof(SpriteRenderer))]
