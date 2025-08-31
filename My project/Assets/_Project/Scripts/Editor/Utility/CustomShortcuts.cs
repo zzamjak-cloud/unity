@@ -29,10 +29,6 @@ namespace CAT.Utility
             CreateTextMeshProElement();
         }
 
-        // =================================================================
-        // ===== 수정된 부분 시작 =====
-        // =================================================================
-
         // Square Sprite 생성 (Mac: Command+Option+S, Windows: Ctrl+Alt+S)
         [MenuItem("GameObject/2D Object/Custom Square Sprite %&s", false, 0)]
         static void CreateSquareSprite()
@@ -73,11 +69,6 @@ namespace CAT.Utility
                 EditorSceneManager.MarkSceneDirty(squareGO.scene);
             }
         }
-
-        // =================================================================
-        // ===== 수정된 부분 끝 =====
-        // =================================================================
-
 
         // 제네릭 메소드로 UI 요소 생성
         private static void CreateUIElement<T>(string elementName) where T : Graphic
