@@ -132,20 +132,26 @@ namespace CAT.Effects
         {
             Initialize();
             AutoCreateAnchorPoints();
-            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
-            if (!HasSpriteGroupColorLerpParent())
+            // 부모에 SpriteGroupColorLerp가 있는 경우에도 메시는 업데이트하되, 머티리얼은 별도 처리
+            RefreshMesh();
+            
+            // 부모에 SpriteGroupColorLerp가 있는 경우 알림
+            if (HasSpriteGroupColorLerpParent())
             {
-                RefreshMesh();
+                NotifyParentSpriteGroupColorLerp();
             }
         }
 
         void OnEnable()
         {
             UpdateReferences();
-            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
-            if (!HasSpriteGroupColorLerpParent())
+            // 부모에 SpriteGroupColorLerp가 있는 경우에도 메시는 업데이트하되, 머티리얼은 별도 처리
+            RefreshMesh();
+            
+            // 부모에 SpriteGroupColorLerp가 있는 경우 알림
+            if (HasSpriteGroupColorLerpParent())
             {
-                RefreshMesh();
+                NotifyParentSpriteGroupColorLerp();
             }
         }
 
@@ -184,6 +190,12 @@ namespace CAT.Effects
                     ValidateComponents();
                     UpdateReferences();
                     RefreshMesh();
+                    
+                    // 부모에 SpriteGroupColorLerp가 있는 경우 알림
+                    if (HasSpriteGroupColorLerpParent())
+                    {
+                        NotifyParentSpriteGroupColorLerp();
+                    }
                 }
             };
         }
@@ -339,7 +351,7 @@ namespace CAT.Effects
                 // RectTransform을 일반 Transform으로 변환 (필요한 경우)
                 ConvertRectTransformToTransform();
                 
-                // 머티리얼 설정
+                // 부모에 SpriteGroupColorLerp가 있는 경우에도 머티리얼 설정은 수행 (Shared_SpriteColorLerp 머티리얼 사용)
                 SetupMaterial();
             }
         }
@@ -507,6 +519,7 @@ namespace CAT.Effects
                 meshFilter = GetComponent<MeshFilter>();
                 meshRenderer = GetComponent<MeshRenderer>();
                 CreateMesh();
+                // 부모에 SpriteGroupColorLerp가 있는 경우에도 머티리얼 설정은 수행 (Shared_SpriteColorLerp 머티리얼 사용)
                 SetupMaterial();
             }
         }
@@ -886,6 +899,76 @@ namespace CAT.Effects
             }
         }
         
+        /// <summary>
+        /// Shared_SpriteColorLerp 머티리얼을 찾거나 생성합니다.
+        /// SpriteGroupColorLerp에서 사용하는 공유 머티리얼과 동일한 머티리얼을 사용합니다.
+        /// </summary>
+        private Material GetSharedSpriteColorLerpMaterial()
+        {
+            try
+            {
+                // CAT/2D/SpriteGroupColorLerp 셰이더를 찾습니다
+                Shader spriteColorLerpShader = Shader.Find("CAT/2D/SpriteGroupColorLerp");
+                if (spriteColorLerpShader == null)
+                {
+                    Debug.LogWarning($"[{gameObject.name}] CAT/2D/SpriteGroupColorLerp 셰이더를 찾을 수 없습니다. 기본 머티리얼을 사용합니다.");
+                    return new Material(Shader.Find("Sprites/Default"));
+                }
+                
+                // Shared_SpriteColorLerp 머티리얼을 생성합니다
+                Material sharedMaterial = new Material(spriteColorLerpShader);
+                sharedMaterial.name = "Shared_SpriteColorLerp";
+                
+                // 스프라이트 텍스처가 있다면 설정합니다
+                if (sprite != null && sprite.texture != null)
+                {
+                    sharedMaterial.mainTexture = sprite.texture;
+                }
+                
+                return sharedMaterial;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[{gameObject.name}] Shared_SpriteColorLerp 머티리얼 생성 중 오류 발생: {ex.Message}");
+                return new Material(Shader.Find("Sprites/Default"));
+            }
+        }
+        
+        /// <summary>
+        /// 부모의 SpriteGroupColorLerp 컴포넌트에게 새로 생성된 MeshRenderer를 알려줍니다.
+        /// </summary>
+        private void NotifyParentSpriteGroupColorLerp()
+        {
+            try
+            {
+                // 리플렉션을 사용하여 SpriteGroupColorLerp 타입을 찾습니다
+                System.Type spriteGroupColorLerpType = System.Type.GetType("CAT.Effects.SpriteGroupColorLerp");
+                if (spriteGroupColorLerpType == null)
+                {
+                    return; // 타입이 존재하지 않으면 무시
+                }
+                
+                // 부모에서 SpriteGroupColorLerp 컴포넌트를 찾습니다
+                var parentSpriteGroupColorLerp = GetComponentInParent(spriteGroupColorLerpType);
+                if (parentSpriteGroupColorLerp != null)
+                {
+                    // RefreshComponents 메서드를 호출하여 새로 생성된 MeshRenderer를 인식하도록 합니다
+                    var refreshMethod = spriteGroupColorLerpType.GetMethod("RefreshComponents", 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    
+                    if (refreshMethod != null)
+                    {
+                        refreshMethod.Invoke(parentSpriteGroupColorLerp, null);
+                        Debug.Log($"[{gameObject.name}] 부모 SpriteGroupColorLerp에게 새 MeshRenderer 알림 완료");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[{gameObject.name}] 부모 SpriteGroupColorLerp 알림 중 오류: {ex.Message}");
+            }
+        }
+        
         // 앵커 위치 계산
         private Vector3 GetAnchorPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
@@ -1232,10 +1315,21 @@ namespace CAT.Effects
             if (deformMode != DeformMode.Sprite || meshRenderer == null)
                 return;
                 
-            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
+            // 부모에 SpriteGroupColorLerp가 있는 경우 Shared_SpriteColorLerp 머티리얼 사용
             if (HasSpriteGroupColorLerpParent())
             {
-                return;
+                // Shared_SpriteColorLerp 머티리얼 찾기 또는 생성
+                Material sharedColorLerpMaterial = GetSharedSpriteColorLerpMaterial();
+                if (sharedColorLerpMaterial != null)
+                {
+                    meshRenderer.material = sharedColorLerpMaterial;
+                    meshRenderer.sortingLayerName = sortingLayerName;
+                    meshRenderer.sortingOrder = sortingOrder;
+                    
+                    // 부모 SpriteGroupColorLerp에게 새로 생성된 MeshRenderer를 알려줍니다
+                    NotifyParentSpriteGroupColorLerp();
+                    return;
+                }
             }
                 
             // sprite가 null인 경우 기본 머티리얼 설정
@@ -1621,7 +1715,7 @@ namespace CAT.Effects
             // 필요한 컴포넌트 추가
             ValidateComponents();
 
-            // 머티리얼 즉시 설정
+            // 부모에 SpriteGroupColorLerp가 있는 경우에도 머티리얼 설정은 수행 (Shared_SpriteColorLerp 머티리얼 사용)
             SetupMaterial();
 
             // 플립 적용 (필요시)
@@ -1632,6 +1726,12 @@ namespace CAT.Effects
 
             // 메시 즉시 업데이트
             RefreshMesh();
+            
+            // 부모에 SpriteGroupColorLerp가 있는 경우 알림
+            if (HasSpriteGroupColorLerpParent())
+            {
+                NotifyParentSpriteGroupColorLerp();
+            }
 
             EditorUtility.SetDirty(this);
             Debug.Log($"[{gameObject.name}] SpriteRenderer → ImageDeform 변환 완료!");
