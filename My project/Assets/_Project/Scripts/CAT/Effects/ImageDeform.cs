@@ -26,6 +26,7 @@ namespace CAT.Effects
             Sprite       // Sprite Renderer 변형 모드
         }
 
+        // 메시 분할 레벨
         public enum SubdivisionLevel
         {
             None = 1,
@@ -59,7 +60,7 @@ namespace CAT.Effects
         [SerializeField] private bool useSubdivision = false;
         [SerializeField] private SubdivisionLevel subdivisionLevel = SubdivisionLevel.Level2x2;
 
-        [Header("Sprite 설정 (Sprite 모드용)")]
+        [Header("Sprite 설정")]
         [SerializeField] private Sprite sprite;
         [SerializeField] private Color spriteColor = Color.white;
         [SerializeField] private string sortingLayerName = "Default";
@@ -131,12 +132,21 @@ namespace CAT.Effects
         {
             Initialize();
             AutoCreateAnchorPoints();
+            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
+            if (!HasSpriteGroupColorLerpParent())
+            {
+                RefreshMesh();
+            }
         }
 
         void OnEnable()
         {
             UpdateReferences();
-            RefreshMesh();
+            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
+            if (!HasSpriteGroupColorLerpParent())
+            {
+                RefreshMesh();
+            }
         }
 
         void OnDisable()
@@ -315,14 +325,10 @@ namespace CAT.Effects
                 if (GetComponent<MeshFilter>() == null)
                 {
                     MeshFilter meshFilter = gameObject.AddComponent<MeshFilter>();
-                    // MeshFilter를 ImageDeform 컴포넌트 바로 앞에 배치
-                    MoveComponentBefore<MeshFilter, ImageDeform>();
                 }
                 if (GetComponent<MeshRenderer>() == null)
                 {
                     MeshRenderer meshRenderer = gameObject.AddComponent<MeshRenderer>();
-                    // MeshRenderer를 ImageDeform 컴포넌트 바로 앞에 배치
-                    MoveComponentBefore<MeshRenderer, ImageDeform>();
                 }
 
                 // UI 관련 컴포넌트 제거
@@ -338,6 +344,7 @@ namespace CAT.Effects
             }
         }
 
+        // ===== 컴포넌트 제거 =====
         private void RemoveComponentSafely<T>() where T : Component
         {
             T component = GetComponent<T>();
@@ -350,6 +357,7 @@ namespace CAT.Effects
             }
         }
 
+        // ===== RectTransform을 Transform으로 변환 =====
         private void ConvertRectTransformToTransform()
         {
             RectTransform rectTransform = GetComponent<RectTransform>();
@@ -371,6 +379,8 @@ namespace CAT.Effects
             }
         }
 
+        /*
+        // ===== 컴포넌트 순서 변경 =====
         private void MoveComponentBefore<TComponent, TTarget>() 
             where TComponent : Component 
             where TTarget : Component
@@ -380,9 +390,10 @@ namespace CAT.Effects
             Debug.Log($"[{gameObject.name}] {typeof(TComponent).Name} 컴포넌트가 추가되었습니다. " +
                      $"인스펙터에서 {typeof(TTarget).Name} 위로 이동시켜 주세요.");
         }
+        */
 #endif
 
-        // ===== 공개 메서드 =====
+        // ===== 공개 메서드(애니메이션에서 사용할 수 있는 메서드) =====
         public void SetTopLeftAnchor(Transform anchor) 
         {
             topLeft.anchorTarget = anchor;
@@ -483,6 +494,7 @@ namespace CAT.Effects
             UpdateReferences();
         }
 
+        // 참조 업데이트
         private void UpdateReferences()
         {
             if (deformMode == DeformMode.UIImage)
@@ -499,6 +511,7 @@ namespace CAT.Effects
             }
         }
 
+        // 앵커 포인트 자동 생성
         private void AutoCreateAnchorPoints()
         {
             if (ShouldCreateAnchorPoints())
@@ -507,6 +520,7 @@ namespace CAT.Effects
             }
         }
 
+        // 메시 업데이트
         private void UpdateMesh()
         {
             if (optimizePerformance && !HasAnchorMoved())
@@ -515,6 +529,7 @@ namespace CAT.Effects
             RefreshMesh();
         }
 
+        // 앵커 이동 확인
         private bool HasAnchorMoved()
         {
             // 간단한 구현: 매번 업데이트 (더 복잡한 최적화 가능)
@@ -533,13 +548,13 @@ namespace CAT.Effects
 
             vh.Clear();
 
-            if (useSubdivision)
+            if (useSubdivision)  // 메시 분할 사용 여부
             {
-                CreateSubdividedUIMesh(vh, vertices);
+                CreateSubdividedUIMesh(vh, vertices);  // 메시 분할 생성
             }
             else
             {
-                CreateSimpleUIMesh(vh, vertices);
+                CreateSimpleUIMesh(vh, vertices);  // 간단한 UI 메시 생성
             }
 
             UpdatePerformanceInfo(vh);
@@ -552,6 +567,7 @@ namespace CAT.Effects
             // Legacy method - 사용하지 않음
         }
 
+        // 간단한 UI 메시 생성 (subdivision 레벨이 0인 경우)
         private void CreateSimpleUIMesh(VertexHelper vh, List<UIVertex> originalVertices)
         {
             if (originalVertices.Count < 4) return;
@@ -572,14 +588,15 @@ namespace CAT.Effects
             vh.AddTriangle(2, 1, 3);
         }
 
+        // 메시 분할 생성
         private void CreateSubdividedUIMesh(VertexHelper vh, List<UIVertex> originalVertices)
         {
             if (originalVertices.Count < 4) return;
 
             Vector4 uvRect = GetAdjustedUV();
-            int subdivisions = (int)subdivisionLevel;
+            int subdivisions = (int)subdivisionLevel;  // 메시 분할 레벨
 
-            for (int y = 0; y <= subdivisions; y++)
+            for (int y = 0; y <= subdivisions; y++)  // 메시 분할 레벨 만큼 반복
             {
                 float yLerp = (float)y / subdivisions;
                 
@@ -597,7 +614,7 @@ namespace CAT.Effects
                 }
             }
 
-            for (int y = 0; y < subdivisions; y++)
+            for (int y = 0; y < subdivisions; y++)  // 메시 분할 레벨 만큼 반복
             {
                 for (int x = 0; x < subdivisions; x++)
                 {
@@ -609,6 +626,7 @@ namespace CAT.Effects
             }
         }
 
+        // UI 버텍스 생성
         private UIVertex CreateUIVertex(Vector3 position, Vector2 uv)
         {
             UIVertex vertex = UIVertex.simpleVert;
@@ -675,6 +693,7 @@ namespace CAT.Effects
             meshFilter.mesh = mesh;
         }
 
+        // Tight Sprite 메시 생성 (Tight Mesh)
         private void CreateTightSpriteMesh(Vector2[] spriteVertices, Vector2[] spriteUVs, ushort[] spriteTriangles)
         {
             Bounds spriteBounds = sprite.bounds;
@@ -708,6 +727,7 @@ namespace CAT.Effects
             }
         }
 
+        // 기본 사각형 메시 생성
         private void CreateDefaultRectangleMesh()
         {
             // sprite가 null인 경우 기본 1x1 사각형 메시 생성
@@ -771,6 +791,7 @@ namespace CAT.Effects
             meshFilter.mesh = mesh;
         }
 
+        // 기본 사각형 Sprite 메시 생성
         private void CreateRectangleSpriteMesh()
         {
             int subdivisions = (int)subdivisionLevel;
@@ -839,6 +860,33 @@ namespace CAT.Effects
         }
 
         // ===== 유틸리티 메서드 =====
+        
+        /// <summary>
+        /// 부모 오브젝트에 SpriteGroupColorLerp 컴포넌트가 있는지 안전하게 확인합니다.
+        /// SpriteGroupColorLerp 스크립트가 없는 프로젝트에서도 에러가 발생하지 않습니다.
+        /// </summary>
+        private bool HasSpriteGroupColorLerpParent()
+        {
+            try
+            {
+                // 리플렉션을 사용하여 SpriteGroupColorLerp 타입을 찾습니다
+                System.Type spriteGroupColorLerpType = System.Type.GetType("CAT.Effects.SpriteGroupColorLerp");
+                if (spriteGroupColorLerpType == null)
+                {
+                    return false; // 타입이 존재하지 않으면 false 반환
+                }
+                
+                // 부모에서 해당 컴포넌트를 찾습니다
+                return GetComponentInParent(spriteGroupColorLerpType) != null;
+            }
+            catch (System.Exception)
+            {
+                // 어떤 에러가 발생하더라도 false를 반환하여 안전하게 처리합니다
+                return false;
+            }
+        }
+        
+        // 앵커 위치 계산
         private Vector3 GetAnchorPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
             if (!anchor.useAnchor || anchor.anchorTarget == null)
@@ -868,6 +916,7 @@ namespace CAT.Effects
             }
         }
 
+        // 앵커 월드 위치 계산
         private Vector2 GetAnchorWorldPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
             if (!anchor.useAnchor || anchor.anchorTarget == null)
@@ -887,6 +936,7 @@ namespace CAT.Effects
             }
         }
 
+        // 앵커 로컬 위치 계산
         private Vector2 GetAnchorLocalPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
             if (!anchor.useAnchor || anchor.anchorTarget == null)
@@ -916,6 +966,7 @@ namespace CAT.Effects
             }
         }
 
+        // 이중 선형 (Bilinear) 보간 위치 계산
         private Vector3 CalculateBilinearPosition(float x, float y)
         {
             if (deformMode == DeformMode.UIImage)
@@ -950,6 +1001,7 @@ namespace CAT.Effects
             }
         }
 
+        // 이중 선형 (Bilinear) 보간
         private Vector2 BilinearInterpolate(Vector2 p00, Vector2 p10, Vector2 p01, Vector2 p11, float u, float v)
         {
             float u1 = 1f - u;
@@ -961,6 +1013,7 @@ namespace CAT.Effects
             );
         }
 
+        // 월드 위치를 캔버스 위치로 변환
         private Vector3 WorldToCanvasPosition(Vector3 worldPosition)
         {
             if (parentCanvas == null)
@@ -990,6 +1043,7 @@ namespace CAT.Effects
             return localPoint;
         }
 
+        // 조정된 UV 반환
         private Vector4 GetAdjustedUV()
         {
             if (deformMode == DeformMode.UIImage)
@@ -1024,6 +1078,7 @@ namespace CAT.Effects
         }
 
         // ===== 앵커포인트 생성 =====
+        // 앵커포인트 생성 여부 확인
         private bool ShouldCreateAnchorPoints()
         {
             if (topLeft.anchorTarget != null || topRight.anchorTarget != null ||
@@ -1040,11 +1095,12 @@ namespace CAT.Effects
             return tl == null && tr == null && bl == null && br == null;
         }
 
+        // 앵커포인트 생성
         private void CreateAnchorPoints()
         {
             Vector2 topLeftPos, topRightPos, bottomLeftPos, bottomRightPos;
 
-            if (deformMode == DeformMode.UIImage)
+            if (deformMode == DeformMode.UIImage)  // UI 모드 앵커포인트 생성
             {
                 RectTransform rectTransform = transform as RectTransform;
                 if (rectTransform == null) return;
@@ -1055,7 +1111,7 @@ namespace CAT.Effects
                 bottomLeftPos = new Vector2(rect.xMin, rect.yMin);
                 bottomRightPos = new Vector2(rect.xMax, rect.yMin);
             }
-            else
+            else  // Sprite 모드 앵커포인트 생성
             {
                 if (sprite == null) return;
                 
@@ -1088,12 +1144,13 @@ namespace CAT.Effects
 #endif
         }
 
+        // 앵커포인트 생성
         private GameObject CreateAnchorPoint(string name, Vector2 localPosition)
         {
             GameObject anchorPoint = new GameObject(name);
             anchorPoint.transform.SetParent(transform, false);
 
-            if (deformMode == DeformMode.UIImage)
+            if (deformMode == DeformMode.UIImage)  // UI 모드 앵커포인트 생성
             {
                 RectTransform anchorRect = anchorPoint.AddComponent<RectTransform>();
                 anchorRect.anchorMin = Vector2.one * 0.5f;
@@ -1104,7 +1161,7 @@ namespace CAT.Effects
                 anchorRect.localScale = Vector3.one;
                 anchorRect.localRotation = Quaternion.identity;
             }
-            else
+            else  // Sprite 모드 앵커포인트 생성
             {
                 anchorPoint.transform.localPosition = localPosition;
                 anchorPoint.transform.localScale = Vector3.one;
@@ -1138,6 +1195,7 @@ namespace CAT.Effects
             }
         }
 
+        // 메시 정리
         private void CleanupMesh()
         {
             if (mesh != null)
@@ -1157,6 +1215,7 @@ namespace CAT.Effects
             }
         }
 
+        // 메시 배열 초기화
         private void InitializeArrays(int vertexCount)
         {
             if (vertices == null || vertices.Length != vertexCount)
@@ -1167,10 +1226,17 @@ namespace CAT.Effects
             }
         }
 
+        // 머티리얼 설정
         private void SetupMaterial()
         {
             if (deformMode != DeformMode.Sprite || meshRenderer == null)
                 return;
+                
+            // 부모에 SpriteGroupColorLerp가 있는 경우 머티리얼 설정을 건너뜀
+            if (HasSpriteGroupColorLerpParent())
+            {
+                return;
+            }
                 
             // sprite가 null인 경우 기본 머티리얼 설정
             if (sprite == null)
@@ -1217,6 +1283,7 @@ namespace CAT.Effects
             meshRenderer.sortingOrder = sortingOrder;
         }
 
+        // 스프라이트 머티리얼 생성
         private Material CreateSpriteMaterial(Texture2D texture)
         {
             Material mat = new Material(Shader.Find("Sprites/Default"));
@@ -1252,6 +1319,7 @@ namespace CAT.Effects
 #endif
         }
 
+        // 성능 정보 로깅
         public void LogPerformanceInfo()
         {
             int vertexCount, triangleCount;
@@ -1279,6 +1347,7 @@ namespace CAT.Effects
 
         // ===== 기즈모 그리기 =====
 #if UNITY_EDITOR
+        // 기즈모 그리기
         void OnDrawGizmosSelected()
         {
             if (!showVertices) return;
@@ -1295,6 +1364,7 @@ namespace CAT.Effects
             }
         }
 
+        // UI 기즈모 그리기
         private void DrawUIGizmos()
         {
             RectTransform rectTransform = transform as RectTransform;
@@ -1321,6 +1391,7 @@ namespace CAT.Effects
             Gizmos.DrawLine(corners[3], corners[0]);
         }
 
+        // Sprite 기즈모 그리기
         private void DrawSpriteGizmos()
         {
             for (int i = 0; i < vertices.Length; i++)
@@ -1361,6 +1432,7 @@ namespace CAT.Effects
             sortingOrderProp = serializedObject.FindProperty("sortingOrder");
         }
 
+        // 인스펙터 그리기
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
@@ -1477,6 +1549,7 @@ namespace CAT.Effects
             serializedObject.ApplyModifiedProperties();
         }
 
+        // 정렬 레이어 이름 배열 반환
         private string[] GetSortingLayerNames()
         {
             var layers = SortingLayer.layers;
@@ -1509,12 +1582,15 @@ namespace CAT.Effects
         [HideInInspector][SerializeField] private SpriteRendererBackup spriteRendererBackup;
         [HideInInspector][SerializeField] private bool hasBackupData = false;
 
+        /// <summary>
+        /// SpriteRenderer에서 ImageDeform으로 자동 변환
+        /// </summary>
         private void ConvertFromSpriteRenderer()
         {
             SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
             if (spriteRenderer == null) return;
 
-            Debug.Log($"[{gameObject.name}] SpriteRenderer에서 ImageDeform으로 자동 변환 중...");
+            // Debug.Log($"[{gameObject.name}] SpriteRenderer에서 ImageDeform으로 자동 변환 중...");
 
             // SpriteRenderer 정보 백업
             spriteRendererBackup = new SpriteRendererBackup
@@ -1536,7 +1612,7 @@ namespace CAT.Effects
             sortingLayerName = spriteRendererBackup.sortingLayerName;
             sortingOrder = spriteRendererBackup.sortingOrder;
             
-            Debug.Log($"[{gameObject.name}] 변환된 정보 - deformMode: {deformMode}, sprite: {(sprite != null ? sprite.name : "null")}, color: {spriteColor}");
+            // Debug.Log($"[{gameObject.name}] 변환된 정보 - deformMode: {deformMode}, sprite: {(sprite != null ? sprite.name : "null")}, color: {spriteColor}");
 
             // Undo 시스템에 등록
             Undo.RecordObject(this, "Convert SpriteRenderer to ImageDeform");
@@ -1561,6 +1637,7 @@ namespace CAT.Effects
             Debug.Log($"[{gameObject.name}] SpriteRenderer → ImageDeform 변환 완료!");
         }
 
+        // ImageDeform에서 SpriteRenderer로 복원
         private void ConvertToSpriteRenderer()
         {
             // 백업 데이터가 없거나 Sprite 모드가 아니면 복원하지 않음
@@ -1603,6 +1680,7 @@ namespace CAT.Effects
             Debug.Log($"[{gameObject.name}] ImageDeform → SpriteRenderer 복원 완료!");
         }
 
+        // 원래대로 복원
         private void RestoreOriginalScale()
         {
             // 플립으로 인한 음수 스케일을 원래대로 복원
@@ -1612,6 +1690,7 @@ namespace CAT.Effects
             transform.localScale = scale;
         }
 
+        // 플립 적용
         private void ApplyFlip(bool flipX, bool flipY)
         {
             // Transform 스케일을 통한 플립 구현
