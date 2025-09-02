@@ -1,21 +1,45 @@
 using UnityEngine;
 
+/// <summary>
+/// 캐릭터의 애니메이션 상태를 정의하는 열거형
+/// </summary>
+public enum CharacterAnimationState
+{
+    Idle,
+    Walk,
+    Run,
+    Attack,
+    Blank,
+    Ceremony,
+    Death,
+}
+
+// 캐릭터 이동 스크립트
 public class CharacterMovement : MonoBehaviour
 {
-    // 이동 속도
-    public float moveSpeed = 5f;
-    public float runSpeedMultiplier = 1.5f;
+    [Header("Movement Settings")]
+    [SerializeField] private float moveSpeed = 5f;  // 이동 속도
+    [SerializeField] private float runSpeedMultiplier = 1.5f;  // 달리기 속도 배수
+    [SerializeField] [Range(0.01f, 0.1f)] private float zDepthWeight = 0.05f; // Z축 깊이 조절을 위한 가중치
 
-    // Z축 깊이 조절을 위한 가중치
-    [Range(0.01f, 0.1f)] 
-    public float zDepthWeight = 0.05f;
+    [Header("Effects")]
+    [SerializeField] private ParticleSystem moveEffect;  // 이동시 이펙트 파티클
 
-    public ParticleSystem dustEffect;
-
-    // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
-    public Animator anim;
+    [Header("Animation")]
+    [SerializeField] private Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
     
     private Rigidbody2D rb;
+    private CharacterAnimationState currentAnimationState = CharacterAnimationState.Idle;
+    
+    // 애니메이션 파라미터 이름들을 상수로 정의
+    private static readonly string ANIM_IS_MOVING = "IsMoving";
+    private static readonly string ANIM_IS_RUNNING = "IsRunning";
+    private static readonly string ANIM_ATTACK = "Attack";
+    private static readonly string ANIM_CEREMONY = "Ceremony";
+    private static readonly string ANIM_BLANK = "Blank";
+    private static readonly string ANIM_DEATH = "Death";
+
+    // 추후 계속 확장해서 사용할 예정
 
     void Start()
     {
@@ -39,22 +63,16 @@ public class CharacterMovement : MonoBehaviour
 
     void Update()
     {
-        // 입력 값 받기
+        // 이동에 대한 입력 값 받기
         float moveX = Input.GetAxisRaw("Horizontal");
         float moveY = Input.GetAxisRaw("Vertical");
         bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
-        // 현재 재생 중인 애니메이션의 정보를 가져옵니다.
-        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
-
-        // 공격, Blank, Ceremony가 아닐 때만 이동 처리
-        bool canMove = !stateInfo.IsName("Attack") && !stateInfo.IsName("Blank") && !stateInfo.IsName("Ceremony");
+        // 현재 애니메이션 상태 확인
+        UpdateAnimationState();
         
-        // Death 상태일 때는 영원히 움직일 수 없습니다.
-        if (stateInfo.IsName("Death"))
-        {
-            canMove = false;
-        }
+        // 이동 가능 여부 확인
+        bool canMove = CanMove();
 
         Vector2 movement = Vector2.zero;
         if (canMove)
@@ -63,7 +81,7 @@ public class CharacterMovement : MonoBehaviour
         }
         
         float currentSpeed = moveSpeed;
-        if (isShiftPressed)
+        if (isShiftPressed)  // 달리기 키 입력 시 속도 증가
         {
             currentSpeed *= runSpeedMultiplier;
         }
@@ -71,11 +89,17 @@ public class CharacterMovement : MonoBehaviour
         // Rigidbody를 사용해 이동
         rb.linearVelocity = movement.normalized * currentSpeed;
 
-        // 캐릭터 방향 전환 처리
-        FlipCharacter(moveX);
+        // 캐릭터 방향 전환 처리 (이동 가능한 상태일 때만)
+        if (canMove)
+        {
+            FlipCharacter(moveX);
+        }
 
         // 애니메이션 상태 제어
         HandleAnimations(movement.magnitude, isShiftPressed);
+        
+        // 특수 애니메이션 입력 처리
+        HandleSpecialAnimationInputs();
     }
     
     void LateUpdate()
@@ -84,6 +108,63 @@ public class CharacterMovement : MonoBehaviour
         Vector3 newPosition = transform.position;
         newPosition.z = transform.position.y * zDepthWeight;
         transform.position = newPosition;
+    }
+    
+    /// <summary>
+    /// 현재 애니메이션 상태를 업데이트합니다.
+    /// </summary>
+    private void UpdateAnimationState()
+    {
+        if (anim == null) return;
+        
+        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+        
+        if (stateInfo.IsName("Death"))
+        {
+            currentAnimationState = CharacterAnimationState.Death;
+        }
+        else if (stateInfo.IsName("Attack"))
+        {
+            currentAnimationState = CharacterAnimationState.Attack;
+        }
+        else if (stateInfo.IsName("Blank"))
+        {
+            currentAnimationState = CharacterAnimationState.Blank;
+        }
+        else if (stateInfo.IsName("Ceremony"))
+        {
+            currentAnimationState = CharacterAnimationState.Ceremony;
+        }
+        else if (stateInfo.IsName("Run"))
+        {
+            currentAnimationState = CharacterAnimationState.Run;
+        }
+        else if (stateInfo.IsName("Walk"))
+        {
+            currentAnimationState = CharacterAnimationState.Walk;
+        }
+        else
+        {
+            currentAnimationState = CharacterAnimationState.Idle;
+        }
+    }
+    
+    /// <summary>
+    /// 현재 애니메이션 상태에 따라 이동 가능 여부를 반환합니다.
+    /// </summary>
+    private bool CanMove()
+    {
+        switch (currentAnimationState)
+        {
+            case CharacterAnimationState.Death:
+            case CharacterAnimationState.Attack:
+            case CharacterAnimationState.Blank:
+            case CharacterAnimationState.Ceremony:
+            // 이동 불가능한 상태들 확장해서 사용할 예정
+                return false;
+            default:
+                return true;
+        }
     }
     
     // 캐릭터의 방향을 X축 스케일을 이용해 반전시키는 함수
@@ -109,59 +190,87 @@ public class CharacterMovement : MonoBehaviour
         // 이동 상태에 따른 애니메이션 트리거
         if (movementMagnitude > 0)
         {
-            if (isRunning)
+            if (isRunning) // 달리기 상태일 때
             {
-                anim.SetTrigger("Run");
-                anim.ResetTrigger("Walk");
-                anim.ResetTrigger("Idle");
+                anim.SetBool(ANIM_IS_RUNNING, true);
+                anim.SetBool(ANIM_IS_MOVING, false);
 
-                // Run 상태일 때 이펙트 재생
-                if (dustEffect != null && !dustEffect.isPlaying)
-                {
-                    dustEffect.Play();
-                }
+                PlaymoveEffect(true);  // Run 상태일 때 이펙트 재생
             }
-            else
+            else // 걷기 상태일 때
             {
-                anim.SetTrigger("Walk");
-                anim.ResetTrigger("Run");
-                anim.ResetTrigger("Idle");
-                // Run에서 다른 상태로 전환될 때 이펙트 재생 멈추기
-                if (dustEffect != null && dustEffect.isPlaying)
-                {
-                    // 파티클 생성만 멈추고, 현재 파티클은 계속 재생
-                    dustEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
-                }
+                anim.SetBool(ANIM_IS_MOVING, true);
+                anim.SetBool(ANIM_IS_RUNNING, false);
+                
+                PlaymoveEffect(true);  // 걷기 상태일 때 이펙트 재생
             }
         }
-        else
+        else // 멈출 때
         {
-            anim.SetTrigger("Idle");
-            anim.ResetTrigger("Walk");
-            anim.ResetTrigger("Run");
-            // 멈출 때 이펙트 재생 멈추기
-            if (dustEffect != null && dustEffect.isPlaying)
-            {
-                dustEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
-            }
+            anim.SetBool(ANIM_IS_MOVING, false);
+            anim.SetBool(ANIM_IS_RUNNING, false);
+            
+            PlaymoveEffect(false);  // 이펙트 재생 멈추기
         }
-
-        // 특정 키 입력에 따른 애니메이션 발동
+    }
+    
+    /// <summary>
+    /// 특수 애니메이션 입력을 처리합니다.
+    /// </summary>
+    private void HandleSpecialAnimationInputs()
+    {
+        if (anim == null) return;
+        
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            anim.SetTrigger("Attack");
+            anim.SetTrigger(ANIM_ATTACK);
         }
         else if (Input.GetKeyDown(KeyCode.C))
         {
-            anim.SetTrigger("Ceremony");
+            anim.SetTrigger(ANIM_CEREMONY);
         }
         else if (Input.GetKeyDown(KeyCode.B))
         {
-            anim.SetTrigger("Blank");
+            anim.SetTrigger(ANIM_BLANK);
         }
         else if (Input.GetKeyDown(KeyCode.K))
         {
-            anim.SetTrigger("Death");
+            anim.SetTrigger(ANIM_DEATH);
         }
+    }
+    
+    /// <summary>
+    /// 먼지 이펙트를 재생하거나 정지합니다.
+    /// </summary>
+    /// <param name="play">true면 재생, false면 정지</param>
+    private void PlaymoveEffect(bool play)
+    {
+        if (moveEffect == null) return;
+        
+        if (play && !moveEffect.isPlaying)
+        {
+            moveEffect.Play();
+        }
+        else if (!play && moveEffect.isPlaying)
+        {
+            // 파티클 생성만 멈추고, 현재 파티클은 계속 재생
+            moveEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+        }
+    }
+    
+    /// <summary>
+    /// 현재 애니메이션 상태를 반환합니다.
+    /// </summary>
+    public CharacterAnimationState GetCurrentAnimationState()
+    {
+        return currentAnimationState;
+    }
+    
+    /// <summary>
+    /// 특정 애니메이션 상태인지 확인합니다.
+    /// </summary>
+    public bool IsInAnimationState(CharacterAnimationState state)
+    {
+        return currentAnimationState == state;
     }
 }
