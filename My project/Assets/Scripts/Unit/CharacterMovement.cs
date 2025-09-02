@@ -10,6 +10,8 @@ public class CharacterMovement : MonoBehaviour
     [Range(0.01f, 0.1f)] 
     public float zDepthWeight = 0.05f;
 
+    public ParticleSystem dustEffect;
+
     // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
     public Animator anim;
     
@@ -112,12 +114,24 @@ public class CharacterMovement : MonoBehaviour
                 anim.SetTrigger("Run");
                 anim.ResetTrigger("Walk");
                 anim.ResetTrigger("Idle");
+
+                // Run 상태일 때 이펙트 재생
+                if (dustEffect != null && !dustEffect.isPlaying)
+                {
+                    dustEffect.Play();
+                }
             }
             else
             {
                 anim.SetTrigger("Walk");
                 anim.ResetTrigger("Run");
                 anim.ResetTrigger("Idle");
+                // Run에서 다른 상태로 전환될 때 이펙트 재생 멈추기
+                if (dustEffect != null && dustEffect.isPlaying)
+                {
+                    // 파티클 생성만 멈추고, 현재 파티클은 계속 재생
+                    dustEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+                }
             }
         }
         else
@@ -125,6 +139,11 @@ public class CharacterMovement : MonoBehaviour
             anim.SetTrigger("Idle");
             anim.ResetTrigger("Walk");
             anim.ResetTrigger("Run");
+            // 멈출 때 이펙트 재생 멈추기
+            if (dustEffect != null && dustEffect.isPlaying)
+            {
+                dustEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+            }
         }
 
         // 특정 키 입력에 따른 애니메이션 발동
