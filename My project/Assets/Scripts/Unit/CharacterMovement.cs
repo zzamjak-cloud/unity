@@ -15,7 +15,7 @@ public enum CharacterAnimationState
 }
 
 // 캐릭터 이동 스크립트
-public class CharacterMovement : MonoBehaviour
+public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBlankEffect
 {
     [Header("Movement Settings")]
     [SerializeField] private float moveSpeed = 5f;  // 이동 속도
@@ -24,6 +24,8 @@ public class CharacterMovement : MonoBehaviour
 
     [Header("Effects")]
     [SerializeField] private ParticleSystem moveEffect;  // 이동시 이펙트 파티클
+    [SerializeField] private ParticleSystem attackEffect;  // 공격시 이펙트 파티클
+    [SerializeField] private ParticleSystem blankEffect;  // blank 애니메이션시 이펙트 파티클
 
     [Header("Animation")]
     [SerializeField] private Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
@@ -40,6 +42,13 @@ public class CharacterMovement : MonoBehaviour
     private static readonly string ANIM_DEATH = "Death";
 
     // 추후 계속 확장해서 사용할 예정
+
+    void Awake()
+    {
+        moveEffect.gameObject.SetActive(false);
+        attackEffect.gameObject.SetActive(false);
+        blankEffect.gameObject.SetActive(false);
+    }
 
     void Start()
     {
@@ -194,23 +203,25 @@ public class CharacterMovement : MonoBehaviour
             {
                 anim.SetBool(ANIM_IS_RUNNING, true);
                 anim.SetBool(ANIM_IS_MOVING, false);
+                moveEffect.gameObject.SetActive(true);
 
-                PlaymoveEffect(true);  // Run 상태일 때 이펙트 재생
+                PlayMoveEffect(true);  // Run 상태일 때 이펙트 재생
             }
             else // 걷기 상태일 때
             {
                 anim.SetBool(ANIM_IS_MOVING, true);
                 anim.SetBool(ANIM_IS_RUNNING, false);
+                moveEffect.gameObject.SetActive(true);
                 
-                PlaymoveEffect(true);  // 걷기 상태일 때 이펙트 재생
+                PlayMoveEffect(true);  // 걷기 상태일 때 이펙트 재생
             }
         }
         else // 멈출 때
         {
             anim.SetBool(ANIM_IS_MOVING, false);
             anim.SetBool(ANIM_IS_RUNNING, false);
-            
-            PlaymoveEffect(false);  // 이펙트 재생 멈추기
+                
+            PlayMoveEffect(false);  // 이펙트 재생 멈추기
         }
     }
     
@@ -243,19 +254,125 @@ public class CharacterMovement : MonoBehaviour
     /// 먼지 이펙트를 재생하거나 정지합니다.
     /// </summary>
     /// <param name="play">true면 재생, false면 정지</param>
-    private void PlaymoveEffect(bool play)
+    public void PlayMoveEffect(bool play)
     {
         if (moveEffect == null) return;
         
-        if (play && !moveEffect.isPlaying)
+        if (play)
         {
-            moveEffect.Play();
+            // 이펙트가 비활성화되어 있다면 활성화
+            if (!moveEffect.gameObject.activeInHierarchy)
+            {
+                moveEffect.gameObject.SetActive(true);
+            }
+            
+            if (!moveEffect.isPlaying)
+            {
+                moveEffect.Play();
+            }
         }
-        else if (!play && moveEffect.isPlaying)
+        else
         {
-            // 파티클 생성만 멈추고, 현재 파티클은 계속 재생
-            moveEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+            if (moveEffect.isPlaying)
+            {
+                // 파티클 생성만 멈추고, 현재 파티클은 계속 재생
+                moveEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+            }
+            
+            // 파티클이 모두 사라진 후 비활성화
+            StartCoroutine(WaitForMoveEffectToComplete());
         }
+    }
+    
+    /// <summary>
+    /// 공격 이펙트를 재생합니다.
+    /// 애니메이션 이벤트에서 호출되어야 합니다.
+    /// </summary>
+    public void PlayAttackEffect()
+    {
+        if (attackEffect == null) return;
+        
+        // 공격 이펙트가 비활성화되어 있다면 활성화
+        if (!attackEffect.gameObject.activeInHierarchy)
+        {
+            attackEffect.gameObject.SetActive(true);
+        }
+        
+        // 공격 이펙트 재생
+        attackEffect.Play();
+        
+        // 이펙트가 자신의 수명을 모두 플레이하도록 설정
+        // StopEmitting을 false로 설정하여 현재 파티클들이 완전히 재생될 때까지 기다림
+        StartCoroutine(WaitForEffectToComplete());
+    }
+    
+    /// <summary>
+    /// Blank 이펙트를 재생합니다.
+    /// 애니메이션 이벤트에서 호출되어야 합니다.
+    /// </summary>
+    public void PlayBlankEffect()
+    {
+        if (blankEffect == null) return;
+        
+        // Blank 이펙트가 비활성화되어 있다면 활성화
+        if (!blankEffect.gameObject.activeInHierarchy)
+        {
+            blankEffect.gameObject.SetActive(true);
+        }
+        
+        // Blank 이펙트 재생
+        blankEffect.Play();
+        
+        // 이펙트가 자신의 수명을 모두 플레이하도록 설정
+        // StopEmitting을 false로 설정하여 현재 파티클들이 완전히 재생될 때까지 기다림
+        StartCoroutine(WaitForBlankEffectToComplete());
+    }
+    
+    /// <summary>
+    /// 공격 이펙트가 완전히 재생될 때까지 기다리는 코루틴
+    /// </summary>
+    private System.Collections.IEnumerator WaitForEffectToComplete()
+    {
+        // 이펙트가 재생 중일 때까지 기다림
+        while (attackEffect.isPlaying)
+        {
+            yield return null;
+        }
+        
+        // 이펙트가 완전히 재생된 후 정지하고 비활성화
+        attackEffect.Stop();
+        attackEffect.gameObject.SetActive(false);
+    }
+    
+    /// <summary>
+    /// Blank 이펙트가 완전히 재생될 때까지 기다리는 코루틴
+    /// </summary>
+    private System.Collections.IEnumerator WaitForBlankEffectToComplete()
+    {
+        // 이펙트가 재생 중일 때까지 기다림
+        while (blankEffect.isPlaying)
+        {
+            yield return null;
+        }
+        
+        // 이펙트가 완전히 재생된 후 정지하고 비활성화
+        blankEffect.Stop();
+        blankEffect.gameObject.SetActive(false);
+    }
+    
+    /// <summary>
+    /// 이동 이펙트가 완전히 사라질 때까지 기다린 후 비활성화하는 코루틴
+    /// </summary>
+    private System.Collections.IEnumerator WaitForMoveEffectToComplete()
+    {
+        // 파티클이 모두 사라질 때까지 기다림
+        while (moveEffect.particleCount > 0)
+        {
+            yield return null;
+        }
+        
+        // 파티클이 모두 사라진 후 비활성화
+        moveEffect.gameObject.SetActive(false);
     }
     
     /// <summary>

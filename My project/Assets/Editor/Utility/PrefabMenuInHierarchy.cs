@@ -15,13 +15,13 @@ namespace CAT.Utility
     [InitializeOnLoad]
     public static class PrefabMenuInHierarchy
     {
-        private const string PrefabFolderPath = "Assets/_Project/Prefabs"; // 프리팹이 저장된 폴더 경로
+        private const string PrefabFolderPath = "Assets/VFX/Presets"; // 프리팹이 저장된 폴더 경로
         private static readonly GUIContent buttonContent;
 
         static PrefabMenuInHierarchy()
         {
             EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowGUI;
-            buttonContent = new GUIContent(" ▼ 프리팹 추가", "지정된 폴더의 프리팹을 생성합니다. (검색 및 스크롤 가능)");
+            buttonContent = new GUIContent(" ▼ 프리셋 추가", "지정된 폴더의 프리팹을 생성합니다. (검색 및 스크롤 가능)");
         }
 
         private static void OnHierarchyWindowGUI(int instanceID, Rect selectionRect)
