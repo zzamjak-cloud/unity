@@ -308,6 +308,7 @@ GameObject:
   - component: {fileID: 1123864557012624132}
   - component: {fileID: -8754662933476582879}
   - component: {fileID: 7716366046737812305}
+  - component: {fileID: 272022624915963215}
   m_Layer: 8
   m_Name: PlayerModelBase
   m_TagString: Player
@@ -397,6 +398,43 @@ MonoBehaviour:
   anim: {fileID: 5669484096789715401}
   enableKeyboardInput: 1
   enableMouseInput: 0
+--- !u!70 &272022624915963215
+CapsuleCollider2D:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1436011341205173466}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Density: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ForceSendLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ForceReceiveLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_ContactCaptureLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_CallbackLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_IsTrigger: 1
+  m_UsedByEffector: 0
+  m_CompositeOperation: 0
+  m_CompositeOrder: 0
+  m_Offset: {x: 0, y: 0.33}
+  m_Size: {x: 0.54, y: 0.79}
+  m_Direction: 0
 --- !u!1 &1780408805158563296
 GameObject:
   m_ObjectHideFlags: 0
