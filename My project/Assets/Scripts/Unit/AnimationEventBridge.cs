@@ -7,7 +7,7 @@ using System;
 /// </summary>
 public class AnimationEventBridge : MonoBehaviour
 {
-    [SerializeField] private MonoBehaviour[] targetScripts;
+    [SerializeField] private MonoBehaviour[] targetScripts;  // 연결할 스크립트 배열
     
     void Start()
     {
@@ -167,26 +167,8 @@ public class AnimationEventBridge : MonoBehaviour
     }
 }
 
-/// <summary>
-/// 공격 이펙트를 재생할 수 있는 인터페이스
-/// </summary>
-public interface IAttackEffect
-{
-    void PlayAttackEffect();
-}
+public interface IAttackEffect { void PlayAttackEffect(); } // 공격 이펙트
 
-/// <summary>
-/// 이동 이펙트를 재생할 수 있는 인터페이스
-/// </summary>
-public interface IMoveEffect
-{
-    void PlayMoveEffect(bool play);
-}
+public interface IMoveEffect { void PlayMoveEffect(bool play); } // 이동 이펙트
 
-/// <summary>
-/// Blank 이펙트를 재생할 수 있는 인터페이스
-/// </summary>
-public interface IBlankEffect
-{
-    void PlayBlankEffect();
-}
+public interface IBlankEffect { void PlayBlankEffect(); } // Blank 이펙트

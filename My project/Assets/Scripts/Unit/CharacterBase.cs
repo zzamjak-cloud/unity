@@ -2,26 +2,15 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// 캐릭터의 애니메이션 상태를 정의하는 열거형
+/// 캐릭터의 기본 기능을 제공하는 추상 클래스
+/// 플레이어와 적 캐릭터 모두 이 클래스를 상속받아 공통 기능을 사용합니다.
 /// </summary>
-public enum CharacterAnimationState
-{
-    Idle,
-    Walk,
-    Run,
-    Attack,
-    Blank,
-    Ceremony,
-    Death,
-}
-
-// 캐릭터 이동 스크립트
-public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBlankEffect
+public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAttackEffect, IMoveEffect, IBlankEffect
 {
     [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 5f;  // 이동 속도
-    [SerializeField] private float runSpeedMultiplier = 1.5f;  // 달리기 속도 배수
-    [SerializeField] [Range(0.01f, 0.1f)] private float zDepthWeight = 0.05f; // Z축 깊이 조절을 위한 가중치
+    [SerializeField] protected float moveSpeed = 5f;  // 이동 속도
+    [SerializeField] protected float runSpeedMultiplier = 1.5f;  // 달리기 속도 배수
+    [SerializeField] [Range(0.01f, 0.1f)] protected float zDepthWeight = 0.05f; // Z축 깊이 조절을 위한 가중치
 
     [System.Serializable]
     public struct EffectData
@@ -30,48 +19,48 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
         public GameObject effectPrefab;  // 이펙트 프리팹
     }
     
-    [SerializeField] private EffectData moveEffectData;  // 이동 이펙트 데이터
-    
-    [SerializeField] private EffectData attackEffectData;  // 공격 이펙트 데이터
-    
-    [SerializeField] private EffectData blankEffectData;  // Blank 이펙트 데이터
+    [Header("Effects")]
+    [SerializeField] protected EffectData moveEffectData;  // 이동 이펙트 데이터
+    [SerializeField] protected EffectData attackEffectData;  // 공격 이펙트 데이터
+    [SerializeField] protected EffectData blankEffectData;  // Blank 이펙트 데이터
     
     // 활성화된 이펙트 인스턴스들을 추적
-    private ParticleSystem activeMoveEffect;  // 이동 이펙트는 1개만 유지
+    protected ParticleSystem activeMoveEffect;  // 이동 이펙트는 1개만 유지
     
     // 오브젝트 풀링을 위한 이펙트 풀
-    private Queue<ParticleSystem> attackEffectPool = new Queue<ParticleSystem>();
-    private Queue<ParticleSystem> blankEffectPool = new Queue<ParticleSystem>();
-    private const int EFFECT_POOL_SIZE = 3;  // 풀 크기
+    protected Queue<ParticleSystem> attackEffectPool = new Queue<ParticleSystem>();
+    protected Queue<ParticleSystem> blankEffectPool = new Queue<ParticleSystem>();
+    protected const int EFFECT_POOL_SIZE = 3;  // 풀 크기
     
     // 활성화된 이펙트들을 추적 (풀에서 나온 이펙트들)
-    private List<ParticleSystem> activeAttackEffects = new List<ParticleSystem>();
-    private List<ParticleSystem> activeBlankEffects = new List<ParticleSystem>();
+    protected List<ParticleSystem> activeAttackEffects = new List<ParticleSystem>();
+    protected List<ParticleSystem> activeBlankEffects = new List<ParticleSystem>();
 
     [Header("Animation")]
-    [SerializeField] private Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
+    [SerializeField] protected Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
     
-    private Rigidbody2D rb;
-    private CharacterAnimationState currentAnimationState = CharacterAnimationState.Idle;
+    protected Rigidbody2D rb;
+    protected CharacterAnimationState currentAnimationState = CharacterAnimationState.Idle;
     
     // 애니메이션 파라미터 이름들을 상수로 정의
-    private static readonly string ANIM_IS_MOVING = "IsMoving";
-    private static readonly string ANIM_IS_RUNNING = "IsRunning";
-    private static readonly string ANIM_ATTACK = "Attack";
-    private static readonly string ANIM_CEREMONY = "Ceremony";
-    private static readonly string ANIM_BLANK = "Blank";
-    private static readonly string ANIM_DEATH = "Death";
+    protected static readonly string ANIM_IS_MOVING = "IsMoving";
+    protected static readonly string ANIM_IS_RUNNING = "IsRunning";
+    protected static readonly string ANIM_ATTACK = "Attack";
+    protected static readonly string ANIM_CEREMONY = "Ceremony";
+    protected static readonly string ANIM_BLANK = "Blank";
+    protected static readonly string ANIM_DEATH = "Death";
 
-    // 추후 계속 확장해서 사용할 예정
+    // 현재 이동 상태
+    protected Vector2 currentMovement = Vector2.zero;
+    protected bool isCurrentlyRunning = false;
 
-    void Awake()
+    protected virtual void Awake()
     {
-        // 프리팹 기반으로 변경되었으므로 초기 비활성화는 불필요
         // 이펙트 풀 초기화
         InitializeEffectPools();
     }
 
-    void Start()
+    protected virtual void Start()
     {
         rb = GetComponent<Rigidbody2D>();
         
@@ -91,59 +80,118 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
         }
     }
 
-    void Update()
+    protected virtual void Update()
     {
-        // 이동에 대한 입력 값 받기
-        float moveX = Input.GetAxisRaw("Horizontal");
-        float moveY = Input.GetAxisRaw("Vertical");
-        bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-
-        // 현재 애니메이션 상태 확인
-        UpdateAnimationState();
-        
-        // 이동 가능 여부 확인
-        bool canMove = CanMove();
-
-        Vector2 movement = Vector2.zero;
-        if (canMove)
-        {
-            movement = new Vector2(moveX, moveY);
-        }
-        
-        float currentSpeed = moveSpeed;
-        if (isShiftPressed)  // 달리기 키 입력 시 속도 증가
-        {
-            currentSpeed *= runSpeedMultiplier;
-        }
-
-        // Rigidbody를 사용해 이동
-        rb.linearVelocity = movement.normalized * currentSpeed;
-
-        // 캐릭터 방향 전환 처리 (이동 가능한 상태일 때만)
-        if (canMove)
-        {
-            FlipCharacter(moveX);
-        }
-
-        // 애니메이션 상태 제어
-        HandleAnimations(movement.magnitude, isShiftPressed);
-        
-        // 특수 애니메이션 입력 처리
-        HandleSpecialAnimationInputs();
+        // 하위 클래스에서 구현할 추상 메서드들 호출
+        UpdateMovement();
+        UpdateAnimation();
     }
     
-    void LateUpdate()
+    protected virtual void LateUpdate()
     {
         // Y축 위치에 따른 Z축 깊이 조절
         Vector3 newPosition = transform.position;
         newPosition.z = transform.position.y * zDepthWeight;
         transform.position = newPosition;
     }
-    
+
+    #region ICharacterController Implementation
+
+    /// <summary>
+    /// 캐릭터의 이동을 업데이트합니다. 하위 클래스에서 구현해야 합니다.
+    /// </summary>
+    public abstract void UpdateMovement();
+
+    /// <summary>
+    /// 캐릭터의 애니메이션을 업데이트합니다. 하위 클래스에서 구현해야 합니다.
+    /// </summary>
+    public abstract void UpdateAnimation();
+
+    /// <summary>
+    /// 현재 이동 입력 값을 반환합니다. 하위 클래스에서 구현해야 합니다.
+    /// </summary>
+    /// <returns>이동 방향 벡터 (정규화됨)</returns>
+    public abstract Vector2 GetMovementInput();
+
+    /// <summary>
+    /// 현재 달리기 상태를 반환합니다.
+    /// </summary>
+    /// <returns>달리기 중이면 true</returns>
+    public virtual bool IsRunning()
+    {
+        return isCurrentlyRunning;
+    }
+
+    /// <summary>
+    /// 특수 애니메이션을 트리거합니다.
+    /// </summary>
+    /// <param name="animationType">애니메이션 타입</param>
+    public virtual void TriggerSpecialAnimation(CharacterAnimationState animationType)
+    {
+        if (anim == null) return;
+        
+        switch (animationType)
+        {
+            case CharacterAnimationState.Attack:
+                anim.SetTrigger(ANIM_ATTACK);
+                break;
+            case CharacterAnimationState.Ceremony:
+                anim.SetTrigger(ANIM_CEREMONY);
+                break;
+            case CharacterAnimationState.Blank:
+                anim.SetTrigger(ANIM_BLANK);
+                break;
+            case CharacterAnimationState.Death:
+                anim.SetTrigger(ANIM_DEATH);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 현재 애니메이션 상태에 따라 이동 가능 여부를 반환합니다.
+    /// </summary>
+    /// <returns>이동 가능하면 true</returns>
+    public virtual bool CanMove()
+    {
+        switch (currentAnimationState)
+        {
+            case CharacterAnimationState.Death:
+            case CharacterAnimationState.Attack:
+            case CharacterAnimationState.Blank:
+            case CharacterAnimationState.Ceremony:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>
+    /// 현재 애니메이션 상태를 반환합니다.
+    /// </summary>
+    /// <returns>현재 애니메이션 상태</returns>
+    public virtual CharacterAnimationState GetCurrentAnimationState()
+    {
+        return currentAnimationState;
+    }
+
+    /// <summary>
+    /// 특정 애니메이션 상태인지 확인합니다.
+    /// </summary>
+    /// <param name="state">확인할 애니메이션 상태</param>
+    /// <returns>해당 상태이면 true</returns>
+    public virtual bool IsInAnimationState(CharacterAnimationState state)
+    {
+        return currentAnimationState == state;
+    }
+
+    #endregion
+
+    #region Protected Helper Methods
+
     /// <summary>
     /// 현재 애니메이션 상태를 업데이트합니다.
     /// </summary>
-    private void UpdateAnimationState()
+    protected virtual void UpdateAnimationState()
     {
         if (anim == null) return;
         
@@ -178,27 +226,12 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             currentAnimationState = CharacterAnimationState.Idle;
         }
     }
-    
+
     /// <summary>
-    /// 현재 애니메이션 상태에 따라 이동 가능 여부를 반환합니다.
+    /// 캐릭터의 방향을 X축 스케일을 이용해 반전시킵니다.
     /// </summary>
-    private bool CanMove()
-    {
-        switch (currentAnimationState)
-        {
-            case CharacterAnimationState.Death:
-            case CharacterAnimationState.Attack:
-            case CharacterAnimationState.Blank:
-            case CharacterAnimationState.Ceremony:
-            // 이동 불가능한 상태들 확장해서 사용할 예정
-                return false;
-            default:
-                return true;
-        }
-    }
-    
-    // 캐릭터의 방향을 X축 스케일을 이용해 반전시키는 함수
-    private void FlipCharacter(float moveX)
+    /// <param name="moveX">X축 이동 값</param>
+    protected virtual void FlipCharacter(float moveX)
     {
         if (moveX > 0)
         {
@@ -211,9 +244,13 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             transform.localScale = new Vector3(-1, 1, 1);
         }
     }
-    
-    // 애니메이션 상태를 처리하는 함수
-    private void HandleAnimations(float movementMagnitude, bool isRunning)
+
+    /// <summary>
+    /// 애니메이션 상태를 처리합니다.
+    /// </summary>
+    /// <param name="movementMagnitude">이동 크기</param>
+    /// <param name="isRunning">달리기 상태 여부</param>
+    protected virtual void HandleAnimations(float movementMagnitude, bool isRunning)
     {
         if (anim == null) return;
         
@@ -224,14 +261,12 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             {
                 anim.SetBool(ANIM_IS_RUNNING, true);
                 anim.SetBool(ANIM_IS_MOVING, false);
-
                 PlayMoveEffect(true);  // Run 상태일 때 이펙트 재생
             }
             else // 걷기 상태일 때
             {
                 anim.SetBool(ANIM_IS_MOVING, true);
                 anim.SetBool(ANIM_IS_RUNNING, false);
-                
                 PlayMoveEffect(true);  // 걷기 상태일 때 이펙트 재생
             }
         }
@@ -239,40 +274,43 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
         {
             anim.SetBool(ANIM_IS_MOVING, false);
             anim.SetBool(ANIM_IS_RUNNING, false);
-                
             PlayMoveEffect(false);  // 이펙트 재생 멈추기
         }
     }
-    
+
     /// <summary>
-    /// 특수 애니메이션 입력을 처리합니다.
+    /// 물리 기반 이동을 처리합니다.
     /// </summary>
-    private void HandleSpecialAnimationInputs()
+    /// <param name="movement">이동 벡터</param>
+    /// <param name="isRunning">달리기 상태 여부</param>
+    protected virtual void HandlePhysicsMovement(Vector2 movement, bool isRunning)
     {
-        if (anim == null) return;
+        if (rb == null) return;
         
-        if (Input.GetKeyDown(KeyCode.Space))
+        float currentSpeed = moveSpeed;
+        if (isRunning)
         {
-            anim.SetTrigger(ANIM_ATTACK);
+            currentSpeed *= runSpeedMultiplier;
         }
-        else if (Input.GetKeyDown(KeyCode.C))
+        
+        // Rigidbody를 사용해 이동
+        rb.linearVelocity = movement.normalized * currentSpeed;
+        
+        // 캐릭터 방향 전환 처리
+        if (movement.x != 0)
         {
-            anim.SetTrigger(ANIM_CEREMONY);
-        }
-        else if (Input.GetKeyDown(KeyCode.B))
-        {
-            anim.SetTrigger(ANIM_BLANK);
-        }
-        else if (Input.GetKeyDown(KeyCode.K))
-        {
-            anim.SetTrigger(ANIM_DEATH);
+            FlipCharacter(movement.x);
         }
     }
-    
+
+    #endregion
+
+    #region Effect System
+
     /// <summary>
     /// 이펙트 풀을 초기화합니다.
     /// </summary>
-    private void InitializeEffectPools()
+    protected virtual void InitializeEffectPools()
     {
         // Attack 이펙트 풀 초기화
         for (int i = 0; i < EFFECT_POOL_SIZE; i++)
@@ -286,13 +324,13 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             CreateEffectForPool(blankEffectData, blankEffectPool);
         }
     }
-    
+
     /// <summary>
     /// 이펙트 풀에 사용할 이펙트를 생성합니다.
     /// </summary>
     /// <param name="effectData">이펙트 데이터</param>
     /// <param name="pool">대상 풀</param>
-    private void CreateEffectForPool(EffectData effectData, Queue<ParticleSystem> pool)
+    protected virtual void CreateEffectForPool(EffectData effectData, Queue<ParticleSystem> pool)
     {
         if (effectData.effectPrefab == null || effectData.effectContainer == null) return;
         
@@ -308,14 +346,14 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             pool.Enqueue(effectPS);
         }
     }
-    
+
     /// <summary>
     /// 풀에서 이펙트를 가져옵니다.
     /// </summary>
     /// <param name="pool">대상 풀</param>
     /// <param name="effectData">이펙트 데이터 (풀이 비었을 때 새로 생성용)</param>
     /// <returns>ParticleSystem 컴포넌트</returns>
-    private ParticleSystem GetEffectFromPool(Queue<ParticleSystem> pool, EffectData effectData)
+    protected virtual ParticleSystem GetEffectFromPool(Queue<ParticleSystem> pool, EffectData effectData)
     {
         if (pool.Count > 0)
         {
@@ -340,13 +378,13 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
         
         return null;
     }
-    
+
     /// <summary>
     /// 이펙트를 풀로 반환합니다.
     /// </summary>
     /// <param name="effect">반환할 이펙트</param>
     /// <param name="pool">대상 풀</param>
-    private void ReturnEffectToPool(ParticleSystem effect, Queue<ParticleSystem> pool)
+    protected virtual void ReturnEffectToPool(ParticleSystem effect, Queue<ParticleSystem> pool)
     {
         if (effect == null) return;
         
@@ -358,7 +396,7 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
         // 풀에 반환
         pool.Enqueue(effect);
     }
-    
+
     /// <summary>
     /// 이펙트를 재생하거나 정지하는 범용 함수 (풀링 방식)
     /// </summary>
@@ -366,7 +404,7 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
     /// <param name="activeEffectsList">활성화된 이펙트 리스트</param>
     /// <param name="pool">이펙트 풀</param>
     /// <param name="play">true면 재생, false면 정지</param>
-    private void PlayEffect(EffectData effectData, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool, bool play)
+    protected virtual void PlayEffect(EffectData effectData, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool, bool play)
     {
         if (effectData.effectPrefab == null || effectData.effectContainer == null) 
         {
@@ -403,12 +441,42 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             }
         }
     }
-    
+
+    /// <summary>
+    /// 이펙트가 완전히 재생될 때까지 기다린 후 풀로 반환하는 코루틴
+    /// </summary>
+    /// <param name="effect">대기할 이펙트</param>
+    /// <param name="activeEffectsList">활성화된 이펙트 리스트</param>
+    /// <param name="pool">이펙트를 반환할 풀</param>
+    protected virtual System.Collections.IEnumerator WaitForEffectToCompleteAndReturnToPool(ParticleSystem effect, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool)
+    {
+        if (effect == null) yield break;
+        
+        // 이펙트가 재생 중일 때까지 기다림
+        while (effect.isPlaying)
+        {
+            yield return null;
+        }
+        
+        // 리스트에서 제거
+        if (activeEffectsList.Contains(effect))
+        {
+            activeEffectsList.Remove(effect);
+        }
+        
+        // 풀로 반환 (Destroy 대신)
+        ReturnEffectToPool(effect, pool);
+    }
+
+    #endregion
+
+    #region IAttackEffect, IMoveEffect, IBlankEffect Implementation
+
     /// <summary>
     /// 먼지 이펙트를 재생하거나 정지합니다.
     /// </summary>
     /// <param name="play">true면 재생, false면 정지</param>
-    public void PlayMoveEffect(bool play)
+    public virtual void PlayMoveEffect(bool play)
     {
         if (moveEffectData.effectPrefab == null || moveEffectData.effectContainer == null) 
         {
@@ -449,64 +517,24 @@ public class CharacterMovement : MonoBehaviour, IAttackEffect, IMoveEffect, IBla
             }
         }
     }
-    
+
     /// <summary>
     /// 공격 이펙트를 재생합니다.
     /// 애니메이션 이벤트에서 호출되어야 합니다.
     /// </summary>
-    public void PlayAttackEffect()
+    public virtual void PlayAttackEffect()
     {
         PlayEffect(attackEffectData, activeAttackEffects, attackEffectPool, true);
     }
-    
+
     /// <summary>
     /// Blank 이펙트를 재생합니다.
     /// 애니메이션 이벤트에서 호출되어야 합니다.
     /// </summary>
-    public void PlayBlankEffect()
+    public virtual void PlayBlankEffect()
     {
         PlayEffect(blankEffectData, activeBlankEffects, blankEffectPool, true);
     }
-    
-    /// <summary>
-    /// 이펙트가 완전히 재생될 때까지 기다린 후 풀로 반환하는 코루틴
-    /// </summary>
-    /// <param name="effect">대기할 이펙트</param>
-    /// <param name="activeEffectsList">활성화된 이펙트 리스트</param>
-    /// <param name="pool">이펙트를 반환할 풀</param>
-    private System.Collections.IEnumerator WaitForEffectToCompleteAndReturnToPool(ParticleSystem effect, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool)
-    {
-        if (effect == null) yield break;
-        
-        // 이펙트가 재생 중일 때까지 기다림
-        while (effect.isPlaying)
-        {
-            yield return null;
-        }
-        
-        // 리스트에서 제거
-        if (activeEffectsList.Contains(effect))
-        {
-            activeEffectsList.Remove(effect);
-        }
-        
-        // 풀로 반환 (Destroy 대신)
-        ReturnEffectToPool(effect, pool);
-    }
-    
-    /// <summary>
-    /// 현재 애니메이션 상태를 반환합니다.
-    /// </summary>
-    public CharacterAnimationState GetCurrentAnimationState()
-    {
-        return currentAnimationState;
-    }
-    
-    /// <summary>
-    /// 특정 애니메이션 상태인지 확인합니다.
-    /// </summary>
-    public bool IsInAnimationState(CharacterAnimationState state)
-    {
-        return currentAnimationState == state;
-    }
+
+    #endregion
 }
