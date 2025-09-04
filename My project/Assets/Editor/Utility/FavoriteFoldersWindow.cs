@@ -349,7 +349,8 @@ namespace CAT.Utility
                 {
                     if (GUILayout.Button(folder.name, EditorStyles.label))
                     {
-                        EditorGUIUtility.PingObject(folder);
+                        // 폴더를 더블클릭한 것처럼 열기
+                        AssetDatabase.OpenAsset(folder);
                     }
                 }
                 else
