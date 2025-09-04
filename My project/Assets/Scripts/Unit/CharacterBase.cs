@@ -6,7 +6,7 @@ using System.Collections.Generic;
 /// 캐릭터의 기본 기능을 제공하는 추상 클래스
 /// 플레이어와 적 캐릭터 모두 이 클래스를 상속받아 공통 기능을 사용합니다.
 /// </summary>
-public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAttackEffect, IMoveEffect, IBlankEffect, IDamageEffect, ICollisionHandler
+public abstract class CharacterBase : MonoBehaviour, ICharacterController, ICharacterAttackEffect, ICharacterMoveEffect, ICharacterBlankEffect, ICharacterDamageEffect, ICollisionHandler
 {
     [Header("Movement Settings")]
     [SerializeField] protected float moveSpeed = 5f;  // 이동 속도
@@ -15,7 +15,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     [Header("Sorting System")]
     [SerializeField] protected bool enableSortingOrderAdjustment = true; // Y축 기반 정렬 순서 조절 활성화 여부
     [SerializeField] protected int baseSortingOrder = 0; // 기본 정렬 순서
-    [SerializeField] protected float sortingOrderMultiplier = -1f; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞)
+    [SerializeField] protected float sortingOrderMultiplier = -10f; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞) - 더 세밀한 정렬을 위해 10배 증가
 
     [Header("Effects")]
     [SerializeField] protected EffectManager effectManager;  // 이펙트 관리자
@@ -107,7 +107,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         // 초기 정렬 순서 설정
         if (sortingGroup != null && enableSortingOrderAdjustment)
         {
-            lastSortingOrder = baseSortingOrder + Mathf.RoundToInt(transform.position.y * sortingOrderMultiplier);
+            float yPosition = transform.position.y;
+            lastSortingOrder = baseSortingOrder + Mathf.FloorToInt(yPosition * sortingOrderMultiplier);
             sortingGroup.sortingOrder = lastSortingOrder;
         }
     }
@@ -127,19 +128,28 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     
     /// <summary>
     /// Y축 위치에 따라 SortingGroup의 Order 값을 조절합니다.
+    /// Y축이 높을수록 앞에 표시되고, Y축이 낮을수록 뒤에 표시됩니다.
     /// </summary>
     protected virtual void UpdateSortingOrder()
     {
         if (!enableSortingOrderAdjustment || sortingGroup == null) return;
         
         // Y축 위치에 따른 정렬 순서 계산
-        int newSortingOrder = baseSortingOrder + Mathf.RoundToInt(transform.position.y * sortingOrderMultiplier);
+        // Y축이 높을수록 음수값이 커져서 앞에 표시되고,
+        // Y축이 낮을수록 양수값이 커져서 뒤에 표시됩니다.
+        float yPosition = transform.position.y;
+        int newSortingOrder = baseSortingOrder + Mathf.FloorToInt(yPosition * sortingOrderMultiplier);
         
         // 정렬 순서가 변경된 경우에만 업데이트 (중복 업데이트 방지)
         if (lastSortingOrder != newSortingOrder)
         {
             sortingGroup.sortingOrder = newSortingOrder;
             lastSortingOrder = newSortingOrder;
+            
+            // 디버그 로그 (개발 중에만)
+            #if UNITY_EDITOR
+            Debug.Log($"{gameObject.name}: Y={yPosition:F2}, SortOrder={newSortingOrder}");
+            #endif
         }
     }
 
@@ -481,7 +491,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     #endregion
 
 
-    #region IAttackEffect, IMoveEffect, IBlankEffect Implementation
+    #region ICharacterAttackEffect, ICharacterMoveEffect, ICharacterBlankEffect, ICharacterDamageEffect Implementation
 
     /// <summary>
     /// 먼지 이펙트를 재생하거나 정지합니다.

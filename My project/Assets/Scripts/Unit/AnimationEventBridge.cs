@@ -66,52 +66,69 @@ public class AnimationEventBridge : MonoBehaviour
     
     /// <summary>
     /// 애니메이션 이벤트에서 호출할 공격 이펙트 함수
+    /// ICharacterAttackEffect 인터페이스를 구현하는 스크립트에서 찾아서 호출
     /// </summary>
     public void PlayAttackEffect()
     {
-        // 범용적으로 다른 스크립트에서 찾기
-        var attackable = GetTargetInterface<IAttackEffect>();
+        var attackable = GetTargetInterface<ICharacterAttackEffect>();
         if (attackable != null)
         {
             attackable.PlayAttackEffect();
         }
         else
         {
-            Debug.LogWarning("AnimationEventBridge: 공격 이펙트를 재생할 수 있는 스크립트를 찾을 수 없습니다.");
+            Debug.LogWarning("AnimationEventBridge: ICharacterAttackEffect를 구현하는 스크립트를 찾을 수 없습니다.");
         }
     }
     
     /// <summary>
     /// 애니메이션 이벤트에서 호출할 이동 이펙트 함수
+    /// ICharacterMoveEffect 인터페이스를 구현하는 스크립트에서 찾아서 호출
     /// </summary>
     public void PlayMoveEffect(bool play)
     {
-        // 범용적으로 다른 스크립트에서 찾기
-        var moveable = GetTargetInterface<IMoveEffect>();
+        var moveable = GetTargetInterface<ICharacterMoveEffect>();
         if (moveable != null)
         {
             moveable.PlayMoveEffect(play);
         }
         else
         {
-            Debug.LogWarning("AnimationEventBridge: 이동 이펙트를 재생할 수 있는 스크립트를 찾을 수 없습니다.");
+            Debug.LogWarning("AnimationEventBridge: ICharacterMoveEffect를 구현하는 스크립트를 찾을 수 없습니다.");
         }
     }
     
     /// <summary>
     /// 애니메이션 이벤트에서 호출할 Blank 이펙트 함수
+    /// ICharacterBlankEffect 인터페이스를 구현하는 스크립트에서 찾아서 호출
     /// </summary>
     public void PlayBlankEffect()
     {
-        // 범용적으로 다른 스크립트에서 찾기
-        var blankable = GetTargetInterface<IBlankEffect>();
+        var blankable = GetTargetInterface<ICharacterBlankEffect>();
         if (blankable != null)
         {
             blankable.PlayBlankEffect();
         }
         else
         {
-            Debug.LogWarning("AnimationEventBridge: Blank 이펙트를 재생할 수 있는 스크립트를 찾을 수 없습니다.");
+            Debug.LogWarning("AnimationEventBridge: ICharacterBlankEffect를 구현하는 스크립트를 찾을 수 없습니다.");
+        }
+    }
+    
+    /// <summary>
+    /// 애니메이션 이벤트에서 호출할 피격 이펙트 함수
+    /// ICharacterDamageEffect 인터페이스를 구현하는 스크립트에서 찾아서 호출
+    /// </summary>
+    public void PlayDamageEffect()
+    {
+        var damageable = GetTargetInterface<ICharacterDamageEffect>();
+        if (damageable != null)
+        {
+            damageable.PlayDamageEffect();
+        }
+        else
+        {
+            Debug.LogWarning("AnimationEventBridge: ICharacterDamageEffect를 구현하는 스크립트를 찾을 수 없습니다.");
         }
     }
     
@@ -166,11 +183,3 @@ public class AnimationEventBridge : MonoBehaviour
         Debug.LogWarning($"AnimationEventBridge: '{functionName}' 함수를 찾을 수 없습니다.");
     }
 }
-
-public interface IAttackEffect { void PlayAttackEffect(); } // 공격 이펙트
-
-public interface IMoveEffect { void PlayMoveEffect(bool play); } // 이동 이펙트
-
-public interface IBlankEffect { void PlayBlankEffect(); } // Blank 이펙트
-
-public interface IDamageEffect { void PlayDamageEffect(); }  // 피격 이펙트
