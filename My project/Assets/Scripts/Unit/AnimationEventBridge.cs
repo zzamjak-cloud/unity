@@ -172,3 +172,5 @@ public interface IAttackEffect { void PlayAttackEffect(); } // 공격 이펙트
 public interface IMoveEffect { void PlayMoveEffect(bool play); } // 이동 이펙트
 
 public interface IBlankEffect { void PlayBlankEffect(); } // Blank 이펙트
+
+public interface IDamageEffect { void PlayDamageEffect(); }  // 피격 이펙트
