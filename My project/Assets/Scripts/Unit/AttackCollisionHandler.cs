@@ -7,9 +7,14 @@ using System.Collections.Generic;
 public class AttackCollisionHandler : MonoBehaviour
 {
     [Header("Attack Collision Settings")]
-    [SerializeField] private float attackDuration = 0.5f;  // 공격 지속 시간
+    [SerializeField] private float attackDuration = 0.2f;  // 공격 지속 시간
     [SerializeField] private LayerMask targetLayers = -1;  // 타격 대상 레이어
     [SerializeField] private bool allowMultipleHitsPerTarget = false;  // 동일 대상에 대한 연속 타격 허용 여부
+    
+    [Header("Target Filtering")]
+    [SerializeField] private string[] targetTags = {"Enemy", "Player"};  // 타격 대상 태그들
+    [SerializeField] private string[] ignoreTags = {"Interaction", "Item"};  // 무시할 태그들
+    [SerializeField] private bool onlyHitBodyCollision = true;  // Body 콜리전만 타격할지 여부
     
     private CharacterBase owner;  // 이 콜리전을 소유한 캐릭터
     private float attackTimer = 0f;  // 공격 타이머
@@ -119,8 +124,8 @@ public class AttackCollisionHandler : MonoBehaviour
             return;
         }
         
-        // 적이나 플레이어인지 확인
-        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        // 타겟 필터링 확인
+        if (IsValidTarget(other))
         {
             // 연속 타격 허용 여부에 따른 중복 타격 방지
             if (!allowMultipleHitsPerTarget && hitTargets.Contains(other))
@@ -140,7 +145,7 @@ public class AttackCollisionHandler : MonoBehaviour
         }
         else
         {
-            Debug.Log($"[콜리전 디버그] {gameObject.name}: 태그 불일치 - 대상 태그: {other.tag}");
+            Debug.Log($"[콜리전 디버그] {gameObject.name}: 타겟 필터링 실패 - 대상: {other.gameObject.name}, 태그: {other.tag}");
         }
     }
     
@@ -160,6 +165,57 @@ public class AttackCollisionHandler : MonoBehaviour
     public void SetTargetLayers(LayerMask layers)
     {
         targetLayers = layers;
+    }
+    
+    /// <summary>
+    /// 타겟이 유효한지 확인합니다.
+    /// </summary>
+    /// <param name="target">확인할 타겟</param>
+    /// <returns>유효한 타겟이면 true</returns>
+    private bool IsValidTarget(Collider2D target)
+    {
+        if (target == null) return false;
+        
+        // 1. 무시할 태그 확인
+        foreach (string ignoreTag in ignoreTags)
+        {
+            if (target.CompareTag(ignoreTag))
+            {
+                Debug.Log($"[타겟 필터링] {gameObject.name}: {target.gameObject.name}는 무시할 태그({ignoreTag})입니다.");
+                return false;
+            }
+        }
+        
+        // 2. 타겟 태그 확인
+        bool hasValidTag = false;
+        foreach (string targetTag in targetTags)
+        {
+            if (target.CompareTag(targetTag))
+            {
+                hasValidTag = true;
+                break;
+            }
+        }
+        
+        if (!hasValidTag)
+        {
+            Debug.Log($"[타겟 필터링] {gameObject.name}: {target.gameObject.name}는 유효한 타겟 태그가 아닙니다. 현재 태그: {target.tag}");
+            return false;
+        }
+        
+        // 3. Body 콜리전만 타격할지 확인
+        if (onlyHitBodyCollision)
+        {
+            // GameObject 이름으로 Body 콜리전인지 확인
+            if (!target.gameObject.name.Contains("Body"))
+            {
+                Debug.Log($"[타겟 필터링] {gameObject.name}: {target.gameObject.name}는 Body 콜리전이 아닙니다. Body 콜리전만 타격합니다.");
+                return false;
+            }
+        }
+        
+        Debug.Log($"[타겟 필터링] {gameObject.name}: {target.gameObject.name}는 유효한 타겟입니다.");
+        return true;
     }
     
     /// <summary>
