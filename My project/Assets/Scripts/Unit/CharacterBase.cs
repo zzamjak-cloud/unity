@@ -17,18 +17,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     [SerializeField] protected int baseSortingOrder = 0; // 기본 정렬 순서
     [SerializeField] protected float sortingOrderMultiplier = -1f; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞)
 
-    [System.Serializable]
-    public struct EffectData
-    {
-        public Transform effectContainer;  // 이펙트를 담을 컨테이너 Transform
-        public GameObject effectPrefab;  // 이펙트 프리팹
-    }
-    
     [Header("Effects")]
-    [SerializeField] protected EffectData moveEffectData;  // 이동 이펙트 데이터
-    [SerializeField] protected EffectData attackEffectData;  // 공격 이펙트 데이터
-    [SerializeField] protected EffectData blankEffectData;  // Blank 이펙트 데이터
-    [SerializeField] protected EffectData damageEffectData;  // 피격 이펙트 데이터
+    [SerializeField] protected EffectManager effectManager;  // 이펙트 관리자
     
     [Header("Collision System")]
     [SerializeField] protected CharacterCollisionManager collisionManager;  // 콜리전 관리자
@@ -38,21 +28,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     [SerializeField] protected GameObject attackCollisionObject;  // Attack 콜리전이 적용된 GameObject
     [SerializeField] protected float attackCollisionDuration = 0.5f;  // Attack 콜리전 지속 시간
     
-    // 활성화된 이펙트 인스턴스들을 추적
-    protected ParticleSystem activeMoveEffect;  // 이동 이펙트는 1개만 유지
-    
-    // 오브젝트 풀링을 위한 이펙트 풀
-    protected Queue<ParticleSystem> attackEffectPool = new Queue<ParticleSystem>();
-    protected Queue<ParticleSystem> blankEffectPool = new Queue<ParticleSystem>();
-    protected Queue<ParticleSystem> damageEffectPool = new Queue<ParticleSystem>();
-    protected const int EFFECT_POOL_SIZE = 5;  // 풀 크기 (연타 공격을 위해 증가)
-    protected const int MAX_DAMAGE_EFFECTS = 5;  // 최대 동시 피격 이펙트 개수
-    
-    // 활성화된 이펙트들을 추적 (풀에서 나온 이펙트들)
-    protected List<ParticleSystem> activeAttackEffects = new List<ParticleSystem>();
-    protected List<ParticleSystem> activeBlankEffects = new List<ParticleSystem>();
-    protected List<ParticleSystem> activeDamageEffects = new List<ParticleSystem>();
-    protected bool isPlayingDamageEffect = false;  // 피격 이펙트 재생 중 플래그
 
     [Header("Animation")]
     [SerializeField] protected Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
@@ -62,13 +37,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     protected SortingGroup sortingGroup; // 정렬 순서 조절을 위한 SortingGroup 컴포넌트
     protected int lastSortingOrder = 0; // 마지막 정렬 순서 (중복 업데이트 방지)
     
-    // 애니메이션 파라미터 이름들을 상수로 정의
-    protected static readonly string ANIM_IS_MOVING = "IsMoving";
-    protected static readonly string ANIM_IS_RUNNING = "IsRunning";
-    protected static readonly string ANIM_ATTACK = "Attack";
-    protected static readonly string ANIM_CEREMONY = "Ceremony";
-    protected static readonly string ANIM_BLANK = "Blank";
-    protected static readonly string ANIM_DEATH = "Death";
 
     // 현재 이동 상태
     protected Vector2 currentMovement = Vector2.zero;
@@ -76,8 +44,16 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
 
     protected virtual void Awake()
     {
-        // 이펙트 풀 초기화
-        InitializeEffectPools();
+        // EffectManager 자동 설정
+        if (effectManager == null)
+        {
+            effectManager = GetComponent<EffectManager>();
+            if (effectManager == null)
+            {
+                effectManager = gameObject.AddComponent<EffectManager>();
+                Debug.Log($"{gameObject.name}: EffectManager 컴포넌트를 자동으로 추가했습니다.");
+            }
+        }
     }
 
     protected virtual void Start()
@@ -117,19 +93,15 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
             }
         }
         
-        // AttackCollisionHandler 설정
-        if (attackCollisionObject != null)
+        // CharacterCollisionManager 설정
+        if (collisionManager == null)
         {
-            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
-            if (attackHandler == null)
+            collisionManager = GetComponent<CharacterCollisionManager>();
+            if (collisionManager == null)
             {
-                // AttackCollisionHandler가 없으면 자동으로 추가
-                attackHandler = attackCollisionObject.AddComponent<AttackCollisionHandler>();
-                Debug.Log($"{gameObject.name}: AttackCollisionHandler 컴포넌트를 자동으로 추가했습니다.");
+                collisionManager = gameObject.AddComponent<CharacterCollisionManager>();
+                Debug.Log($"{gameObject.name}: CharacterCollisionManager 컴포넌트를 자동으로 추가했습니다.");
             }
-            
-            // 공격 지속 시간 설정
-            attackHandler.SetAttackDuration(attackCollisionDuration);
         }
         
         // 초기 정렬 순서 설정
@@ -209,16 +181,16 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         switch (animationType)
         {
             case CharacterAnimationState.Attack:
-                anim.SetTrigger(ANIM_ATTACK);
+                anim.SetTrigger(GameConstants.ANIM_ATTACK);
                 break;
             case CharacterAnimationState.Ceremony:
-                anim.SetTrigger(ANIM_CEREMONY);
+                anim.SetTrigger(GameConstants.ANIM_CEREMONY);
                 break;
             case CharacterAnimationState.Blank:
-                anim.SetTrigger(ANIM_BLANK);
+                anim.SetTrigger(GameConstants.ANIM_BLANK);
                 break;
             case CharacterAnimationState.Death:
-                anim.SetTrigger(ANIM_DEATH);
+                anim.SetTrigger(GameConstants.ANIM_DEATH);
                 break;
         }
     }
@@ -375,22 +347,22 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         {
             if (isRunning) // 달리기 상태일 때
             {
-                anim.SetBool(ANIM_IS_RUNNING, true);
-                anim.SetBool(ANIM_IS_MOVING, false);
-                PlayMoveEffect(true);  // Run 상태일 때 이펙트 재생
+                anim.SetBool(GameConstants.ANIM_IS_RUNNING, true);
+                anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+                if (effectManager != null) effectManager.PlayMoveEffect(true);
             }
             else // 걷기 상태일 때
             {
-                anim.SetBool(ANIM_IS_MOVING, true);
-                anim.SetBool(ANIM_IS_RUNNING, false);
-                PlayMoveEffect(true);  // 걷기 상태일 때 이펙트 재생
+                anim.SetBool(GameConstants.ANIM_IS_MOVING, true);
+                anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+                if (effectManager != null) effectManager.PlayMoveEffect(true);
             }
         }
         else // 멈출 때
         {
-            anim.SetBool(ANIM_IS_MOVING, false);
-            anim.SetBool(ANIM_IS_RUNNING, false);
-            PlayMoveEffect(false);  // 이펙트 재생 멈추기
+            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+            anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+            if (effectManager != null) effectManager.PlayMoveEffect(false);
         }
     }
 
@@ -508,193 +480,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
 
     #endregion
 
-    #region Effect System
-
-    /// <summary>
-    /// 이펙트 풀을 초기화합니다.
-    /// </summary>
-    protected virtual void InitializeEffectPools()
-    {
-        // Attack 이펙트 풀 초기화
-        for (int i = 0; i < EFFECT_POOL_SIZE; i++)
-        {
-            CreateEffectForPool(attackEffectData, attackEffectPool);
-        }
-        
-        // Blank 이펙트 풀 초기화
-        for (int i = 0; i < EFFECT_POOL_SIZE; i++)
-        {
-            CreateEffectForPool(blankEffectData, blankEffectPool);
-        }
-        
-        // Damage 이펙트 풀 초기화
-        for (int i = 0; i < EFFECT_POOL_SIZE; i++)
-        {
-            CreateEffectForPool(damageEffectData, damageEffectPool);
-        }
-    }
-
-    /// <summary>
-    /// 이펙트 풀에 사용할 이펙트를 생성합니다.
-    /// </summary>
-    /// <param name="effectData">이펙트 데이터</param>
-    /// <param name="pool">대상 풀</param>
-    protected virtual void CreateEffectForPool(EffectData effectData, Queue<ParticleSystem> pool)
-    {
-        if (effectData.effectPrefab == null || effectData.effectContainer == null) return;
-        
-        GameObject effectInstance = Instantiate(effectData.effectPrefab, effectData.effectContainer);
-        effectInstance.transform.localPosition = Vector3.zero;
-        effectInstance.transform.localRotation = Quaternion.identity;
-        
-        ParticleSystem effectPS = effectInstance.GetComponent<ParticleSystem>();
-        if (effectPS != null)
-        {
-            // 풀에 추가하기 전에 비활성화
-            effectInstance.SetActive(false);
-            pool.Enqueue(effectPS);
-        }
-    }
-
-    /// <summary>
-    /// 풀에서 이펙트를 가져옵니다.
-    /// </summary>
-    /// <param name="pool">대상 풀</param>
-    /// <param name="effectData">이펙트 데이터 (풀이 비었을 때 새로 생성용)</param>
-    /// <returns>ParticleSystem 컴포넌트</returns>
-    protected virtual ParticleSystem GetEffectFromPool(Queue<ParticleSystem> pool, EffectData effectData)
-    {
-        if (pool.Count > 0)
-        {
-            ParticleSystem effect = pool.Dequeue();
-            effect.gameObject.SetActive(true);
-            return effect;
-        }
-        
-        // 풀이 비었으면 새로 생성
-        if (effectData.effectPrefab != null && effectData.effectContainer != null)
-        {
-            GameObject effectInstance = Instantiate(effectData.effectPrefab, effectData.effectContainer);
-            effectInstance.transform.localPosition = Vector3.zero;
-            effectInstance.transform.localRotation = Quaternion.identity;
-            
-            ParticleSystem effectPS = effectInstance.GetComponent<ParticleSystem>();
-            if (effectPS != null)
-            {
-                return effectPS;
-            }
-        }
-        
-        return null;
-    }
-
-    /// <summary>
-    /// 이펙트를 풀로 반환합니다.
-    /// </summary>
-    /// <param name="effect">반환할 이펙트</param>
-    /// <param name="pool">대상 풀</param>
-    protected virtual void ReturnEffectToPool(ParticleSystem effect, Queue<ParticleSystem> pool)
-    {
-        if (effect == null) return;
-        
-        // 이펙트 정지 및 초기화
-        effect.Stop();
-        effect.Clear();
-        effect.gameObject.SetActive(false);
-        
-        // 풀에 반환
-        pool.Enqueue(effect);
-    }
-
-    /// <summary>
-    /// 이펙트를 재생하거나 정지하는 범용 함수 (풀링 방식)
-    /// </summary>
-    /// <param name="effectData">이펙트 데이터 (프리팹과 컨테이너)</param>
-    /// <param name="activeEffectsList">활성화된 이펙트 리스트</param>
-    /// <param name="pool">이펙트 풀</param>
-    /// <param name="play">true면 재생, false면 정지</param>
-    protected virtual void PlayEffect(EffectData effectData, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool, bool play)
-    {
-        if (effectData.effectPrefab == null || effectData.effectContainer == null) 
-        {
-            Debug.LogWarning("이펙트 프리팹 또는 컨테이너가 할당되지 않았습니다.");
-            return;
-        }
-        
-        if (play)
-        {
-            // 풀에서 이펙트 가져오기
-            ParticleSystem effectPS = GetEffectFromPool(pool, effectData);
-            
-            if (effectPS != null)
-            {
-                // 활성화된 이펙트 리스트에 추가
-                activeEffectsList.Add(effectPS);
-                
-                // 이펙트 재생
-                effectPS.Play();
-                
-                Debug.Log($"[이펙트 재생] {gameObject.name}: 이펙트 재생 시작 - {effectPS.name}, 활성화된 개수: {activeEffectsList.Count}");
-                
-                // 이펙트 완료 후 풀로 반환
-                StartCoroutine(WaitForEffectToCompleteAndReturnToPool(effectPS, activeEffectsList, pool));
-            }
-            else
-            {
-                Debug.LogWarning($"[이펙트 재생] {gameObject.name}: 풀에서 이펙트를 가져올 수 없습니다.");
-            }
-        }
-        else
-        {
-            // 모든 활성화된 이펙트 정지
-            foreach (var effect in activeEffectsList.ToArray())
-            {
-                if (effect != null && effect.isPlaying)
-                {
-                    effect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// 이펙트가 완전히 재생될 때까지 기다린 후 풀로 반환하는 코루틴
-    /// </summary>
-    /// <param name="effect">대기할 이펙트</param>
-    /// <param name="activeEffectsList">활성화된 이펙트 리스트</param>
-    /// <param name="pool">이펙트를 반환할 풀</param>
-    protected virtual System.Collections.IEnumerator WaitForEffectToCompleteAndReturnToPool(ParticleSystem effect, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool)
-    {
-        if (effect == null) yield break;
-        
-        // 이펙트가 재생 중일 때까지 기다림
-        while (effect.isPlaying)
-        {
-            yield return null;
-        }
-        
-        // 리스트에서 제거
-        if (activeEffectsList.Contains(effect))
-        {
-            activeEffectsList.Remove(effect);
-        }
-        
-        // 풀로 반환 (Destroy 대신)
-        ReturnEffectToPool(effect, pool);
-    }
-    
-    /// <summary>
-    /// 피격 이펙트 재생 중 플래그를 리셋하는 코루틴
-    /// </summary>
-    protected virtual System.Collections.IEnumerator ResetDamageEffectFlag()
-    {
-        // 0.1초 대기 후 플래그 해제
-        yield return new WaitForSeconds(0.1f);
-        isPlayingDamageEffect = false;
-        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 중 플래그 해제됨");
-    }
-
-    #endregion
 
     #region IAttackEffect, IMoveEffect, IBlankEffect Implementation
 
@@ -704,43 +489,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// <param name="play">true면 재생, false면 정지</param>
     public virtual void PlayMoveEffect(bool play)
     {
-        if (moveEffectData.effectPrefab == null || moveEffectData.effectContainer == null) 
+        if (effectManager != null)
         {
-            Debug.LogWarning("이동 이펙트 프리팹 또는 컨테이너가 할당되지 않았습니다.");
-            return;
-        }
-        
-        if (play)
-        {
-            // 이동 이펙트가 없으면 새로 생성
-            if (activeMoveEffect == null)
-            {
-                GameObject effectInstance = Instantiate(moveEffectData.effectPrefab, moveEffectData.effectContainer);
-                effectInstance.transform.localPosition = Vector3.zero;
-                effectInstance.transform.localRotation = Quaternion.identity;
-                
-                activeMoveEffect = effectInstance.GetComponent<ParticleSystem>();
-                if (activeMoveEffect != null)
-                {
-                    activeMoveEffect.Play();
-                }
-            }
-            else
-            {
-                // 기존 이동 이펙트가 있으면 재생만
-                if (!activeMoveEffect.isPlaying)
-                {
-                    activeMoveEffect.Play();
-                }
-            }
-        }
-        else
-        {
-            // 이동 이펙트 정지
-            if (activeMoveEffect != null && activeMoveEffect.isPlaying)
-            {
-                activeMoveEffect.Stop(false, ParticleSystemStopBehavior.StopEmitting);
-            }
+            effectManager.PlayMoveEffect(play);
         }
     }
 
@@ -750,7 +501,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// </summary>
     public virtual void PlayAttackEffect()
     {
-        PlayEffect(attackEffectData, activeAttackEffects, attackEffectPool, true);
+        if (effectManager != null)
+        {
+            effectManager.PlayAttackEffect();
+        }
         
         // Attack 콜리전이 비활성화되어 있다면 활성화 (이펙트와 동기화)
         if (!IsAttackCollisionEnabled())
@@ -765,7 +519,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// </summary>
     public virtual void PlayBlankEffect()
     {
-        PlayEffect(blankEffectData, activeBlankEffects, blankEffectPool, true);
+        if (effectManager != null)
+        {
+            effectManager.PlayBlankEffect();
+        }
     }
 
     /// <summary>
@@ -774,42 +531,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// </summary>
     public virtual void PlayDamageEffect()
     {
-        // 호출 스택 정보 출력
-        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace();
-        Debug.Log($"[피격 이펙트] {gameObject.name}: PlayDamageEffect 호출됨 - 호출 스택: {stackTrace.GetFrame(1).GetMethod().Name}");
-        
-        // 중복 호출 방지 (짧은 시간 내 중복 호출 차단)
-        if (isPlayingDamageEffect)
+        if (effectManager != null)
         {
-            Debug.LogWarning($"[피격 이펙트] {gameObject.name}: 이미 피격 이펙트를 재생 중입니다. 중복 호출을 방지합니다.");
-            return;
+            effectManager.PlayDamageEffect();
         }
-        
-        // 최대 개수 제한 확인
-        if (activeDamageEffects.Count >= MAX_DAMAGE_EFFECTS)
-        {
-            Debug.LogWarning($"{gameObject.name}: 최대 피격 이펙트 개수({MAX_DAMAGE_EFFECTS})에 도달했습니다. 새로운 이펙트를 재생하지 않습니다.");
-            return;
-        }
-        
-        // 이펙트 데이터 유효성 확인
-        if (damageEffectData.effectPrefab == null || damageEffectData.effectContainer == null)
-        {
-            Debug.LogWarning($"{gameObject.name}: 피격 이펙트 프리팹 또는 컨테이너가 할당되지 않았습니다.");
-            return;
-        }
-        
-        // 풀 상태 확인
-        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 시도 - 풀 크기: {damageEffectPool.Count}, 활성화된 개수: {activeDamageEffects.Count}");
-        
-        // 재생 중 플래그 설정
-        isPlayingDamageEffect = true;
-        
-        PlayEffect(damageEffectData, activeDamageEffects, damageEffectPool, true);
-        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 완료 (현재 활성화된 개수: {activeDamageEffects.Count})");
-        
-        // 짧은 지연 후 플래그 해제 (중복 호출 방지)
-        StartCoroutine(ResetDamageEffectFlag());
     }
 
     #endregion
@@ -881,23 +606,14 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// </summary>
     public virtual void EnableAttackCollision()
     {
-        if (attackCollisionObject != null)
+        if (collisionManager != null)
         {
-            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
-            if (attackHandler != null)
-            {
-                attackHandler.ActivateAttack();
-                Debug.Log($"[공격 시작] {gameObject.name}: Attack 콜리전 활성화 요청 완료 - {attackCollisionDuration}초 동안 타격 판정");
-                Debug.Log($"[콜리전 디버그] {gameObject.name}: 현재 위치 - {transform.position}, Attack 콜리전 위치 - {attackCollisionObject.transform.position}");
-            }
-            else
-            {
-                Debug.LogError($"[공격 시작] {gameObject.name}: AttackCollisionHandler 컴포넌트를 찾을 수 없습니다.");
-            }
+            collisionManager.ActivateAttack();
+            Debug.Log($"[공격 시작] {gameObject.name}: Attack 콜리전 활성화 요청 완료");
         }
         else
         {
-            Debug.LogWarning($"[공격 시작] {gameObject.name}: Attack 콜리전 GameObject가 할당되지 않았습니다.");
+            Debug.LogWarning($"[공격 시작] {gameObject.name}: CharacterCollisionManager 컴포넌트를 찾을 수 없습니다.");
         }
     }
 
@@ -906,22 +622,14 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// </summary>
     public virtual void DisableAttackCollision()
     {
-        if (attackCollisionObject != null)
+        if (collisionManager != null)
         {
-            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
-            if (attackHandler != null)
-            {
-                attackHandler.DeactivateAttack();
-                Debug.Log($"[공격 종료] {gameObject.name}: Attack 콜리전 비활성화 요청 완료");
-            }
-            else
-            {
-                Debug.LogWarning($"[공격 종료] {gameObject.name}: AttackCollisionHandler 컴포넌트를 찾을 수 없습니다.");
-            }
+            collisionManager.DeactivateAttack();
+            Debug.Log($"[공격 종료] {gameObject.name}: Attack 콜리전 비활성화 요청 완료");
         }
         else
         {
-            Debug.LogWarning($"[공격 종료] {gameObject.name}: Attack 콜리전 GameObject가 할당되지 않았습니다.");
+            Debug.LogWarning($"[공격 종료] {gameObject.name}: CharacterCollisionManager 컴포넌트를 찾을 수 없습니다.");
         }
     }
 
@@ -931,10 +639,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     /// <returns>Attack 콜리전이 활성화되어 있으면 true</returns>
     public virtual bool IsAttackCollisionEnabled()
     {
-        if (attackCollisionObject == null) return false;
-        
-        AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
-        return attackHandler != null && attackHandler.IsAttackActive();
+        if (collisionManager == null) return false;
+        return collisionManager.IsAttackActive();
     }
 
     /// <summary>

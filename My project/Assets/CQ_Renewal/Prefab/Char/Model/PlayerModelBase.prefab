@@ -423,6 +423,7 @@ GameObject:
   - component: {fileID: -8754662933476582879}
   - component: {fileID: 7716366046737812305}
   - component: {fileID: 6303384091237590385}
+  - component: {fileID: 2938303985943841417}
   m_Layer: 8
   m_Name: PlayerModelBase
   m_TagString: Player
@@ -503,18 +504,7 @@ MonoBehaviour:
   enableSortingOrderAdjustment: 1
   baseSortingOrder: 0
   sortingOrderMultiplier: -1
-  moveEffectData:
-    effectContainer: {fileID: 1780931551465099727}
-    effectPrefab: {fileID: 0}
-  attackEffectData:
-    effectContainer: {fileID: 477321716822290983}
-    effectPrefab: {fileID: 0}
-  blankEffectData:
-    effectContainer: {fileID: 1661521742320373556}
-    effectPrefab: {fileID: 0}
-  damageEffectData:
-    effectContainer: {fileID: 8486690754284075413}
-    effectPrefab: {fileID: 0}
+  effectManager: {fileID: 2938303985943841417}
   collisionManager: {fileID: 6303384091237590385}
   enableCollisionSystem: 1
   attackCollisionObject: {fileID: 1336215458147752841}
@@ -551,10 +541,40 @@ MonoBehaviour:
   - Player
   - Obstacle
   attackCollisionTags:
-  - EnemyAttack
+  - Enemy
   interactionCollisionTags:
   - Item
+  attackDuration: 0.2
+  allowMultipleHitsPerTarget: 0
+  attackIgnoreTags:
+  - Interaction
+  - Item
+  onlyHitBodyCollision: 1
   enableCollisionLogging: 1
+--- !u!114 &2938303985943841417
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1436011341205173466}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2e89ba26bd89e724e8edb0084d83100b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EffectManager
+  moveEffectData:
+    effectContainer: {fileID: 1780931551465099727}
+    effectPrefab: {fileID: 6268451283164409368, guid: b3e9f9f84e20d784c9fda3a97cefdea0, type: 3}
+  attackEffectData:
+    effectContainer: {fileID: 477321716822290983}
+    effectPrefab: {fileID: 0}
+  blankEffectData:
+    effectContainer: {fileID: 1661521742320373556}
+    effectPrefab: {fileID: 28315659389263985, guid: 074f91be24a25da4b9ae1e6524f03abe, type: 3}
+  damageEffectData:
+    effectContainer: {fileID: 8486690754284075413}
+    effectPrefab: {fileID: 4060150281021038275, guid: 9b49334dd77d7ce418b7824440cf7f97, type: 3}
 --- !u!1 &1780408805158563296
 GameObject:
   m_ObjectHideFlags: 0
@@ -1050,7 +1070,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8883997814716821167}
   - component: {fileID: 4113825754210360997}
-  m_Layer: 10
+  m_Layer: 8
   m_Name: Body
   m_TagString: Player
   m_Icon: {fileID: 0}

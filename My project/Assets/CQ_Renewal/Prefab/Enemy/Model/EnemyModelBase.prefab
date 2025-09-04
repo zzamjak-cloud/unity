@@ -1709,6 +1709,7 @@ GameObject:
   - component: {fileID: 6782544942582192092}
   - component: {fileID: 8052570246135864376}
   - component: {fileID: 2008158564861289818}
+  - component: {fileID: 3613399204160939273}
   m_Layer: 9
   m_Name: EnemyModelBase
   m_TagString: Enemy
@@ -1789,18 +1790,7 @@ MonoBehaviour:
   enableSortingOrderAdjustment: 1
   baseSortingOrder: 0
   sortingOrderMultiplier: -1
-  moveEffectData:
-    effectContainer: {fileID: 6217364103631532619}
-    effectPrefab: {fileID: 0}
-  attackEffectData:
-    effectContainer: {fileID: 4760901613603456616}
-    effectPrefab: {fileID: 0}
-  blankEffectData:
-    effectContainer: {fileID: 4506180677088588428}
-    effectPrefab: {fileID: 0}
-  damageEffectData:
-    effectContainer: {fileID: 734514294069565241}
-    effectPrefab: {fileID: 0}
+  effectManager: {fileID: 3613399204160939273}
   collisionManager: {fileID: 2008158564861289818}
   enableCollisionSystem: 1
   attackCollisionObject: {fileID: 3915720258814669513}
@@ -1843,7 +1833,37 @@ MonoBehaviour:
   - Player
   interactionCollisionTags:
   - Item
+  attackDuration: 0.2
+  allowMultipleHitsPerTarget: 0
+  attackIgnoreTags:
+  - Interaction
+  - Item
+  onlyHitBodyCollision: 1
   enableCollisionLogging: 1
+--- !u!114 &3613399204160939273
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5910127003611662084}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2e89ba26bd89e724e8edb0084d83100b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EffectManager
+  moveEffectData:
+    effectContainer: {fileID: 6217364103631532619}
+    effectPrefab: {fileID: 6268451283164409368, guid: b3e9f9f84e20d784c9fda3a97cefdea0, type: 3}
+  attackEffectData:
+    effectContainer: {fileID: 4760901613603456616}
+    effectPrefab: {fileID: 0}
+  blankEffectData:
+    effectContainer: {fileID: 4506180677088588428}
+    effectPrefab: {fileID: 28315659389263985, guid: 074f91be24a25da4b9ae1e6524f03abe, type: 3}
+  damageEffectData:
+    effectContainer: {fileID: 734514294069565241}
+    effectPrefab: {fileID: 4060150281021038275, guid: 9b49334dd77d7ce418b7824440cf7f97, type: 3}
 --- !u!1 &6399112700307688192
 GameObject:
   m_ObjectHideFlags: 0
