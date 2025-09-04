@@ -320,6 +320,79 @@ public class EnemyController : CharacterBase
         return initialPosition;
     }
 
+    #endregion
+
+    #region Collision System Methods
+
+    /// <summary>
+    /// 적의 Body 콜리전을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public void SetBodyCollisionEnabled(bool enabled)
+    {
+        SetCollisionTypeEnabled(CollisionType.Body, enabled);
+    }
+
+    /// <summary>
+    /// 적의 Attack 콜리전을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public void SetAttackCollisionEnabled(bool enabled)
+    {
+        SetCollisionTypeEnabled(CollisionType.Attack, enabled);
+    }
+
+    /// <summary>
+    /// 적의 Interaction 콜리전을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public void SetInteractionCollisionEnabled(bool enabled)
+    {
+        SetCollisionTypeEnabled(CollisionType.Interaction, enabled);
+    }
+
+    /// <summary>
+    /// 공격 중일 때 Attack 콜리전을 활성화합니다.
+    /// </summary>
+    public void EnableAttackCollision()
+    {
+        SetAttackCollisionEnabled(true);
+    }
+
+    /// <summary>
+    /// 공격이 끝났을 때 Attack 콜리전을 비활성화합니다.
+    /// </summary>
+    public void DisableAttackCollision()
+    {
+        SetAttackCollisionEnabled(false);
+    }
+
+    /// <summary>
+    /// 공격 애니메이션을 시작합니다.
+    /// </summary>
+    public void StartAttack()
+    {
+        Debug.Log("[적 공격] 공격 시작 - Attack 애니메이션 실행 및 콜리전 활성화");
+        
+        // Attack 애니메이션 실행
+        TriggerSpecialAnimation(CharacterAnimationState.Attack);
+        
+        // Attack 콜리전 즉시 활성화 (타격 판정 시작)
+        EnableAttackCollision();
+    }
+
+    /// <summary>
+    /// 공격 애니메이션이 끝났을 때 호출됩니다.
+    /// 이제 AttackCollisionHandler가 자동으로 비활성화하므로 수동 호출이 필요하지 않습니다.
+    /// </summary>
+    public void EndAttack()
+    {
+        Debug.Log("[적 공격] 공격 종료 - Attack 콜리전은 자동으로 비활성화됩니다");
+        OnAttackAnimationEnd();
+    }
+
+    #endregion
+
     /// <summary>
     /// 적의 스폰 위치를 반환합니다.
     /// </summary>
@@ -328,8 +401,6 @@ public class EnemyController : CharacterBase
     {
         return spawnPosition;
     }
-
-    #endregion
 
     #region Debug Methods
 

@@ -1,16 +1,21 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using System.Collections.Generic;
 
 /// <summary>
 /// 캐릭터의 기본 기능을 제공하는 추상 클래스
 /// 플레이어와 적 캐릭터 모두 이 클래스를 상속받아 공통 기능을 사용합니다.
 /// </summary>
-public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAttackEffect, IMoveEffect, IBlankEffect
+public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAttackEffect, IMoveEffect, IBlankEffect, IDamageEffect, ICollisionHandler
 {
     [Header("Movement Settings")]
     [SerializeField] protected float moveSpeed = 5f;  // 이동 속도
     [SerializeField] protected float runSpeedMultiplier = 1.5f;  // 달리기 속도 배수
-    [SerializeField] [Range(0.01f, 0.1f)] protected float zDepthWeight = 0.05f; // Z축 깊이 조절을 위한 가중치
+    
+    [Header("Sorting System")]
+    [SerializeField] protected bool enableSortingOrderAdjustment = true; // Y축 기반 정렬 순서 조절 활성화 여부
+    [SerializeField] protected int baseSortingOrder = 0; // 기본 정렬 순서
+    [SerializeField] protected float sortingOrderMultiplier = -1f; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞)
 
     [System.Serializable]
     public struct EffectData
@@ -23,6 +28,15 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     [SerializeField] protected EffectData moveEffectData;  // 이동 이펙트 데이터
     [SerializeField] protected EffectData attackEffectData;  // 공격 이펙트 데이터
     [SerializeField] protected EffectData blankEffectData;  // Blank 이펙트 데이터
+    [SerializeField] protected EffectData damageEffectData;  // 피격 이펙트 데이터
+    
+    [Header("Collision System")]
+    [SerializeField] protected CharacterCollisionManager collisionManager;  // 콜리전 관리자
+    [SerializeField] protected bool enableCollisionSystem = true;  // 콜리전 시스템 활성화 여부
+    
+    [Header("Attack Collision Objects")]
+    [SerializeField] protected GameObject attackCollisionObject;  // Attack 콜리전이 적용된 GameObject
+    [SerializeField] protected float attackCollisionDuration = 0.5f;  // Attack 콜리전 지속 시간
     
     // 활성화된 이펙트 인스턴스들을 추적
     protected ParticleSystem activeMoveEffect;  // 이동 이펙트는 1개만 유지
@@ -30,17 +44,23 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     // 오브젝트 풀링을 위한 이펙트 풀
     protected Queue<ParticleSystem> attackEffectPool = new Queue<ParticleSystem>();
     protected Queue<ParticleSystem> blankEffectPool = new Queue<ParticleSystem>();
-    protected const int EFFECT_POOL_SIZE = 3;  // 풀 크기
+    protected Queue<ParticleSystem> damageEffectPool = new Queue<ParticleSystem>();
+    protected const int EFFECT_POOL_SIZE = 5;  // 풀 크기 (연타 공격을 위해 증가)
+    protected const int MAX_DAMAGE_EFFECTS = 5;  // 최대 동시 피격 이펙트 개수
     
     // 활성화된 이펙트들을 추적 (풀에서 나온 이펙트들)
     protected List<ParticleSystem> activeAttackEffects = new List<ParticleSystem>();
     protected List<ParticleSystem> activeBlankEffects = new List<ParticleSystem>();
+    protected List<ParticleSystem> activeDamageEffects = new List<ParticleSystem>();
+    protected bool isPlayingDamageEffect = false;  // 피격 이펙트 재생 중 플래그
 
     [Header("Animation")]
     [SerializeField] protected Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
     
     protected Rigidbody2D rb;
     protected CharacterAnimationState currentAnimationState = CharacterAnimationState.Idle;
+    protected SortingGroup sortingGroup; // 정렬 순서 조절을 위한 SortingGroup 컴포넌트
+    protected int lastSortingOrder = 0; // 마지막 정렬 순서 (중복 업데이트 방지)
     
     // 애니메이션 파라미터 이름들을 상수로 정의
     protected static readonly string ANIM_IS_MOVING = "IsMoving";
@@ -78,6 +98,46 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         {
             Debug.LogError("Animator 컴포넌트가 필요합니다. Inspector에 연결하거나 자식 오브젝트에 추가해주세요.");
         }
+        
+        // SortingGroup 컴포넌트 찾기 또는 추가
+        sortingGroup = GetComponent<SortingGroup>();
+        if (sortingGroup == null)
+        {
+            sortingGroup = gameObject.AddComponent<SortingGroup>();
+            Debug.Log($"{gameObject.name}: SortingGroup 컴포넌트를 자동으로 추가했습니다.");
+        }
+        
+        // Attack 콜리전 GameObject 자동 찾기
+        if (attackCollisionObject == null)
+        {
+            attackCollisionObject = transform.Find("AttackCollision")?.gameObject;
+            if (attackCollisionObject == null)
+            {
+                Debug.LogWarning($"{gameObject.name}: Attack 콜리전 GameObject를 찾을 수 없습니다. 'AttackCollision'이라는 이름의 자식 오브젝트를 생성하거나 Inspector에서 직접 할당해주세요.");
+            }
+        }
+        
+        // AttackCollisionHandler 설정
+        if (attackCollisionObject != null)
+        {
+            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
+            if (attackHandler == null)
+            {
+                // AttackCollisionHandler가 없으면 자동으로 추가
+                attackHandler = attackCollisionObject.AddComponent<AttackCollisionHandler>();
+                Debug.Log($"{gameObject.name}: AttackCollisionHandler 컴포넌트를 자동으로 추가했습니다.");
+            }
+            
+            // 공격 지속 시간 설정
+            attackHandler.SetAttackDuration(attackCollisionDuration);
+        }
+        
+        // 초기 정렬 순서 설정
+        if (sortingGroup != null && enableSortingOrderAdjustment)
+        {
+            lastSortingOrder = baseSortingOrder + Mathf.RoundToInt(transform.position.y * sortingOrderMultiplier);
+            sortingGroup.sortingOrder = lastSortingOrder;
+        }
     }
 
     protected virtual void Update()
@@ -89,10 +149,26 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     
     protected virtual void LateUpdate()
     {
-        // Y축 위치에 따른 Z축 깊이 조절
-        Vector3 newPosition = transform.position;
-        newPosition.z = transform.position.y * zDepthWeight;
-        transform.position = newPosition;
+        // Y축 위치에 따른 정렬 순서 조절 (SortingGroup 사용)
+        UpdateSortingOrder();
+    }
+    
+    /// <summary>
+    /// Y축 위치에 따라 SortingGroup의 Order 값을 조절합니다.
+    /// </summary>
+    protected virtual void UpdateSortingOrder()
+    {
+        if (!enableSortingOrderAdjustment || sortingGroup == null) return;
+        
+        // Y축 위치에 따른 정렬 순서 계산
+        int newSortingOrder = baseSortingOrder + Mathf.RoundToInt(transform.position.y * sortingOrderMultiplier);
+        
+        // 정렬 순서가 변경된 경우에만 업데이트 (중복 업데이트 방지)
+        if (lastSortingOrder != newSortingOrder)
+        {
+            sortingGroup.sortingOrder = newSortingOrder;
+            lastSortingOrder = newSortingOrder;
+        }
     }
 
     #region ICharacterController Implementation
@@ -182,6 +258,46 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     public virtual bool IsInAnimationState(CharacterAnimationState state)
     {
         return currentAnimationState == state;
+    }
+
+    #endregion
+
+    #region ICollisionHandler Implementation
+
+    /// <summary>
+    /// Body 콜리전 이벤트 처리 (적/플레이어 충돌, 피격 판정)
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    public virtual void OnBodyCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 기본적인 피격 판정 처리
+        HandleBodyCollision(other);
+    }
+
+    /// <summary>
+    /// Attack 콜리전 이벤트 처리 (공격 범위 감지, 타격 판정)
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    public virtual void OnAttackCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 기본적인 타격 판정 처리
+        HandleAttackCollision(other);
+    }
+
+    /// <summary>
+    /// Interaction 콜리전 이벤트 처리 (아이템/오브젝트 상호작용)
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    public virtual void OnInteractionCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 기본적인 상호작용 처리
+        HandleInteractionCollision(other);
     }
 
     #endregion
@@ -305,6 +421,93 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
 
     #endregion
 
+    #region Collision Helper Methods
+
+    /// <summary>
+    /// Body 콜리전을 처리합니다.
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    protected virtual void HandleBodyCollision(Collider2D other)
+    {
+        // 기본 구현: 피격 판정만 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어와의 충돌 처리
+            Debug.Log($"{gameObject.name}: Body 콜리전 - {other.gameObject.name}와 충돌");
+        }
+        else if (other.CompareTag("Obstacle"))
+        {
+            // 장애물과의 충돌 처리
+            Debug.Log($"{gameObject.name}: Body 콜리전 - 장애물 {other.gameObject.name}와 충돌");
+        }
+    }
+
+    /// <summary>
+    /// Attack 콜리전을 처리합니다.
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    protected virtual void HandleAttackCollision(Collider2D other)
+    {
+        // 기본 구현: 타격 판정만 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어에 대한 공격 처리
+            Debug.Log($"[타격 성공] {gameObject.name}: {other.gameObject.name}를 성공적으로 공격했습니다!");
+            
+            // 타격받은 대상에게 Blank 애니메이션 실행
+            TriggerTargetBlankAnimation(other);
+            
+            // 타격받은 대상에게 피격 이펙트 재생
+            TriggerTargetDamageEffect(other);
+        }
+        else if (other.CompareTag("Destructible"))
+        {
+            // 파괴 가능한 오브젝트에 대한 공격 처리
+            Debug.Log($"[타격 성공] {gameObject.name}: 파괴 가능한 오브젝트 {other.gameObject.name}를 공격했습니다!");
+        }
+    }
+
+    /// <summary>
+    /// Interaction 콜리전을 처리합니다.
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    protected virtual void HandleInteractionCollision(Collider2D other)
+    {
+        // 기본 구현: 상호작용만 처리
+        if (other.CompareTag("Item"))
+        {
+            // 아이템과의 상호작용 처리
+            Debug.Log($"{gameObject.name}: Interaction 콜리전 - 아이템 {other.gameObject.name}와 상호작용");
+        }
+        else if (other.CompareTag("Interactable"))
+        {
+            // 상호작용 가능한 오브젝트와의 처리
+            Debug.Log($"{gameObject.name}: Interaction 콜리전 - 상호작용 가능한 오브젝트 {other.gameObject.name}와 상호작용");
+        }
+        else if (other.CompareTag("NPC"))
+        {
+            // NPC와의 상호작용 처리
+            Debug.Log($"{gameObject.name}: Interaction 콜리전 - NPC {other.gameObject.name}와 상호작용");
+        }
+        else if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어와의 상호작용 처리 (부모에서 CharacterBase 찾기)
+            CharacterBase targetCharacter = other.GetComponent<CharacterBase>();
+            if (targetCharacter == null)
+            {
+                targetCharacter = other.GetComponentInParent<CharacterBase>();
+            }
+            
+            if (targetCharacter != null)
+            {
+                Debug.Log($"{gameObject.name}: Interaction 콜리전 - {targetCharacter.gameObject.name}와 상호작용");
+                // 여기에 상호작용 로직 추가 가능
+            }
+        }
+    }
+
+    #endregion
+
     #region Effect System
 
     /// <summary>
@@ -322,6 +525,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         for (int i = 0; i < EFFECT_POOL_SIZE; i++)
         {
             CreateEffectForPool(blankEffectData, blankEffectPool);
+        }
+        
+        // Damage 이펙트 풀 초기화
+        for (int i = 0; i < EFFECT_POOL_SIZE; i++)
+        {
+            CreateEffectForPool(damageEffectData, damageEffectPool);
         }
     }
 
@@ -425,8 +634,14 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
                 // 이펙트 재생
                 effectPS.Play();
                 
+                Debug.Log($"[이펙트 재생] {gameObject.name}: 이펙트 재생 시작 - {effectPS.name}, 활성화된 개수: {activeEffectsList.Count}");
+                
                 // 이펙트 완료 후 풀로 반환
                 StartCoroutine(WaitForEffectToCompleteAndReturnToPool(effectPS, activeEffectsList, pool));
+            }
+            else
+            {
+                Debug.LogWarning($"[이펙트 재생] {gameObject.name}: 풀에서 이펙트를 가져올 수 없습니다.");
             }
         }
         else
@@ -466,6 +681,17 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
         
         // 풀로 반환 (Destroy 대신)
         ReturnEffectToPool(effect, pool);
+    }
+    
+    /// <summary>
+    /// 피격 이펙트 재생 중 플래그를 리셋하는 코루틴
+    /// </summary>
+    protected virtual System.Collections.IEnumerator ResetDamageEffectFlag()
+    {
+        // 0.1초 대기 후 플래그 해제
+        yield return new WaitForSeconds(0.1f);
+        isPlayingDamageEffect = false;
+        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 중 플래그 해제됨");
     }
 
     #endregion
@@ -525,6 +751,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     public virtual void PlayAttackEffect()
     {
         PlayEffect(attackEffectData, activeAttackEffects, attackEffectPool, true);
+        
+        // Attack 콜리전이 비활성화되어 있다면 활성화 (이펙트와 동기화)
+        if (!IsAttackCollisionEnabled())
+        {
+            EnableAttackCollision();
+        }
     }
 
     /// <summary>
@@ -534,6 +766,289 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IAtta
     public virtual void PlayBlankEffect()
     {
         PlayEffect(blankEffectData, activeBlankEffects, blankEffectPool, true);
+    }
+
+    /// <summary>
+    /// 피격 이펙트를 재생합니다.
+    /// 공격을 받았을 때 호출됩니다.
+    /// </summary>
+    public virtual void PlayDamageEffect()
+    {
+        // 호출 스택 정보 출력
+        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace();
+        Debug.Log($"[피격 이펙트] {gameObject.name}: PlayDamageEffect 호출됨 - 호출 스택: {stackTrace.GetFrame(1).GetMethod().Name}");
+        
+        // 중복 호출 방지 (짧은 시간 내 중복 호출 차단)
+        if (isPlayingDamageEffect)
+        {
+            Debug.LogWarning($"[피격 이펙트] {gameObject.name}: 이미 피격 이펙트를 재생 중입니다. 중복 호출을 방지합니다.");
+            return;
+        }
+        
+        // 최대 개수 제한 확인
+        if (activeDamageEffects.Count >= MAX_DAMAGE_EFFECTS)
+        {
+            Debug.LogWarning($"{gameObject.name}: 최대 피격 이펙트 개수({MAX_DAMAGE_EFFECTS})에 도달했습니다. 새로운 이펙트를 재생하지 않습니다.");
+            return;
+        }
+        
+        // 이펙트 데이터 유효성 확인
+        if (damageEffectData.effectPrefab == null || damageEffectData.effectContainer == null)
+        {
+            Debug.LogWarning($"{gameObject.name}: 피격 이펙트 프리팹 또는 컨테이너가 할당되지 않았습니다.");
+            return;
+        }
+        
+        // 풀 상태 확인
+        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 시도 - 풀 크기: {damageEffectPool.Count}, 활성화된 개수: {activeDamageEffects.Count}");
+        
+        // 재생 중 플래그 설정
+        isPlayingDamageEffect = true;
+        
+        PlayEffect(damageEffectData, activeDamageEffects, damageEffectPool, true);
+        Debug.Log($"[피격 이펙트] {gameObject.name}: 피격 이펙트 재생 완료 (현재 활성화된 개수: {activeDamageEffects.Count})");
+        
+        // 짧은 지연 후 플래그 해제 (중복 호출 방지)
+        StartCoroutine(ResetDamageEffectFlag());
+    }
+
+    #endregion
+
+    #region Attack Collision Control
+
+    /// <summary>
+    /// 타격받은 대상에게 Blank 애니메이션을 실행합니다.
+    /// </summary>
+    /// <param name="target">타격받은 대상</param>
+    protected virtual void TriggerTargetBlankAnimation(Collider2D target)
+    {
+        if (target == null) return;
+        
+        Debug.Log($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에게 Blank 애니메이션 실행 시도");
+        
+        // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
+        CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
+        if (targetCharacter == null)
+        {
+            // 자식에서 찾지 못했으면 부모에서 찾기
+            targetCharacter = target.GetComponentInParent<CharacterBase>();
+        }
+        
+        if (targetCharacter != null)
+        {
+            // 타겟에게 Blank 애니메이션 실행
+            targetCharacter.TriggerSpecialAnimation(CharacterAnimationState.Blank);
+            Debug.Log($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에게 Blank 애니메이션 성공적으로 실행됨 (대상: {targetCharacter.gameObject.name})");
+        }
+        else
+        {
+            Debug.LogWarning($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에서 CharacterBase 컴포넌트를 찾을 수 없어 Blank 애니메이션을 실행할 수 없습니다.");
+        }
+    }
+
+    /// <summary>
+    /// 타격받은 대상에게 피격 이펙트를 재생합니다.
+    /// </summary>
+    /// <param name="target">타격받은 대상</param>
+    protected virtual void TriggerTargetDamageEffect(Collider2D target)
+    {
+        if (target == null) return;
+        
+        Debug.Log($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에게 피격 이펙트 재생 시도");
+        
+        // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
+        CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
+        if (targetCharacter == null)
+        {
+            // 자식에서 찾지 못했으면 부모에서 찾기
+            targetCharacter = target.GetComponentInParent<CharacterBase>();
+        }
+        
+        if (targetCharacter != null)
+        {
+            // 타겟에게 피격 이펙트 재생
+            targetCharacter.PlayDamageEffect();
+            Debug.Log($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에게 피격 이펙트 성공적으로 재생됨 (대상: {targetCharacter.gameObject.name})");
+        }
+        else
+        {
+            Debug.LogWarning($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에서 CharacterBase 컴포넌트를 찾을 수 없어 피격 이펙트를 재생할 수 없습니다.");
+        }
+    }
+
+    /// <summary>
+    /// Attack 콜리전을 활성화합니다.
+    /// </summary>
+    public virtual void EnableAttackCollision()
+    {
+        if (attackCollisionObject != null)
+        {
+            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
+            if (attackHandler != null)
+            {
+                attackHandler.ActivateAttack();
+                Debug.Log($"[공격 시작] {gameObject.name}: Attack 콜리전 활성화 요청 완료 - {attackCollisionDuration}초 동안 타격 판정");
+                Debug.Log($"[콜리전 디버그] {gameObject.name}: 현재 위치 - {transform.position}, Attack 콜리전 위치 - {attackCollisionObject.transform.position}");
+            }
+            else
+            {
+                Debug.LogError($"[공격 시작] {gameObject.name}: AttackCollisionHandler 컴포넌트를 찾을 수 없습니다.");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[공격 시작] {gameObject.name}: Attack 콜리전 GameObject가 할당되지 않았습니다.");
+        }
+    }
+
+    /// <summary>
+    /// Attack 콜리전을 비활성화합니다.
+    /// </summary>
+    public virtual void DisableAttackCollision()
+    {
+        if (attackCollisionObject != null)
+        {
+            AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
+            if (attackHandler != null)
+            {
+                attackHandler.DeactivateAttack();
+                Debug.Log($"[공격 종료] {gameObject.name}: Attack 콜리전 비활성화 요청 완료");
+            }
+            else
+            {
+                Debug.LogWarning($"[공격 종료] {gameObject.name}: AttackCollisionHandler 컴포넌트를 찾을 수 없습니다.");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[공격 종료] {gameObject.name}: Attack 콜리전 GameObject가 할당되지 않았습니다.");
+        }
+    }
+
+    /// <summary>
+    /// Attack 콜리전이 활성화되어 있는지 확인합니다.
+    /// </summary>
+    /// <returns>Attack 콜리전이 활성화되어 있으면 true</returns>
+    public virtual bool IsAttackCollisionEnabled()
+    {
+        if (attackCollisionObject == null) return false;
+        
+        AttackCollisionHandler attackHandler = attackCollisionObject.GetComponent<AttackCollisionHandler>();
+        return attackHandler != null && attackHandler.IsAttackActive();
+    }
+
+    /// <summary>
+    /// Attack 애니메이션이 끝났을 때 호출됩니다.
+    /// 이제 AttackCollisionHandler가 자동으로 비활성화하므로 수동 호출이 필요하지 않습니다.
+    /// </summary>
+    public virtual void OnAttackAnimationEnd()
+    {
+        // AttackCollisionHandler가 자동으로 비활성화하므로 별도 처리 불필요
+        Debug.Log($"[애니메이션] {gameObject.name}: Attack 애니메이션 종료 - Attack 콜리전은 자동으로 비활성화됩니다");
+    }
+
+    #endregion
+
+    #region Collision System Control
+
+    /// <summary>
+    /// 콜리전 시스템을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public virtual void SetCollisionSystemEnabled(bool enabled)
+    {
+        enableCollisionSystem = enabled;
+        
+        if (collisionManager != null)
+        {
+            collisionManager.SetAllCollisionsEnabled(enabled);
+        }
+        
+        Debug.Log($"{gameObject.name}: 콜리전 시스템 {(enabled ? "활성화" : "비활성화")}");
+    }
+
+    /// <summary>
+    /// 특정 콜리전 타입을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="collisionType">콜리전 타입</param>
+    /// <param name="enabled">활성화 여부</param>
+    public virtual void SetCollisionTypeEnabled(CollisionType collisionType, bool enabled)
+    {
+        if (collisionManager == null) return;
+        
+        switch (collisionType)
+        {
+            case CollisionType.Body:
+                collisionManager.SetBodyCollisionEnabled(enabled);
+                break;
+            case CollisionType.Attack:
+                collisionManager.SetAttackCollisionEnabled(enabled);
+                break;
+            case CollisionType.Interaction:
+                collisionManager.SetInteractionCollisionEnabled(enabled);
+                break;
+        }
+        
+        Debug.Log($"{gameObject.name}: {collisionType} 콜리전 {(enabled ? "활성화" : "비활성화")}");
+    }
+
+    /// <summary>
+    /// 특정 콜리전 타입이 활성화되어 있는지 확인합니다.
+    /// </summary>
+    /// <param name="collisionType">확인할 콜리전 타입</param>
+    /// <returns>활성화되어 있으면 true</returns>
+    public virtual bool IsCollisionTypeEnabled(CollisionType collisionType)
+    {
+        if (collisionManager == null) return false;
+        return collisionManager.IsCollisionEnabled(collisionType);
+    }
+
+    /// <summary>
+    /// 콜리전 로깅을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public virtual void SetCollisionLoggingEnabled(bool enabled)
+    {
+        if (collisionManager == null) return;
+        
+        collisionManager.SetCollisionLoggingEnabled(enabled);
+    }
+    
+    /// <summary>
+    /// 정렬 순서 조절을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public virtual void SetSortingOrderAdjustmentEnabled(bool enabled)
+    {
+        enableSortingOrderAdjustment = enabled;
+        
+        if (enabled && sortingGroup != null)
+        {
+            // 즉시 현재 위치에 맞는 정렬 순서 적용
+            UpdateSortingOrder();
+        }
+    }
+    
+    /// <summary>
+    /// 수동으로 정렬 순서를 설정합니다.
+    /// </summary>
+    /// <param name="order">설정할 정렬 순서</param>
+    public virtual void SetSortingOrder(int order)
+    {
+        if (sortingGroup != null)
+        {
+            sortingGroup.sortingOrder = order;
+            lastSortingOrder = order;
+        }
+    }
+    
+    /// <summary>
+    /// 현재 정렬 순서를 반환합니다.
+    /// </summary>
+    /// <returns>현재 정렬 순서</returns>
+    public virtual int GetCurrentSortingOrder()
+    {
+        return sortingGroup != null ? sortingGroup.sortingOrder : 0;
     }
 
     #endregion
