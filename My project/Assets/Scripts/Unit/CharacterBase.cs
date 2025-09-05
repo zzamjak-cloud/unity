@@ -36,8 +36,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     [SerializeField] protected float invincibilityDuration = 0.5f;  // 무적 시간 (초)
     [SerializeField] protected bool isInvincible = false;  // 무적 상태
     
-    [Header("Health UI")]
-    [SerializeField] protected bool enableHealthBar = true;  // 체력바 표시 여부
+    [Header("Status UI")]
+    [SerializeField] protected bool enableStatusBar = true;  // 상태바 표시 여부
     
 
     [Header("Animation")]
@@ -69,7 +69,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected List<System.Action> deathListeners;
     
     // 체력 UI 관련 변수들
-    protected HealthBarUI healthBarUI;  // 체력바 UI 컴포넌트
+    protected StatusBarUI statusBarUI;  // 상태바 UI 컴포넌트
 
     protected virtual void Awake()
     {
@@ -802,7 +802,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected virtual void InitializeHealthSystem()
     {
         // 체력 UI 먼저 초기화 (이벤트 리스너 등록 전)
-        InitializeHealthUI();
+        InitializeStatusUI();
         
         // 체력 설정 (UI 초기화 후)
         currentHealth = maxHealth;
@@ -811,43 +811,43 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         invincibilityTimer = 0f;
         
         // 초기 체력 UI 업데이트 (이벤트 없이 직접)
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+            statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
         }
     }
     
     /// <summary>
-    /// 체력 UI 초기화
+    /// 상태 UI 초기화
     /// </summary>
-    protected virtual void InitializeHealthUI()
+    protected virtual void InitializeStatusUI()
     {
-        if (!enableHealthBar) return;
+        if (!enableStatusBar) return;
         
-        // 자동으로 HealthBarUI 컴포넌트 찾기
-        healthBarUI = GetComponentInChildren<HealthBarUI>();
+        // 자동으로 StatusBarUI 컴포넌트 찾기
+        statusBarUI = GetComponentInChildren<StatusBarUI>();
         
-        if (healthBarUI == null)
+        if (statusBarUI == null)
         {
-            // 자식 오브젝트에서 HealthBarUI 찾기
-            Transform healthBarTransform = transform.Find("HealthBar");
-            if (healthBarTransform != null)
+            // 자식 오브젝트에서 StatusBarUI 찾기
+            Transform statusBarTransform = transform.Find("StatusBar");
+            if (statusBarTransform != null)
             {
-                healthBarUI = healthBarTransform.GetComponent<HealthBarUI>();
+                statusBarUI = statusBarTransform.GetComponent<StatusBarUI>();
             }
         }
         
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            // 체력바 설정 적용 (기본 오프셋 사용)
-            healthBarUI.SetSettings(Vector3.zero, true, true);
+            // 상태바 설정 적용 (기본 오프셋 사용)
+            statusBarUI.SetSettings(Vector3.zero, true, true);
             
-            // 초기 체력 표시
-            healthBarUI.SetVisible(true);
+            // 초기 상태바 표시
+            statusBarUI.SetVisible(true);
         }
         else
         {
-            Debug.LogWarning($"[체력 UI] {gameObject.name}: HealthBarUI 컴포넌트를 찾을 수 없습니다. 체력바가 표시되지 않습니다.");
+            Debug.LogWarning($"[상태 UI] {gameObject.name}: StatusBarUI 컴포넌트를 찾을 수 없습니다. 상태바가 표시되지 않습니다.");
         }
     }
     
@@ -942,9 +942,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         isDead = true;
         
         // 체력바 숨기기
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            healthBarUI.SetVisible(false);
+            statusBarUI.SetVisible(false);
         }
         
         // 사망 애니메이션 실행
@@ -1079,9 +1079,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     /// <param name="show">표시 여부</param>
     public virtual void SetHealthBarVisible(bool show)
     {
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            healthBarUI.SetVisible(show);
+            statusBarUI.SetVisible(show);
         }
     }
     
@@ -1091,9 +1091,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     /// <param name="offset">오프셋</param>
     public virtual void SetHealthBarOffset(Vector3 offset)
     {
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            healthBarUI.SetSettings(offset, true, true);
+            statusBarUI.SetSettings(offset, true, true);
         }
     }
     
@@ -1105,9 +1105,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     /// <param name="danger">위험 상태 색상</param>
     public virtual void SetHealthBarColors(Color healthy, Color warning, Color danger)
     {
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            healthBarUI.SetColors(healthy, warning, danger);
+            statusBarUI.SetHealthColors(healthy, warning, danger);
         }
     }
     
@@ -1143,7 +1143,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         effectManager = null;
         collisionManager = null;
         attackCollisionObject = null;
-        healthBarUI = null;
+        statusBarUI = null;
     }
     
     #endregion

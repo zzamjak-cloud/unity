@@ -14,9 +14,9 @@ public class PlayerController : CharacterBase
     [SerializeField] private int playerMaxHealth = 150;  // 플레이어 최대 체력
     [SerializeField] private int playerAttackPower = 25;  // 플레이어 공격력
     
-    [Header("Player Health UI")]
-    [SerializeField] private Vector3 playerHealthBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 체력바 오프셋
-    [SerializeField] private GameObject playerHealthBarObject;  // 플레이어 체력바 GameObject (직접 연결)
+    [Header("Player Status UI")]
+    [SerializeField] private Vector3 playerStatusBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 상태바 오프셋
+    [SerializeField] private GameObject playerStatusBarObject;  // 플레이어 상태바 GameObject (직접 연결)
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -38,7 +38,7 @@ public class PlayerController : CharacterBase
         base.Start();
         
         // 플레이어 전용 체력바 설정
-        InitializePlayerHealthUI();
+        InitializePlayerStatusUI();
         
         // 플레이어 전용 초기화
         Debug.Log("PlayerController 초기화 완료");
@@ -47,29 +47,29 @@ public class PlayerController : CharacterBase
     /// <summary>
     /// 플레이어 전용 체력 UI 초기화
     /// </summary>
-    private void InitializePlayerHealthUI()
+    private void InitializePlayerStatusUI()
     {
-        if (!enableHealthBar) return;
+        if (!enableStatusBar) return;
         
-        // 직접 연결된 HealthBar GameObject가 있는지 확인
-        if (playerHealthBarObject != null)
+        // 직접 연결된 StatusBar GameObject가 있는지 확인
+        if (playerStatusBarObject != null)
         {
-            healthBarUI = playerHealthBarObject.GetComponent<HealthBarUI>();
-            if (healthBarUI == null)
+            statusBarUI = playerStatusBarObject.GetComponent<StatusBarUI>();
+            if (statusBarUI == null)
             {
-                // HealthBarUI 컴포넌트가 없으면 자식에서 찾기
-                healthBarUI = playerHealthBarObject.GetComponentInChildren<HealthBarUI>();
+                // StatusBarUI 컴포넌트가 없으면 자식에서 찾기
+                statusBarUI = playerStatusBarObject.GetComponentInChildren<StatusBarUI>();
             }
         }
         
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            // 플레이어 전용 체력바 설정 적용
-            healthBarUI.SetSettings(playerHealthBarOffset, true, true);
-            healthBarUI.SetVisible(true);
+            // 플레이어 전용 상태바 설정 적용
+            statusBarUI.SetSettings(playerStatusBarOffset, true, true);
+            statusBarUI.SetVisible(true);
             
             // 초기 체력 표시
-            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+            statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
         }
     }
 

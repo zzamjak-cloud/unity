@@ -598,6 +598,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6874551230771281758}
+  - component: {fileID: 8055276834630416489}
   m_Layer: 8
   m_Name: StatusBars
   m_TagString: Untagged
@@ -621,6 +622,37 @@ Transform:
   - {fileID: 5904716406157615974}
   m_Father: {fileID: 5267203820544347734}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8055276834630416489
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1798372301175073308}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30af23f1ff3887746bf436de639751c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StatusBarUI
+  healthSlider: {fileID: 6593540845942799142}
+  manaSlider: {fileID: 0}
+  staminaSlider: {fileID: 0}
+  enableHealthBar: 1
+  enableManaBar: 0
+  enableStaminaBar: 0
+  healthyColor: {r: 0.85882354, g: 0.38039216, b: 0.34509805, a: 1}
+  warningColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  dangerColor: {r: 1, g: 0, b: 0, a: 1}
+  warningThreshold: 0.6
+  dangerThreshold: 0.3
+  manaColor: {r: 0.34509805, g: 0.7019608, b: 0.85882354, a: 1}
+  staminaColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  enableSmoothTransition: 1
+  transitionSpeed: 5
+  enableColorTransition: 1
+  offset: {x: 0, y: 1.5, z: 0}
+  followCharacter: 1
+  alwaysFaceCamera: 1
 --- !u!1 &1985677948266308005
 GameObject:
   m_ObjectHideFlags: 0
@@ -1675,7 +1707,6 @@ GameObject:
   - component: {fileID: 7191788810659971420}
   - component: {fileID: 6781859546701613699}
   - component: {fileID: 8938574542464320076}
-  - component: {fileID: 6371721861724685078}
   m_Layer: 8
   m_Name: Layout V
   m_TagString: Untagged
@@ -1744,38 +1775,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.ContentSizeFitter
   m_HorizontalFit: 0
   m_VerticalFit: 2
---- !u!114 &6371721861724685078
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4637082802713675843}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0fab6668803ee6f43b3324fb497c379b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::HealthBarUI
-  healthSlider: {fileID: 6593540845942799142}
-  fillImage: {fileID: 3003902307673820418}
-  backgroundImage: {fileID: 2541308792847709552}
-  additionalSliders: []
-  autoDetectSliders: 1
-  sliderNames:
-  - Health
-  - Mana
-  - Stamina
-  healthyColor: {r: 0.85882354, g: 0.38039216, b: 0.34509805, a: 1}
-  warningColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  dangerColor: {r: 1, g: 0, b: 0, a: 1}
-  warningThreshold: 0.6
-  dangerThreshold: 0.3
-  enableSmoothTransition: 1
-  transitionSpeed: 5
-  enableColorTransition: 1
-  offset: {x: 0, y: 1.5, z: 0}
-  followCharacter: 1
-  alwaysFaceCamera: 1
 --- !u!1 &4659564214709977775
 GameObject:
   m_ObjectHideFlags: 0
@@ -2421,7 +2420,7 @@ MonoBehaviour:
   isDead: 0
   invincibilityDuration: 0.5
   isInvincible: 0
-  enableHealthBar: 1
+  enableStatusBar: 1
   anim: {fileID: 2174600648370066429}
   isStaticEnemy: 1
   spawnPosition: {x: 0, y: 0, z: 0}
@@ -2430,8 +2429,8 @@ MonoBehaviour:
   randomAnimationChance: 0.1
   enemyMaxHealth: 80
   enemyAttackPower: 15
-  enemyHealthBarOffset: {x: 0, y: 1.261, z: 0}
-  enemyHealthBarObject: {fileID: 1798372301175073308}
+  enemyStatusBarOffset: {x: 0, y: 1.261, z: 0}
+  enemyStatusBarObject: {fileID: 1798372301175073308}
 --- !u!114 &2008158564861289818
 MonoBehaviour:
   m_ObjectHideFlags: 0

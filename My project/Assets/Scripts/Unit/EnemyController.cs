@@ -19,9 +19,9 @@ public class EnemyController : CharacterBase
     [SerializeField] private int enemyMaxHealth = 80;  // 적 최대 체력
     [SerializeField] private int enemyAttackPower = 15;  // 적 공격력
     
-    [Header("Enemy Health UI")]
-    [SerializeField] private Vector3 enemyHealthBarOffset = new Vector3(0, 1.5f, 0);  // 적 체력바 오프셋
-    [SerializeField] private GameObject enemyHealthBarObject;  // 적 체력바 GameObject (직접 연결)
+    [Header("Enemy Status UI")]
+    [SerializeField] private Vector3 enemyStatusBarOffset = new Vector3(0, 1.5f, 0);  // 적 상태바 오프셋
+    [SerializeField] private GameObject enemyStatusBarObject;  // 적 상태바 GameObject (직접 연결)
     
     // 적 전용 상태 변수들
     private Vector3 initialPosition;
@@ -40,38 +40,38 @@ public class EnemyController : CharacterBase
         base.Start();
         
         // 적 전용 체력바 설정
-        InitializeEnemyHealthUI();
+        InitializeEnemyStatusUI();
         
         // 적 전용 초기화
         InitializeEnemy();
     }
     
     /// <summary>
-    /// 적 전용 체력 UI 초기화
+    /// 적 전용 상태 UI 초기화
     /// </summary>
-    private void InitializeEnemyHealthUI()
+    private void InitializeEnemyStatusUI()
     {
-        if (!enableHealthBar) return;
+        if (!enableStatusBar) return;
         
-        // 직접 연결된 HealthBar GameObject가 있는지 확인
-        if (enemyHealthBarObject != null)
+        // 직접 연결된 StatusBar GameObject가 있는지 확인
+        if (enemyStatusBarObject != null)
         {
-            healthBarUI = enemyHealthBarObject.GetComponent<HealthBarUI>();
-            if (healthBarUI == null)
+            statusBarUI = enemyStatusBarObject.GetComponent<StatusBarUI>();
+            if (statusBarUI == null)
             {
-                // HealthBarUI 컴포넌트가 없으면 자식에서 찾기
-                healthBarUI = enemyHealthBarObject.GetComponentInChildren<HealthBarUI>();
+                // StatusBarUI 컴포넌트가 없으면 자식에서 찾기
+                statusBarUI = enemyStatusBarObject.GetComponentInChildren<StatusBarUI>();
             }
         }
         
-        if (healthBarUI != null)
+        if (statusBarUI != null)
         {
-            // 적 전용 체력바 설정 적용
-            healthBarUI.SetSettings(enemyHealthBarOffset, true, true);
-            healthBarUI.SetVisible(true);
+            // 적 전용 상태바 설정 적용
+            statusBarUI.SetSettings(enemyStatusBarOffset, true, true);
+            statusBarUI.SetVisible(true);
             
             // 초기 체력 표시
-            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+            statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
         }
     }
 
