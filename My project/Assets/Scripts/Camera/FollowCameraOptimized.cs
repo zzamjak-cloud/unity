@@ -46,6 +46,16 @@ public class FollowCameraOptimized : MonoBehaviour
     [SerializeField] private float velocitySmoothing = 0.05f;  // 속도 스무딩
     [SerializeField] private float maxVelocity = 5f;  // 최대 속도 제한
     
+    [Header("Camera Effects")]
+    [SerializeField] private bool enableScreenShake = true;  // 화면 흔들림 효과 활성화
+    [SerializeField] private float shakeIntensity = 0.5f;  // 화면 흔들림 강도
+    [SerializeField] private float shakeDuration = 0.3f;  // 화면 흔들림 지속 시간
+    [SerializeField] private bool enableZoom = true;  // 줌 효과 활성화
+    [SerializeField] private float defaultOrthographicSize = 5f;  // 기본 직교 크기
+    [SerializeField] private float zoomSpeed = 2f;  // 줌 속도
+    [SerializeField] private float minZoom = 3f;  // 최소 줌
+    [SerializeField] private float maxZoom = 8f;  // 최대 줌
+    
     [Header("Performance Optimization")]
     [SerializeField] private bool enablePerformanceMode = true;  // 성능 모드 활성화
     [SerializeField] private int updateFrequency = 1;  // 업데이트 빈도 (1 = 매 프레임, 2 = 2프레임마다)
@@ -86,6 +96,15 @@ public class FollowCameraOptimized : MonoBehaviour
     private Vector3 tempVector3_2 = Vector3.zero;
     private Vector3 tempVector3_3 = Vector3.zero;
     
+    // 카메라 효과 관련 변수들
+    private Camera cameraComponent;
+    private bool isShaking = false;
+    private float shakeTimer = 0f;
+    private Vector3 originalCameraPosition;
+    private float originalOrthographicSize;
+    private float targetOrthographicSize;
+    private bool isZooming = false;
+    
     // 초기화
     private void Start()
     {
@@ -109,6 +128,7 @@ public class FollowCameraOptimized : MonoBehaviour
         
         UpdateCameraPosition();
         UpdateCameraRotation();
+        UpdateCameraEffects();
         
         if (showDebugInfo)
         {
@@ -147,10 +167,39 @@ public class FollowCameraOptimized : MonoBehaviour
             // 카메라를 초기 위치로 이동
             transform.position = targetPosition;
             
+            // 카메라 효과 초기화
+            InitializeCameraEffects();
         }
         else
         {
             Debug.LogWarning("[FollowCameraOptimized] Target이 설정되지 않았습니다!");
+        }
+    }
+    
+    /// <summary>
+    /// 카메라 효과 초기화
+    /// </summary>
+    private void InitializeCameraEffects()
+    {
+        // 카메라 컴포넌트 가져오기
+        cameraComponent = GetComponent<Camera>();
+        if (cameraComponent == null)
+        {
+            cameraComponent = Camera.main;
+        }
+        
+        if (cameraComponent != null)
+        {
+            // 원본 위치와 크기 저장
+            originalCameraPosition = transform.position;
+            originalOrthographicSize = cameraComponent.orthographicSize;
+            targetOrthographicSize = defaultOrthographicSize;
+            
+            // 기본 줌 설정
+            if (enableZoom)
+            {
+                cameraComponent.orthographicSize = defaultOrthographicSize;
+            }
         }
     }
     
@@ -362,6 +411,75 @@ public class FollowCameraOptimized : MonoBehaviour
     {
         // 필요시 카메라 회전 로직 추가
         // 현재는 기본 회전 유지
+    }
+    
+    /// <summary>
+    /// 카메라 효과 업데이트 (화면 흔들림, 줌)
+    /// </summary>
+    private void UpdateCameraEffects()
+    {
+        if (cameraComponent == null) return;
+        
+        // 화면 흔들림 업데이트
+        if (enableScreenShake && isShaking)
+        {
+            UpdateScreenShake();
+        }
+        
+        // 줌 업데이트
+        if (enableZoom && isZooming)
+        {
+            UpdateZoom();
+        }
+    }
+    
+    /// <summary>
+    /// 화면 흔들림 업데이트
+    /// </summary>
+    private void UpdateScreenShake()
+    {
+        if (shakeTimer > 0)
+        {
+            // 랜덤한 흔들림 오프셋 생성
+            tempVector3_1.x = Random.Range(-1f, 1f) * shakeIntensity;
+            tempVector3_1.y = Random.Range(-1f, 1f) * shakeIntensity;
+            tempVector3_1.z = 0f;
+            
+            // 카메라 위치에 흔들림 적용
+            transform.position = originalCameraPosition + tempVector3_1;
+            
+            // 타이머 감소
+            shakeTimer -= Time.deltaTime;
+        }
+        else
+        {
+            // 흔들림 종료
+            isShaking = false;
+            transform.position = originalCameraPosition;
+        }
+    }
+    
+    /// <summary>
+    /// 줌 업데이트
+    /// </summary>
+    private void UpdateZoom()
+    {
+        if (cameraComponent != null)
+        {
+            // 부드러운 줌 전환
+            cameraComponent.orthographicSize = Mathf.Lerp(
+                cameraComponent.orthographicSize, 
+                targetOrthographicSize, 
+                zoomSpeed * Time.deltaTime
+            );
+            
+            // 목표 크기에 거의 도달했으면 줌 완료
+            if (Mathf.Abs(cameraComponent.orthographicSize - targetOrthographicSize) < 0.01f)
+            {
+                cameraComponent.orthographicSize = targetOrthographicSize;
+                isZooming = false;
+            }
+        }
     }
     
     /// <summary>
@@ -597,6 +715,126 @@ public class FollowCameraOptimized : MonoBehaviour
     
     #endregion
     
+    #region Camera Effects Control
+    
+    /// <summary>
+    /// 화면 흔들림 시작
+    /// </summary>
+    /// <param name="intensity">흔들림 강도</param>
+    /// <param name="duration">지속 시간</param>
+    public void StartScreenShake(float intensity = -1f, float duration = -1f)
+    {
+        if (!enableScreenShake) return;
+        
+        shakeIntensity = intensity > 0 ? intensity : shakeIntensity;
+        shakeDuration = duration > 0 ? duration : shakeDuration;
+        
+        isShaking = true;
+        shakeTimer = shakeDuration;
+        originalCameraPosition = transform.position;
+    }
+    
+    /// <summary>
+    /// 화면 흔들림 중지
+    /// </summary>
+    public void StopScreenShake()
+    {
+        isShaking = false;
+        shakeTimer = 0f;
+        if (cameraComponent != null)
+        {
+            transform.position = originalCameraPosition;
+        }
+    }
+    
+    /// <summary>
+    /// 줌 인/아웃
+    /// </summary>
+    /// <param name="targetSize">목표 크기</param>
+    public void SetZoom(float targetSize)
+    {
+        if (!enableZoom || cameraComponent == null) return;
+        
+        targetOrthographicSize = Mathf.Clamp(targetSize, minZoom, maxZoom);
+        isZooming = true;
+    }
+    
+    /// <summary>
+    /// 줌 리셋 (기본 크기로)
+    /// </summary>
+    public void ResetZoom()
+    {
+        SetZoom(defaultOrthographicSize);
+    }
+    
+    /// <summary>
+    /// 줌 인
+    /// </summary>
+    /// <param name="amount">줌 인 정도</param>
+    public void ZoomIn(float amount = 1f)
+    {
+        if (!enableZoom || cameraComponent == null) return;
+        
+        float newSize = cameraComponent.orthographicSize - amount;
+        SetZoom(newSize);
+    }
+    
+    /// <summary>
+    /// 줌 아웃
+    /// </summary>
+    /// <param name="amount">줌 아웃 정도</param>
+    public void ZoomOut(float amount = 1f)
+    {
+        if (!enableZoom || cameraComponent == null) return;
+        
+        float newSize = cameraComponent.orthographicSize + amount;
+        SetZoom(newSize);
+    }
+    
+    /// <summary>
+    /// 카메라 효과 설정
+    /// </summary>
+    /// <param name="screenShake">화면 흔들림 활성화</param>
+    /// <param name="zoom">줌 활성화</param>
+    public void SetCameraEffects(bool screenShake, bool zoom)
+    {
+        enableScreenShake = screenShake;
+        enableZoom = zoom;
+    }
+    
+    /// <summary>
+    /// 화면 흔들림 설정
+    /// </summary>
+    /// <param name="intensity">기본 강도</param>
+    /// <param name="duration">기본 지속 시간</param>
+    public void SetScreenShakeSettings(float intensity, float duration)
+    {
+        shakeIntensity = intensity;
+        shakeDuration = duration;
+    }
+    
+    /// <summary>
+    /// 줌 설정
+    /// </summary>
+    /// <param name="defaultSize">기본 크기</param>
+    /// <param name="min">최소 크기</param>
+    /// <param name="max">최대 크기</param>
+    /// <param name="speed">줌 속도</param>
+    public void SetZoomSettings(float defaultSize, float min, float max, float speed)
+    {
+        defaultOrthographicSize = defaultSize;
+        minZoom = min;
+        maxZoom = max;
+        zoomSpeed = speed;
+        
+        if (cameraComponent != null)
+        {
+            targetOrthographicSize = defaultOrthographicSize;
+        }
+    }
+    
+    #endregion
+    
     /// <summary>
     /// 오브젝트가 파괴될 때 리소스 정리
     /// </summary>
@@ -606,6 +844,12 @@ public class FollowCameraOptimized : MonoBehaviour
         target = null;
         playerController = null;
         playerRigidbody = null;
+        cameraComponent = null;
+        
+        // 카메라 효과 상태 초기화
+        isShaking = false;
+        isZooming = false;
+        shakeTimer = 0f;
         
         // 캐시된 변수들 초기화
         tempVector3_1 = Vector3.zero;

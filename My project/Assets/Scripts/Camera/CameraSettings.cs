@@ -38,6 +38,7 @@ public class CameraSettings : ScriptableObject
     [SerializeField] private bool enableScreenShake = true;  // 화면 흔들림 효과 활성화
     [SerializeField] private float shakeIntensity = 0.5f;  // 화면 흔들림 강도
     [SerializeField] private float shakeDuration = 0.3f;  // 화면 흔들림 지속 시간
+    [SerializeField] private bool enableZoom = true;  // 줌 효과 활성화
     
     [Header("Zoom Settings")]
     [SerializeField] private float defaultOrthographicSize = 5f;  // 기본 직교 크기
@@ -67,6 +68,7 @@ public class CameraSettings : ScriptableObject
     public bool EnableScreenShake => enableScreenShake;
     public float ShakeIntensity => shakeIntensity;
     public float ShakeDuration => shakeDuration;
+    public bool EnableZoom => enableZoom;
     public float DefaultOrthographicSize => defaultOrthographicSize;
     public float ZoomSpeed => zoomSpeed;
     public float MinZoom => minZoom;
@@ -87,6 +89,11 @@ public class CameraSettings : ScriptableObject
         followCamera.SetLookAheadDistance(lookAheadDistance);
         followCamera.SetLookAheadSmoothing(lookAheadSmoothing);
         followCamera.SetAdvancedSmoothing(useAdvancedSmoothing, positionSmoothing, velocitySmoothing, maxVelocity);
+        
+        // 카메라 효과 설정 적용
+        followCamera.SetCameraEffects(enableScreenShake, enableZoom);
+        followCamera.SetScreenShakeSettings(shakeIntensity, shakeDuration);
+        followCamera.SetZoomSettings(defaultOrthographicSize, minZoom, maxZoom, zoomSpeed);
         
         if (enableBoundaries)
         {
@@ -135,6 +142,7 @@ public class CameraSettings : ScriptableObject
         enableScreenShake = true;
         shakeIntensity = 0.5f;
         shakeDuration = 0.3f;
+        enableZoom = true;
         defaultOrthographicSize = 5f;
         zoomSpeed = 2f;
         minZoom = 3f;
