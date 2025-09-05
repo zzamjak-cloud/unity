@@ -28,6 +28,17 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     [SerializeField] protected GameObject attackCollisionObject;  // Attack 콜리전이 적용된 GameObject
     [SerializeField] protected float attackCollisionDuration = 0.5f;  // Attack 콜리전 지속 시간
     
+    [Header("Health System")]
+    [SerializeField] protected int maxHealth = 100;  // 최대 체력
+    [SerializeField] protected int currentHealth;  // 현재 체력
+    [SerializeField] protected int attackPower = 20;  // 공격력
+    [SerializeField] protected bool isDead = false;  // 사망 상태
+    [SerializeField] protected float invincibilityDuration = 0.5f;  // 무적 시간 (초)
+    [SerializeField] protected bool isInvincible = false;  // 무적 상태
+    
+    [Header("Health UI")]
+    [SerializeField] protected bool enableHealthBar = true;  // 체력바 표시 여부
+    
 
     [Header("Animation")]
     [SerializeField] protected Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
@@ -37,10 +48,28 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected SortingGroup sortingGroup; // 정렬 순서 조절을 위한 SortingGroup 컴포넌트
     protected int lastSortingOrder = 0; // 마지막 정렬 순서 (중복 업데이트 방지)
     
+    // 메모리 할당 최적화를 위한 캐시된 변수들
+    protected Vector3 cachedPosition;
+    protected Vector3 cachedVelocity;
+    protected float cachedSortingOrder;
+    protected int cachedHealthValue;
+    
 
     // 현재 이동 상태
     protected Vector2 currentMovement = Vector2.zero;
     protected bool isCurrentlyRunning = false;
+    
+    // 체력 시스템 관련 변수들
+    protected float invincibilityTimer = 0f;  // 무적 타이머
+    protected System.Action<int, int> onHealthChanged;  // 체력 변경 이벤트 (현재체력, 최대체력)
+    protected System.Action onDeath;  // 사망 이벤트
+    
+    // 이벤트 리스너 관리 (메모리 할당 최적화)
+    protected List<System.Action<int, int>> healthChangedListeners;
+    protected List<System.Action> deathListeners;
+    
+    // 체력 UI 관련 변수들
+    protected HealthBarUI healthBarUI;  // 체력바 UI 컴포넌트
 
     protected virtual void Awake()
     {
@@ -54,6 +83,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
                 Debug.Log($"{gameObject.name}: EffectManager 컴포넌트를 자동으로 추가했습니다.");
             }
         }
+        
+        // 이벤트 리스너 리스트 초기화
+        healthChangedListeners = new List<System.Action<int, int>>();
+        deathListeners = new List<System.Action>();
     }
 
     protected virtual void Start()
@@ -104,6 +137,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             }
         }
         
+        // 체력 시스템 초기화
+        InitializeHealthSystem();
+        
         // 콜리전 시스템 상태 확인 (디버그 모드에서만)
         #if UNITY_EDITOR || DEVELOPMENT_BUILD
         Debug.Log($"[콜리전 시스템] {gameObject.name}: 콜리전 시스템 활성화 상태 = {enableCollisionSystem}");
@@ -123,6 +159,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             lastSortingOrder = baseSortingOrder + Mathf.FloorToInt(yPosition * sortingOrderMultiplier);
             sortingGroup.sortingOrder = lastSortingOrder;
         }
+        
+        // 캐시된 변수들 초기화
+        cachedPosition = transform.position;
+        cachedVelocity = Vector3.zero;
+        cachedSortingOrder = 0f;
+        cachedHealthValue = currentHealth;
     }
 
     protected virtual void Update()
@@ -130,6 +172,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 하위 클래스에서 구현할 추상 메서드들 호출
         UpdateMovement();
         UpdateAnimation();
+        
+        // 체력 시스템 업데이트
+        UpdateHealthSystem();
     }
     
     protected virtual void LateUpdate()
@@ -146,22 +191,16 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     {
         if (!enableSortingOrderAdjustment || sortingGroup == null) return;
         
-        // Y축 위치에 따른 정렬 순서 계산
-        // Y축이 높을수록 음수값이 커져서 앞에 표시되고,
-        // Y축이 낮을수록 양수값이 커져서 뒤에 표시됩니다.
-        float yPosition = transform.position.y;
-        int newSortingOrder = baseSortingOrder + Mathf.FloorToInt(yPosition * sortingOrderMultiplier);
+        // 캐시된 변수 사용으로 메모리 할당 최적화
+        cachedPosition = transform.position;
+        cachedSortingOrder = cachedPosition.y * sortingOrderMultiplier;
+        int newSortingOrder = baseSortingOrder + Mathf.FloorToInt(cachedSortingOrder);
         
         // 정렬 순서가 변경된 경우에만 업데이트 (중복 업데이트 방지)
         if (lastSortingOrder != newSortingOrder)
         {
             sortingGroup.sortingOrder = newSortingOrder;
             lastSortingOrder = newSortingOrder;
-            
-            // 디버그 로그 (개발 중에만, 매우 자주 호출되므로 주석 처리)
-            // #if UNITY_EDITOR
-            // Debug.Log($"{gameObject.name}: Y={yPosition:F2}, SortOrder={newSortingOrder}");
-            // #endif
         }
     }
 
@@ -443,12 +482,25 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 기본 구현: 타격 판정만 처리
         if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
-            // 적이나 플레이어에 대한 공격 처리
-            // 타격받은 대상에게 Blank 애니메이션 실행
-            TriggerTargetBlankAnimation(other);
+            // 타격받은 대상의 CharacterBase 컴포넌트 찾기
+            CharacterBase targetCharacter = other.GetComponent<CharacterBase>();
+            if (targetCharacter == null)
+            {
+                targetCharacter = other.GetComponentInParent<CharacterBase>();
+            }
             
-            // 타격받은 대상에게 피격 이펙트 재생
-            TriggerTargetDamageEffect(other);
+            if (targetCharacter != null && !targetCharacter.IsDead())
+            {
+                // 데미지 적용
+                int damage = GetAttackPower();
+                targetCharacter.TakeDamage(damage, this);
+                
+                // 타격받은 대상에게 Blank 애니메이션 실행
+                TriggerTargetBlankAnimation(other);
+                
+                // 타격받은 대상에게 피격 이펙트 재생
+                TriggerTargetDamageEffect(other);
+            }
         }
         else if (other.CompareTag("Destructible"))
         {
@@ -740,5 +792,359 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         return sortingGroup != null ? sortingGroup.sortingOrder : 0;
     }
 
+    #endregion
+    
+    #region Health System
+    
+    /// <summary>
+    /// 체력 시스템 초기화
+    /// </summary>
+    protected virtual void InitializeHealthSystem()
+    {
+        // 체력 UI 먼저 초기화 (이벤트 리스너 등록 전)
+        InitializeHealthUI();
+        
+        // 체력 설정 (UI 초기화 후)
+        currentHealth = maxHealth;
+        isDead = false;
+        isInvincible = false;
+        invincibilityTimer = 0f;
+        
+        // 초기 체력 UI 업데이트 (이벤트 없이 직접)
+        if (healthBarUI != null)
+        {
+            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+        }
+    }
+    
+    /// <summary>
+    /// 체력 UI 초기화
+    /// </summary>
+    protected virtual void InitializeHealthUI()
+    {
+        if (!enableHealthBar) return;
+        
+        // 자동으로 HealthBarUI 컴포넌트 찾기
+        healthBarUI = GetComponentInChildren<HealthBarUI>();
+        
+        if (healthBarUI == null)
+        {
+            // 자식 오브젝트에서 HealthBarUI 찾기
+            Transform healthBarTransform = transform.Find("HealthBar");
+            if (healthBarTransform != null)
+            {
+                healthBarUI = healthBarTransform.GetComponent<HealthBarUI>();
+            }
+        }
+        
+        if (healthBarUI != null)
+        {
+            // 체력바 설정 적용 (기본 오프셋 사용)
+            healthBarUI.SetSettings(Vector3.zero, true, true);
+            
+            // 초기 체력 표시
+            healthBarUI.SetVisible(true);
+        }
+        else
+        {
+            Debug.LogWarning($"[체력 UI] {gameObject.name}: HealthBarUI 컴포넌트를 찾을 수 없습니다. 체력바가 표시되지 않습니다.");
+        }
+    }
+    
+    /// <summary>
+    /// 체력 시스템 업데이트 (무적 시간 관리)
+    /// </summary>
+    protected virtual void UpdateHealthSystem()
+    {
+        if (isInvincible && invincibilityTimer > 0)
+        {
+            invincibilityTimer -= Time.deltaTime;
+            if (invincibilityTimer <= 0)
+            {
+                isInvincible = false;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 데미지를 받습니다.
+    /// </summary>
+    /// <param name="damage">받을 데미지</param>
+    /// <param name="attacker">공격자</param>
+    public virtual void TakeDamage(int damage, CharacterBase attacker = null)
+    {
+        if (isDead || isInvincible) return;
+        
+        // 캐시된 변수 사용으로 메모리 할당 최적화
+        cachedHealthValue = Mathf.Max(0, currentHealth - damage);
+        currentHealth = cachedHealthValue;
+        
+        // 체력 변경 이벤트 호출 (최적화된 방식)
+        if (healthChangedListeners != null)
+        {
+            for (int i = 0; i < healthChangedListeners.Count; i++)
+            {
+                healthChangedListeners[i]?.Invoke(currentHealth, maxHealth);
+            }
+        }
+        
+        // 무적 상태 시작
+        StartInvincibility();
+        
+        // 피격 이펙트 재생
+        PlayDamageEffect();
+        
+        // 체력이 0 이하가 되면 사망 처리
+        if (currentHealth <= 0)
+        {
+            Die();
+        }
+    }
+    
+    /// <summary>
+    /// 체력을 회복합니다.
+    /// </summary>
+    /// <param name="healAmount">회복량</param>
+    public virtual void Heal(int healAmount)
+    {
+        if (isDead) return;
+        
+        // 캐시된 변수 사용으로 메모리 할당 최적화
+        cachedHealthValue = Mathf.Min(maxHealth, currentHealth + healAmount);
+        currentHealth = cachedHealthValue;
+        
+        // 체력 변경 이벤트 호출 (최적화된 방식)
+        if (healthChangedListeners != null)
+        {
+            for (int i = 0; i < healthChangedListeners.Count; i++)
+            {
+                healthChangedListeners[i]?.Invoke(currentHealth, maxHealth);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 무적 상태를 시작합니다.
+    /// </summary>
+    protected virtual void StartInvincibility()
+    {
+        isInvincible = true;
+        invincibilityTimer = invincibilityDuration;
+    }
+    
+    /// <summary>
+    /// 사망 처리
+    /// </summary>
+    protected virtual void Die()
+    {
+        if (isDead) return;
+        
+        isDead = true;
+        
+        // 체력바 숨기기
+        if (healthBarUI != null)
+        {
+            healthBarUI.SetVisible(false);
+        }
+        
+        // 사망 애니메이션 실행
+        TriggerSpecialAnimation(CharacterAnimationState.Death);
+        
+        // 사망 이벤트 호출 (최적화된 방식)
+        if (deathListeners != null)
+        {
+            for (int i = 0; i < deathListeners.Count; i++)
+            {
+                deathListeners[i]?.Invoke();
+            }
+        }
+        
+        // 사망 처리 (하위 클래스에서 오버라이드)
+        OnDeath();
+    }
+    
+    /// <summary>
+    /// 사망 시 추가 처리 (하위 클래스에서 오버라이드)
+    /// </summary>
+    protected virtual void OnDeath()
+    {
+        // 기본 구현: 3초 후 오브젝트 비활성화
+        Invoke(nameof(DisableAfterDeath), 3f);
+    }
+    
+    /// <summary>
+    /// 사망 후 오브젝트 비활성화
+    /// </summary>
+    protected virtual void DisableAfterDeath()
+    {
+        gameObject.SetActive(false);
+    }
+    
+    /// <summary>
+    /// 공격력을 반환합니다.
+    /// </summary>
+    /// <returns>공격력</returns>
+    public virtual int GetAttackPower()
+    {
+        return attackPower;
+    }
+    
+    /// <summary>
+    /// 현재 체력을 반환합니다.
+    /// </summary>
+    /// <returns>현재 체력</returns>
+    public virtual int GetCurrentHealth()
+    {
+        return currentHealth;
+    }
+    
+    /// <summary>
+    /// 최대 체력을 반환합니다.
+    /// </summary>
+    /// <returns>최대 체력</returns>
+    public virtual int GetMaxHealth()
+    {
+        return maxHealth;
+    }
+    
+    /// <summary>
+    /// 사망 상태를 반환합니다.
+    /// </summary>
+    /// <returns>사망 여부</returns>
+    public virtual bool IsDead()
+    {
+        return isDead;
+    }
+    
+    /// <summary>
+    /// 무적 상태를 반환합니다.
+    /// </summary>
+    /// <returns>무적 여부</returns>
+    public virtual bool IsInvincible()
+    {
+        return isInvincible;
+    }
+    
+    /// <summary>
+    /// 체력 변경 이벤트에 리스너를 추가합니다.
+    /// </summary>
+    /// <param name="callback">콜백 함수</param>
+    public virtual void AddHealthChangedListener(System.Action<int, int> callback)
+    {
+        if (healthChangedListeners != null && !healthChangedListeners.Contains(callback))
+        {
+            healthChangedListeners.Add(callback);
+        }
+    }
+    
+    /// <summary>
+    /// 체력 변경 이벤트에서 리스너를 제거합니다.
+    /// </summary>
+    /// <param name="callback">콜백 함수</param>
+    public virtual void RemoveHealthChangedListener(System.Action<int, int> callback)
+    {
+        if (healthChangedListeners != null)
+        {
+            healthChangedListeners.Remove(callback);
+        }
+    }
+    
+    /// <summary>
+    /// 사망 이벤트에 리스너를 추가합니다.
+    /// </summary>
+    /// <param name="callback">콜백 함수</param>
+    public virtual void AddDeathListener(System.Action callback)
+    {
+        if (deathListeners != null && !deathListeners.Contains(callback))
+        {
+            deathListeners.Add(callback);
+        }
+    }
+    
+    /// <summary>
+    /// 사망 이벤트에서 리스너를 제거합니다.
+    /// </summary>
+    /// <param name="callback">콜백 함수</param>
+    public virtual void RemoveDeathListener(System.Action callback)
+    {
+        if (deathListeners != null)
+        {
+            deathListeners.Remove(callback);
+        }
+    }
+    
+    /// <summary>
+    /// 체력바 표시/숨기기
+    /// </summary>
+    /// <param name="show">표시 여부</param>
+    public virtual void SetHealthBarVisible(bool show)
+    {
+        if (healthBarUI != null)
+        {
+            healthBarUI.SetVisible(show);
+        }
+    }
+    
+    /// <summary>
+    /// 체력바 오프셋 설정
+    /// </summary>
+    /// <param name="offset">오프셋</param>
+    public virtual void SetHealthBarOffset(Vector3 offset)
+    {
+        if (healthBarUI != null)
+        {
+            healthBarUI.SetSettings(offset, true, true);
+        }
+    }
+    
+    /// <summary>
+    /// 체력바 색상 설정
+    /// </summary>
+    /// <param name="healthy">건강한 상태 색상</param>
+    /// <param name="warning">경고 상태 색상</param>
+    /// <param name="danger">위험 상태 색상</param>
+    public virtual void SetHealthBarColors(Color healthy, Color warning, Color danger)
+    {
+        if (healthBarUI != null)
+        {
+            healthBarUI.SetColors(healthy, warning, danger);
+        }
+    }
+    
+    #endregion
+    
+    #region Memory Management
+    
+    /// <summary>
+    /// 오브젝트가 파괴될 때 메모리 정리를 수행합니다.
+    /// </summary>
+    protected virtual void OnDestroy()
+    {
+        // 이벤트 정리
+        onHealthChanged = null;
+        onDeath = null;
+        
+        // 이벤트 리스너 리스트 정리
+        if (healthChangedListeners != null)
+        {
+            healthChangedListeners.Clear();
+            healthChangedListeners = null;
+        }
+        if (deathListeners != null)
+        {
+            deathListeners.Clear();
+            deathListeners = null;
+        }
+        
+        // 컴포넌트 참조 정리
+        rb = null;
+        anim = null;
+        sortingGroup = null;
+        effectManager = null;
+        collisionManager = null;
+        attackCollisionObject = null;
+        healthBarUI = null;
+    }
+    
     #endregion
 }

@@ -10,6 +10,14 @@ public class PlayerController : CharacterBase
     [SerializeField] private bool enableKeyboardInput = true;  // 키보드 입력 활성화 여부
     //[SerializeField] private bool enableMouseInput = false;    // 마우스 입력 활성화 여부 (향후 확장용)
     
+    [Header("Player Stats")]
+    [SerializeField] private int playerMaxHealth = 150;  // 플레이어 최대 체력
+    [SerializeField] private int playerAttackPower = 25;  // 플레이어 공격력
+    
+    [Header("Player Health UI")]
+    [SerializeField] private Vector3 playerHealthBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 체력바 오프셋
+    [SerializeField] private GameObject playerHealthBarObject;  // 플레이어 체력바 GameObject (직접 연결)
+    
     // 입력 처리용 변수들
     private float moveX = 0f;
     private float moveY = 0f;
@@ -23,10 +31,46 @@ public class PlayerController : CharacterBase
 
     protected override void Start()
     {
+        // 플레이어 전용 체력 설정
+        maxHealth = playerMaxHealth;
+        attackPower = playerAttackPower;
+        
         base.Start();
+        
+        // 플레이어 전용 체력바 설정
+        InitializePlayerHealthUI();
         
         // 플레이어 전용 초기화
         Debug.Log("PlayerController 초기화 완료");
+    }
+    
+    /// <summary>
+    /// 플레이어 전용 체력 UI 초기화
+    /// </summary>
+    private void InitializePlayerHealthUI()
+    {
+        if (!enableHealthBar) return;
+        
+        // 직접 연결된 HealthBar GameObject가 있는지 확인
+        if (playerHealthBarObject != null)
+        {
+            healthBarUI = playerHealthBarObject.GetComponent<HealthBarUI>();
+            if (healthBarUI == null)
+            {
+                // HealthBarUI 컴포넌트가 없으면 자식에서 찾기
+                healthBarUI = playerHealthBarObject.GetComponentInChildren<HealthBarUI>();
+            }
+        }
+        
+        if (healthBarUI != null)
+        {
+            // 플레이어 전용 체력바 설정 적용
+            healthBarUI.SetSettings(playerHealthBarOffset, true, true);
+            healthBarUI.SetVisible(true);
+            
+            // 초기 체력 표시
+            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+        }
     }
 
     protected override void Update()

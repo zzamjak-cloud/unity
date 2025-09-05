@@ -15,6 +15,14 @@ public class EnemyController : CharacterBase
     [SerializeField] private bool enableRandomAnimations = false;  // 랜덤 애니메이션 활성화 여부
     [SerializeField] private float randomAnimationChance = 0.1f;  // 랜덤 애니메이션 확률 (프레임당)
     
+    [Header("Enemy Stats")]
+    [SerializeField] private int enemyMaxHealth = 80;  // 적 최대 체력
+    [SerializeField] private int enemyAttackPower = 15;  // 적 공격력
+    
+    [Header("Enemy Health UI")]
+    [SerializeField] private Vector3 enemyHealthBarOffset = new Vector3(0, 1.5f, 0);  // 적 체력바 오프셋
+    [SerializeField] private GameObject enemyHealthBarObject;  // 적 체력바 GameObject (직접 연결)
+    
     // 적 전용 상태 변수들
     private Vector3 initialPosition;
     private float idleTimer = 0f;
@@ -25,10 +33,46 @@ public class EnemyController : CharacterBase
 
     protected override void Start()
     {
+        // 적 전용 체력 설정
+        maxHealth = enemyMaxHealth;
+        attackPower = enemyAttackPower;
+        
         base.Start();
+        
+        // 적 전용 체력바 설정
+        InitializeEnemyHealthUI();
         
         // 적 전용 초기화
         InitializeEnemy();
+    }
+    
+    /// <summary>
+    /// 적 전용 체력 UI 초기화
+    /// </summary>
+    private void InitializeEnemyHealthUI()
+    {
+        if (!enableHealthBar) return;
+        
+        // 직접 연결된 HealthBar GameObject가 있는지 확인
+        if (enemyHealthBarObject != null)
+        {
+            healthBarUI = enemyHealthBarObject.GetComponent<HealthBarUI>();
+            if (healthBarUI == null)
+            {
+                // HealthBarUI 컴포넌트가 없으면 자식에서 찾기
+                healthBarUI = enemyHealthBarObject.GetComponentInChildren<HealthBarUI>();
+            }
+        }
+        
+        if (healthBarUI != null)
+        {
+            // 적 전용 체력바 설정 적용
+            healthBarUI.SetSettings(enemyHealthBarOffset, true, true);
+            healthBarUI.SetVisible(true);
+            
+            // 초기 체력 표시
+            healthBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+        }
     }
 
     protected override void Update()

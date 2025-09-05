@@ -44,6 +44,10 @@ public class CharacterCollisionManager : MonoBehaviour
     // 메모리 최적화를 위한 캐시된 리스트
     private List<Collider2D> tempColliderList = new List<Collider2D>();
     
+    // 메모리 할당 최적화를 위한 캐시된 변수들
+    private Vector3 cachedPosition;
+    private Vector3 cachedScale;
+    
     // 콜리전 이벤트 로깅
     [Header("Debug")]
     [SerializeField] private bool enableCollisionLogging = false;  // 기본값을 false로 변경하여 성능 최적화
@@ -60,6 +64,10 @@ public class CharacterCollisionManager : MonoBehaviour
         
         // 콜리전 컴포넌트 검증
         ValidateColliders();
+        
+        // 캐시된 변수들 초기화
+        cachedPosition = Vector3.zero;
+        cachedScale = Vector3.one;
     }
     
     private void Start()
@@ -602,5 +610,8 @@ public class CharacterCollisionManager : MonoBehaviour
         attackCollider = null;
         interactionCollider = null;
         
+        // 캐시된 변수들 정리
+        cachedPosition = Vector3.zero;
+        cachedScale = Vector3.zero;
     }
 }
