@@ -339,6 +339,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 기본적인 상호작용 처리
         HandleInteractionCollision(other);
     }
+    
+    /// <summary>
+    /// Detection 콜리전 이벤트 처리 (적 감지용, 상시 활성화)
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    public virtual void OnDetectionCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 기본적인 적 감지 처리
+        HandleDetectionCollision(other);
+    }
 
     #endregion
 
@@ -547,6 +559,20 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             {
                 // 여기에 상호작용 로직 추가 가능
             }
+        }
+    }
+    
+    /// <summary>
+    /// Detection 콜리전을 처리합니다.
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    protected virtual void HandleDetectionCollision(Collider2D other)
+    {
+        // 기본 구현: 적 감지만 처리
+        if (other.CompareTag("Enemy"))
+        {
+            // 적 감지 시 처리 로직
+            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
         }
     }
 

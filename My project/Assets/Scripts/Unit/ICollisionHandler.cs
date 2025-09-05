@@ -10,4 +10,6 @@ public interface ICollisionHandler
     void OnAttackCollision(Collider2D other);  // Attack 콜리전 이벤트 처리 (공격 범위 감지, 타격 판정)
 
     void OnInteractionCollision(Collider2D other);  // Interaction 콜리전 이벤트 처리 (아이템/오브젝트 상호작용)
+    
+    void OnDetectionCollision(Collider2D other);  // Detection 콜리전 이벤트 처리 (적 감지용, 상시 활성화)
 }

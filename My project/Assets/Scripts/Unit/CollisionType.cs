@@ -5,5 +5,6 @@ public enum CollisionType
 {
     Body,           // 적/플레이어 충돌, 피격 판정
     Attack,         // 공격 범위 감지, 타격 판정
-    Interaction     // 아이템/오브젝트 상호작용 감지
+    Interaction,    // 아이템/오브젝트 상호작용 감지
+    Detection       // 적 감지용, 상시 활성화
 }

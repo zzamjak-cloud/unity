@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
 /// 플레이어 캐릭터를 제어하는 컨트롤러
@@ -18,6 +19,11 @@ public class PlayerController : CharacterBase
     [SerializeField] private Vector3 playerStatusBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 상태바 오프셋
     [SerializeField] private GameObject playerStatusBarObject;  // 플레이어 상태바 GameObject (직접 연결)
     
+    [Header("Auto Attack Settings")]
+    [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
+    [SerializeField] private float autoAttackCooldown = 1.0f;  // 자동 공격 쿨다운 시간
+    [SerializeField] private float attackDelay = 0.05f;  // 적 감지 후 공격 지연 시간 (Player는 더 빠르게)
+    
     // 입력 처리용 변수들
     private float moveX = 0f;
     private float moveY = 0f;
@@ -28,6 +34,12 @@ public class PlayerController : CharacterBase
     private bool isCeremonyPressed = false;
     private bool isBlankPressed = false;
     private bool isDeathPressed = false;
+    
+    // 자동 공격 관련 변수들
+    private float lastAutoAttackTime = 0f;
+    private List<Collider2D> detectedEnemies = new List<Collider2D>();  // 감지된 적 목록
+    private Collider2D currentTarget = null;  // 현재 타겟
+    private float firstDetectionTime = 0f;  // 첫 감지 시간
 
     protected override void Start()
     {
@@ -79,6 +91,15 @@ public class PlayerController : CharacterBase
         if (enableKeyboardInput)
         {
             HandleKeyboardInput();
+        }
+        
+        // 감지된 적 목록 정리 (사망한 적 제거)
+        CleanupDetectedEnemies();
+        
+        // 자동 공격 처리
+        if (enableAutoAttack && detectedEnemies.Count > 0)
+        {
+            HandleAutoAttack();
         }
         
         // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
@@ -300,6 +321,271 @@ public class PlayerController : CharacterBase
 
     #endregion
 
+    #region Trigger Detection
+
+    /// <summary>
+    /// 트리거에 들어왔을 때 호출 (적이 감지 범위에 들어왔을 때)
+    /// </summary>
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 적이 감지 범위에 들어왔을 때
+        if (other.CompareTag("Enemy"))
+        {
+            AddDetectedEnemy(other);
+        }
+    }
+    
+    /// <summary>
+    /// 트리거에서 나갔을 때 호출 (적이 감지 범위를 벗어났을 때)
+    /// </summary>
+    private void OnTriggerExit2D(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 적이 감지 범위를 벗어났을 때
+        if (other.CompareTag("Enemy"))
+        {
+            RemoveDetectedEnemy(other);
+        }
+    }
+
+    #endregion
+
+    #region Detection and Auto Attack Methods
+
+    /// <summary>
+    /// Detection 콜리전 이벤트 처리 (적 감지 시 자동 공격)
+    /// </summary>
+    /// <param name="other">감지된 오브젝트</param>
+    public override void OnDetectionCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 적 감지 시 목록에 추가
+        if (other.CompareTag("Enemy"))
+        {
+            AddDetectedEnemy(other);
+            Debug.Log($"[플레이어 감지] Detection Collision으로 적 감지됨: {other.gameObject.name}");
+        }
+    }
+    
+    /// <summary>
+    /// Body 콜리전 이벤트 처리 (임시로 적 감지용으로도 사용)
+    /// </summary>
+    /// <param name="other">충돌한 오브젝트</param>
+    public override void OnBodyCollision(Collider2D other)
+    {
+        if (!enableCollisionSystem) return;
+        
+        // 기본 Body Collision 처리
+        base.OnBodyCollision(other);
+        
+        // 임시로 Body Collision을 통해서도 적 감지 (Detection Collider가 설정되지 않은 경우)
+        if (other.CompareTag("Enemy"))
+        {
+            AddDetectedEnemy(other);
+            Debug.Log($"[플레이어 감지] Body Collision으로 적 감지됨: {other.gameObject.name}");
+        }
+    }
+    
+    /// <summary>
+    /// 감지된 적을 목록에 추가합니다.
+    /// </summary>
+    /// <param name="enemy">감지된 적</param>
+    private void AddDetectedEnemy(Collider2D enemy)
+    {
+        if (enemy == null) return;
+        
+        // 이미 목록에 있는지 확인
+        if (!detectedEnemies.Contains(enemy))
+        {
+            detectedEnemies.Add(enemy);
+            
+            // 첫 번째 적이 감지되면 감지 시간 기록
+            if (detectedEnemies.Count == 1)
+            {
+                firstDetectionTime = Time.time;
+            }
+            
+            // 현재 타겟이 없거나 더 가까운 적이면 타겟 변경
+            if (currentTarget == null || IsCloserThanCurrentTarget(enemy))
+            {
+                SetCurrentTarget(enemy);
+            }
+            
+            Debug.Log($"[플레이어 감지] 적 추가됨: {enemy.gameObject.name} (총 {detectedEnemies.Count}명)");
+        }
+    }
+    
+    /// <summary>
+    /// 감지된 적을 목록에서 제거합니다.
+    /// </summary>
+    /// <param name="enemy">제거할 적</param>
+    private void RemoveDetectedEnemy(Collider2D enemy)
+    {
+        if (enemy == null) return;
+        
+        if (detectedEnemies.Contains(enemy))
+        {
+            detectedEnemies.Remove(enemy);
+            
+            // 모든 적이 제거되면 감지 시간 리셋
+            if (detectedEnemies.Count == 0)
+            {
+                firstDetectionTime = 0f;
+            }
+            
+            // 현재 타겟이 제거된 적이면 새로운 타겟 선택
+            if (currentTarget == enemy)
+            {
+                SelectNewTarget();
+            }
+            
+            Debug.Log($"[플레이어 감지] 적 제거됨: {enemy.gameObject.name} (총 {detectedEnemies.Count}명)");
+        }
+    }
+    
+    /// <summary>
+    /// 감지된 적 목록을 정리합니다 (사망한 적 제거).
+    /// </summary>
+    private void CleanupDetectedEnemies()
+    {
+        for (int i = detectedEnemies.Count - 1; i >= 0; i--)
+        {
+            var enemy = detectedEnemies[i];
+            if (enemy == null || IsEnemyDead(enemy))
+            {
+                RemoveDetectedEnemy(enemy);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 적이 사망했는지 확인합니다.
+    /// </summary>
+    /// <param name="enemy">확인할 적</param>
+    /// <returns>사망했으면 true</returns>
+    private bool IsEnemyDead(Collider2D enemy)
+    {
+        if (enemy == null) return true;
+        
+        CharacterBase enemyCharacter = enemy.GetComponent<CharacterBase>();
+        if (enemyCharacter == null)
+        {
+            enemyCharacter = enemy.GetComponentInParent<CharacterBase>();
+        }
+        
+        return enemyCharacter != null && enemyCharacter.IsDead();
+    }
+    
+    /// <summary>
+    /// 새로운 타겟을 선택합니다.
+    /// </summary>
+    private void SelectNewTarget()
+    {
+        currentTarget = null;
+        
+        if (detectedEnemies.Count > 0)
+        {
+            // 가장 가까운 적을 타겟으로 선택
+            float closestDistance = float.MaxValue;
+            foreach (var enemy in detectedEnemies)
+            {
+                if (enemy != null && !IsEnemyDead(enemy))
+                {
+                    float distance = Vector2.Distance(transform.position, enemy.transform.position);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        currentTarget = enemy;
+                    }
+                }
+            }
+            
+            if (currentTarget != null)
+            {
+                Debug.Log($"[플레이어 타겟] 새로운 타겟 선택: {currentTarget.gameObject.name}");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 현재 타겟을 설정합니다.
+    /// </summary>
+    /// <param name="enemy">새로운 타겟</param>
+    private void SetCurrentTarget(Collider2D enemy)
+    {
+        currentTarget = enemy;
+        Debug.Log($"[플레이어 타겟] 타겟 설정: {enemy.gameObject.name}");
+    }
+    
+    /// <summary>
+    /// 주어진 적이 현재 타겟보다 가까운지 확인합니다.
+    /// </summary>
+    /// <param name="enemy">확인할 적</param>
+    /// <returns>더 가까우면 true</returns>
+    private bool IsCloserThanCurrentTarget(Collider2D enemy)
+    {
+        if (currentTarget == null) return true;
+        
+        float currentDistance = Vector2.Distance(transform.position, currentTarget.transform.position);
+        float newDistance = Vector2.Distance(transform.position, enemy.transform.position);
+        
+        return newDistance < currentDistance;
+    }
+    
+    /// <summary>
+    /// 자동 공격을 처리합니다.
+    /// </summary>
+    private void HandleAutoAttack()
+    {
+        // 첫 감지 후 지연 시간 확인
+        if (Time.time - firstDetectionTime >= attackDelay)
+        {
+            // 쿨다운 확인
+            if (Time.time - lastAutoAttackTime >= autoAttackCooldown)
+            {
+                // 공격 가능한 상태인지 확인
+                if (CanMove() && !IsDead() && currentTarget != null)
+                {
+                    // 자동 공격 실행
+                    StartAttack();
+                    lastAutoAttackTime = Time.time;
+                    
+                    Debug.Log($"[플레이어 자동공격] 타겟 {currentTarget.gameObject.name}에 대한 자동 공격 실행 (지연: {attackDelay}초)");
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 모든 감지된 적을 제거합니다.
+    /// </summary>
+    public void ClearAllDetectedEnemies()
+    {
+        detectedEnemies.Clear();
+        currentTarget = null;
+        firstDetectionTime = 0f;
+        Debug.Log("[플레이어 감지] 모든 감지된 적을 제거했습니다.");
+    }
+    
+    /// <summary>
+    /// 자동 공격을 활성화/비활성화합니다.
+    /// </summary>
+    /// <param name="enabled">활성화 여부</param>
+    public void SetAutoAttackEnabled(bool enabled)
+    {
+        enableAutoAttack = enabled;
+        if (!enabled)
+        {
+            ClearAllDetectedEnemies();
+        }
+    }
+
+    #endregion
+
     #region Collision System Methods
 
     /// <summary>
@@ -381,6 +667,11 @@ public class PlayerController : CharacterBase
             GUILayout.Label($"Animation State: {GetCurrentAnimationState()}");
             GUILayout.Label($"Move Speed: {moveSpeed}");
             GUILayout.Label($"Run Multiplier: {runSpeedMultiplier}");
+            GUILayout.Label($"Auto Attack: {enableAutoAttack}");
+            GUILayout.Label($"Detected Enemies: {detectedEnemies.Count}");
+            GUILayout.Label($"Current Target: {(currentTarget != null ? currentTarget.gameObject.name : "None")}");
+            GUILayout.Label($"Attack Delay: {attackDelay}s");
+            GUILayout.Label($"Last Auto Attack: {Time.time - lastAutoAttackTime:F1}s ago");
             GUILayout.EndArea();
         }
     }
