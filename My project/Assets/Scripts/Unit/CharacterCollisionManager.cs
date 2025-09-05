@@ -126,6 +126,7 @@ public class CharacterCollisionManager : MonoBehaviour
         if (attackCollider != null)
         {
             attackCollider.isTrigger = true; // 트리거로 설정
+            attackCollider.enabled = false; // 초기에는 비활성화 (공격 시에만 활성화)
             SetupCollider(attackCollider, attackCollisionMask);
         }
         
@@ -436,12 +437,25 @@ public class CharacterCollisionManager : MonoBehaviour
     {
         if (attackCollider != null)
         {
+            // 공격 콜리전 활성화
             attackCollider.enabled = true;
+            
+            // 디버그 로그 (첫 번째 공격 문제 진단용)
+            if (enableCollisionLogging)
+            {
+                Debug.Log($"[공격 콜리전] {gameObject.name}: Attack 콜리전 활성화 - enabled: {attackCollider.enabled}, isTrigger: {attackCollider.isTrigger}");
+            }
         }
         
         isAttackActive = true;
         attackTimer = attackDuration;
         hitTargets.Clear();
+        
+        // 디버그 로그 (첫 번째 공격 문제 진단용)
+        if (enableCollisionLogging)
+        {
+            Debug.Log($"[공격 콜리전] {gameObject.name}: 공격 상태 활성화 - isAttackActive: {isAttackActive}, attackTimer: {attackTimer}");
+        }
     }
     
     /// <summary>

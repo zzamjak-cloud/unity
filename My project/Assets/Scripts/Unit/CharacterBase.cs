@@ -165,6 +165,13 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         cachedVelocity = Vector3.zero;
         cachedSortingOrder = 0f;
         cachedHealthValue = currentHealth;
+        
+        // 공격 콜리전 초기화 (첫 번째 공격 문제 해결)
+        if (collisionManager != null)
+        {
+            // 공격 콜리전이 비활성화 상태로 초기화되도록 보장
+            DisableAttackCollision();
+        }
     }
 
     protected virtual void Update()
@@ -572,7 +579,13 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
         
         // 공격 콜리전 활성화 (이펙트와 동기화)
+        // 첫 번째 공격 문제 해결을 위해 확실하게 활성화
         EnableAttackCollision();
+        
+        // 디버그 로그 (첫 번째 공격 문제 진단용)
+        #if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log($"[공격 이펙트] {gameObject.name}: PlayAttackEffect 호출됨 - 공격 콜리전 활성화 시도");
+        #endif
     }
 
     /// <summary>
@@ -657,6 +670,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager != null)
         {
             collisionManager.ActivateAttack();
+            
+            // 디버그 로그 (첫 번째 공격 문제 진단용)
+            #if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log($"[공격 콜리전] {gameObject.name}: EnableAttackCollision 호출됨 - ActivateAttack 실행");
+            #endif
+        }
+        else
+        {
+            // 디버그 로그 (첫 번째 공격 문제 진단용)
+            #if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.LogWarning($"[공격 콜리전] {gameObject.name}: collisionManager가 NULL입니다!");
+            #endif
         }
     }
 
