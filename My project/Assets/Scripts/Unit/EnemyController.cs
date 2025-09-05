@@ -333,14 +333,6 @@ public class EnemyController : CharacterBase
         SetCollisionTypeEnabled(CollisionType.Body, enabled);
     }
 
-    /// <summary>
-    /// 적의 Attack 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetAttackCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.Attack, enabled);
-    }
 
     /// <summary>
     /// 적의 Interaction 콜리전을 활성화/비활성화합니다.
@@ -354,17 +346,17 @@ public class EnemyController : CharacterBase
     /// <summary>
     /// 공격 중일 때 Attack 콜리전을 활성화합니다.
     /// </summary>
-    public void EnableAttackCollision()
+    public override void EnableAttackCollision()
     {
-        SetAttackCollisionEnabled(true);
+        SetCollisionTypeEnabled(CollisionType.Attack, true);
     }
 
     /// <summary>
     /// 공격이 끝났을 때 Attack 콜리전을 비활성화합니다.
     /// </summary>
-    public void DisableAttackCollision()
+    public override void DisableAttackCollision()
     {
-        SetAttackCollisionEnabled(false);
+        SetCollisionTypeEnabled(CollisionType.Attack, false);
     }
 
     /// <summary>

@@ -8,7 +8,7 @@ public class PlayerController : CharacterBase
 {
     [Header("Player Input Settings")]
     [SerializeField] private bool enableKeyboardInput = true;  // 키보드 입력 활성화 여부
-    [SerializeField] private bool enableMouseInput = false;    // 마우스 입력 활성화 여부 (향후 확장용)
+    //[SerializeField] private bool enableMouseInput = false;    // 마우스 입력 활성화 여부 (향후 확장용)
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -267,14 +267,6 @@ public class PlayerController : CharacterBase
         SetCollisionTypeEnabled(CollisionType.Body, enabled);
     }
 
-    /// <summary>
-    /// 플레이어의 Attack 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetAttackCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.Attack, enabled);
-    }
 
     /// <summary>
     /// 플레이어의 Interaction 콜리전을 활성화/비활성화합니다.
@@ -288,17 +280,17 @@ public class PlayerController : CharacterBase
     /// <summary>
     /// 공격 중일 때 Attack 콜리전을 활성화합니다.
     /// </summary>
-    public void EnableAttackCollision()
+    public override void EnableAttackCollision()
     {
-        SetAttackCollisionEnabled(true);
+        SetCollisionTypeEnabled(CollisionType.Attack, true);
     }
 
     /// <summary>
     /// 공격이 끝났을 때 Attack 콜리전을 비활성화합니다.
     /// </summary>
-    public void DisableAttackCollision()
+    public override void DisableAttackCollision()
     {
-        SetAttackCollisionEnabled(false);
+        SetCollisionTypeEnabled(CollisionType.Attack, false);
     }
 
     /// <summary>

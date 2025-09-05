@@ -104,6 +104,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             }
         }
         
+        // 콜리전 시스템 상태 확인 (디버그 모드에서만)
+        #if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log($"[콜리전 시스템] {gameObject.name}: 콜리전 시스템 활성화 상태 = {enableCollisionSystem}");
+        Debug.Log($"[콜리전 시스템] {gameObject.name}: CharacterCollisionManager = {(collisionManager != null ? "설정됨" : "NULL")}");
+        if (collisionManager != null)
+        {
+            Debug.Log($"[콜리전 시스템] {gameObject.name}: Body 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Body)}");
+            Debug.Log($"[콜리전 시스템] {gameObject.name}: Attack 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Attack)}");
+            Debug.Log($"[콜리전 시스템] {gameObject.name}: Interaction 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Interaction)}");
+        }
+        #endif
+        
         // 초기 정렬 순서 설정
         if (sortingGroup != null && enableSortingOrderAdjustment)
         {
@@ -146,10 +158,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             sortingGroup.sortingOrder = newSortingOrder;
             lastSortingOrder = newSortingOrder;
             
-            // 디버그 로그 (개발 중에만)
-            #if UNITY_EDITOR
-            Debug.Log($"{gameObject.name}: Y={yPosition:F2}, SortOrder={newSortingOrder}");
-            #endif
+            // 디버그 로그 (개발 중에만, 매우 자주 호출되므로 주석 처리)
+            // #if UNITY_EDITOR
+            // Debug.Log($"{gameObject.name}: Y={yPosition:F2}, SortOrder={newSortingOrder}");
+            // #endif
         }
     }
 
@@ -415,12 +427,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
             // 적이나 플레이어와의 충돌 처리
-            Debug.Log($"{gameObject.name}: Body 콜리전 - {other.gameObject.name}와 충돌");
         }
         else if (other.CompareTag("Obstacle"))
         {
             // 장애물과의 충돌 처리
-            Debug.Log($"{gameObject.name}: Body 콜리전 - 장애물 {other.gameObject.name}와 충돌");
         }
     }
 
@@ -434,8 +444,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
             // 적이나 플레이어에 대한 공격 처리
-            Debug.Log($"[타격 성공] {gameObject.name}: {other.gameObject.name}를 성공적으로 공격했습니다!");
-            
             // 타격받은 대상에게 Blank 애니메이션 실행
             TriggerTargetBlankAnimation(other);
             
@@ -445,7 +453,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         else if (other.CompareTag("Destructible"))
         {
             // 파괴 가능한 오브젝트에 대한 공격 처리
-            Debug.Log($"[타격 성공] {gameObject.name}: 파괴 가능한 오브젝트 {other.gameObject.name}를 공격했습니다!");
         }
     }
 
@@ -459,17 +466,14 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (other.CompareTag("Item"))
         {
             // 아이템과의 상호작용 처리
-            Debug.Log($"{gameObject.name}: Interaction 콜리전 - 아이템 {other.gameObject.name}와 상호작용");
         }
         else if (other.CompareTag("Interactable"))
         {
             // 상호작용 가능한 오브젝트와의 처리
-            Debug.Log($"{gameObject.name}: Interaction 콜리전 - 상호작용 가능한 오브젝트 {other.gameObject.name}와 상호작용");
         }
         else if (other.CompareTag("NPC"))
         {
             // NPC와의 상호작용 처리
-            Debug.Log($"{gameObject.name}: Interaction 콜리전 - NPC {other.gameObject.name}와 상호작용");
         }
         else if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
@@ -482,7 +486,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             
             if (targetCharacter != null)
             {
-                Debug.Log($"{gameObject.name}: Interaction 콜리전 - {targetCharacter.gameObject.name}와 상호작용");
                 // 여기에 상호작용 로직 추가 가능
             }
         }
@@ -516,11 +519,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             effectManager.PlayAttackEffect();
         }
         
-        // Attack 콜리전이 비활성화되어 있다면 활성화 (이펙트와 동기화)
-        if (!IsAttackCollisionEnabled())
-        {
-            EnableAttackCollision();
-        }
+        // 공격 콜리전 활성화 (이펙트와 동기화)
+        EnableAttackCollision();
     }
 
     /// <summary>
@@ -559,8 +559,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     {
         if (target == null) return;
         
-        Debug.Log($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에게 Blank 애니메이션 실행 시도");
-        
         // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
         CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
         if (targetCharacter == null)
@@ -573,11 +571,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             // 타겟에게 Blank 애니메이션 실행
             targetCharacter.TriggerSpecialAnimation(CharacterAnimationState.Blank);
-            Debug.Log($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에게 Blank 애니메이션 성공적으로 실행됨 (대상: {targetCharacter.gameObject.name})");
-        }
-        else
-        {
-            Debug.LogWarning($"[Blank 애니메이션] {gameObject.name}: {target.gameObject.name}에서 CharacterBase 컴포넌트를 찾을 수 없어 Blank 애니메이션을 실행할 수 없습니다.");
         }
     }
 
@@ -588,8 +581,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected virtual void TriggerTargetDamageEffect(Collider2D target)
     {
         if (target == null) return;
-        
-        Debug.Log($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에게 피격 이펙트 재생 시도");
         
         // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
         CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
@@ -603,11 +594,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             // 타겟에게 피격 이펙트 재생
             targetCharacter.PlayDamageEffect();
-            Debug.Log($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에게 피격 이펙트 성공적으로 재생됨 (대상: {targetCharacter.gameObject.name})");
-        }
-        else
-        {
-            Debug.LogWarning($"[피격 이펙트] {gameObject.name}: {target.gameObject.name}에서 CharacterBase 컴포넌트를 찾을 수 없어 피격 이펙트를 재생할 수 없습니다.");
         }
     }
 
@@ -619,11 +605,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager != null)
         {
             collisionManager.ActivateAttack();
-            Debug.Log($"[공격 시작] {gameObject.name}: Attack 콜리전 활성화 요청 완료");
-        }
-        else
-        {
-            Debug.LogWarning($"[공격 시작] {gameObject.name}: CharacterCollisionManager 컴포넌트를 찾을 수 없습니다.");
         }
     }
 
@@ -635,11 +616,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager != null)
         {
             collisionManager.DeactivateAttack();
-            Debug.Log($"[공격 종료] {gameObject.name}: Attack 콜리전 비활성화 요청 완료");
-        }
-        else
-        {
-            Debug.LogWarning($"[공격 종료] {gameObject.name}: CharacterCollisionManager 컴포넌트를 찾을 수 없습니다.");
         }
     }
 
@@ -660,7 +636,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     public virtual void OnAttackAnimationEnd()
     {
         // AttackCollisionHandler가 자동으로 비활성화하므로 별도 처리 불필요
-        Debug.Log($"[애니메이션] {gameObject.name}: Attack 애니메이션 종료 - Attack 콜리전은 자동으로 비활성화됩니다");
     }
 
     #endregion
@@ -680,7 +655,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             collisionManager.SetAllCollisionsEnabled(enabled);
         }
         
-        Debug.Log($"{gameObject.name}: 콜리전 시스템 {(enabled ? "활성화" : "비활성화")}");
     }
 
     /// <summary>
@@ -705,7 +679,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
                 break;
         }
         
-        Debug.Log($"{gameObject.name}: {collisionType} 콜리전 {(enabled ? "활성화" : "비활성화")}");
     }
 
     /// <summary>

@@ -16,7 +16,7 @@ public class FollowCameraOptimized : MonoBehaviour
     [Header("Follow Settings")]
     [SerializeField] private Vector3 offset = new Vector3(0, 2, -10);  // 기본 오프셋
     [SerializeField] private float followSpeed = 3f;  // 따라가는 속도
-    [SerializeField] private float rotationSpeed = 1.5f;  // 회전 속도
+    // [SerializeField] private float rotationSpeed = 1.5f;  // 회전 속도
     
     [Header("Lazy Follow Settings")]
     [SerializeField] private float lazyDistance = 2.5f;  // Lazy follow 거리
@@ -26,7 +26,7 @@ public class FollowCameraOptimized : MonoBehaviour
     [Header("Look Ahead Settings")]
     [SerializeField] private bool enableLookAhead = true;  // 전방 시야 확보 활성화
     [SerializeField] private float lookAheadDistance = 1.8f;  // 전방 시야 거리
-    [SerializeField] private float lookAheadSpeed = 2f;  // 전방 시야 이동 속도
+    // [SerializeField] private float lookAheadSpeed = 2f;  // 전방 시야 이동 속도
     [SerializeField] private float lookAheadMultiplier = 1.2f;  // 달리기 시 전방 시야 배수
     [SerializeField] private float lookAheadSmoothing = 0.08f;  // 전방 시야 부드러움
     
@@ -147,7 +147,6 @@ public class FollowCameraOptimized : MonoBehaviour
             // 카메라를 초기 위치로 이동
             transform.position = targetPosition;
             
-            Debug.Log($"[FollowCameraOptimized] 초기화 완료 - Target: {target.name}");
         }
         else
         {
@@ -160,11 +159,11 @@ public class FollowCameraOptimized : MonoBehaviour
     /// </summary>
     private void FindPlayer()
     {
+        // 더 효율적인 방법으로 Player 찾기
         GameObject player = GameObject.FindGameObjectWithTag("Player");
         if (player != null)
         {
             target = player.transform;
-            Debug.Log($"[FollowCameraOptimized] Player 자동 발견: {player.name}");
         }
         else
         {
@@ -613,6 +612,5 @@ public class FollowCameraOptimized : MonoBehaviour
         tempVector3_2 = Vector3.zero;
         tempVector3_3 = Vector3.zero;
         
-        Debug.Log("[FollowCameraOptimized] 리소스 정리 완료");
     }
 }

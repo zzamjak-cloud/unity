@@ -8,42 +8,42 @@ using UnityEngine;
 public class CameraSettings : ScriptableObject
 {
     [Header("Follow Camera Settings")]
-    [SerializeField] private Vector3 offset = new Vector3(0, 2, -10);
-    [SerializeField] private float followSpeed = 3f;  // 부드럽게 조정
-    [SerializeField] private float rotationSpeed = 1.5f;  // 부드럽게 조정
+    [SerializeField] private Vector3 offset = new Vector3(0, 0.4f, -10);
+    [SerializeField] private float followSpeed = 2f;  // 카메라가 따라가는 속도
+    [SerializeField] private float rotationSpeed = 1.5f;  // 카메라 회전 속도
     
     [Header("Lazy Follow Settings")]
-    [SerializeField] private float lazyDistance = 2.5f;  // 더 여유롭게
-    [SerializeField] private float lazySpeed = 2.5f;  // 더 부드럽게
+    [SerializeField] private float lazyDistance = 2.5f;  // 카메라 Lazy Follow 거리
+    [SerializeField] private float lazySpeed = 2.5f;  // 카메라 Lazy Follow 속도
     
     [Header("Look Ahead Settings")]
     [SerializeField] private bool enableLookAhead = true;
-    [SerializeField] private float lookAheadDistance = 1.8f;  // 더 자연스럽게
-    [SerializeField] private float lookAheadSpeed = 2f;  // 더 부드럽게
-    [SerializeField] private float lookAheadMultiplier = 1.2f;  // 더 자연스럽게
-    [SerializeField] private float lookAheadSmoothing = 0.08f;  // 더 부드럽게
+    [SerializeField] private float lookAheadDistance = 1.8f;  // 시야까지 이동 거리
+    [SerializeField] private float lookAheadSpeed = 2f;  // 시야까지 이동 속도
+    [SerializeField] private float lookAheadMultiplier = 1.2f;  // 시야까지 이동 배수
+    [SerializeField] private float lookAheadSmoothing = 0.08f;  // 시야까지 이동 부드러움
     
     [Header("Boundary Settings")]
-    [SerializeField] private bool enableBoundaries = false;
-    [SerializeField] private Vector2 minBoundary = new Vector2(-10, -10);
-    [SerializeField] private Vector2 maxBoundary = new Vector2(10, 10);
+    [SerializeField] private bool enableBoundaries = false;  // 경계 제한 활성화
+    [SerializeField] private Vector2 minBoundary = new Vector2(-10, -10);  // 최소 경계
+    [SerializeField] private Vector2 maxBoundary = new Vector2(10, 10);  // 최대 경계
     
     [Header("Advanced Smoothing")]
-    [SerializeField] private bool useAdvancedSmoothing = true;
-    [SerializeField] private float positionSmoothing = 0.06f;  // 더 부드럽게
-    [SerializeField] private float velocitySmoothing = 0.05f;  // 더 부드럽게
-    [SerializeField] private float maxVelocity = 5f;  // 더 부드럽게
+    [SerializeField] private bool useAdvancedSmoothing = true;  // 고급 스무딩 사용
+    [SerializeField] private float positionSmoothing = 0.06f;  // 위치 부드러움
+    [SerializeField] private float velocitySmoothing = 0.05f;  // 속도 부드러움
+    [SerializeField] private float maxVelocity = 5f;  // 최대 속도 제한
     
     [Header("Camera Effects")]
-    [SerializeField] private bool enableScreenShake = true;
-    [SerializeField] private float shakeIntensity = 0.5f;
-    [SerializeField] private float shakeDuration = 0.3f;
+    [SerializeField] private bool enableScreenShake = true;  // 화면 흔들림 효과 활성화
+    [SerializeField] private float shakeIntensity = 0.5f;  // 화면 흔들림 강도
+    [SerializeField] private float shakeDuration = 0.3f;  // 화면 흔들림 지속 시간
     
     [Header("Zoom Settings")]
-    [SerializeField] private float defaultOrthographicSize = 5f;
-    [SerializeField] private float zoomSpeed = 2f;
-    [SerializeField] private float minZoom = 3f;
-    [SerializeField] private float maxZoom = 8f;
+    [SerializeField] private float defaultOrthographicSize = 5f;  // 기본 직교 크기
+    [SerializeField] private float zoomSpeed = 2f;  // 줌 속도
+    [SerializeField] private float minZoom = 3f;  // 최소 줌
+    [SerializeField] private float maxZoom = 8f;  // 최대 줌
     
     #region Properties
     

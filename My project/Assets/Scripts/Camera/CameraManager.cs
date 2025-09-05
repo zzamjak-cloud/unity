@@ -76,8 +76,8 @@ public class CameraManager : MonoBehaviour
             mainCamera = Camera.main;
             if (mainCamera == null)
             {
-                // FindObjectOfType은 비용이 크므로 한 번만 호출
-                Camera[] cameras = FindObjectsOfType<Camera>();
+                // FindObjectsByType은 비용이 크므로 한 번만 호출
+                Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
                 if (cameras.Length > 0)
                 {
                     mainCamera = cameras[0]; // 첫 번째 카메라 사용
@@ -91,8 +91,8 @@ public class CameraManager : MonoBehaviour
             followCamera = GetComponent<FollowCameraOptimized>();
             if (followCamera == null)
             {
-                // FindObjectOfType은 비용이 크므로 한 번만 호출
-                FollowCameraOptimized[] cameras = FindObjectsOfType<FollowCameraOptimized>();
+                // FindObjectsByType은 비용이 크므로 한 번만 호출
+                FollowCameraOptimized[] cameras = FindObjectsByType<FollowCameraOptimized>(FindObjectsSortMode.None);
                 if (cameras.Length > 0)
                 {
                     followCamera = cameras[0]; // 첫 번째 카메라 사용
@@ -106,8 +106,6 @@ public class CameraManager : MonoBehaviour
             originalCameraPosition = mainCamera.transform.position;
             originalOrthographicSize = mainCamera.orthographicSize;
         }
-        
-        Debug.Log("[CameraManager] 초기화 완료");
     }
     
     /// <summary>
@@ -181,7 +179,6 @@ public class CameraManager : MonoBehaviour
         isShaking = true;
         shakeTimer = shakeDuration;
         
-        Debug.Log($"[CameraManager] 화면 흔들림 시작 - 강도: {shakeIntensity}, 지속시간: {shakeDuration}");
     }
     
     /// <summary>
@@ -387,6 +384,5 @@ public class CameraManager : MonoBehaviour
         // 캐시된 변수들 초기화
         tempShakeOffset = Vector3.zero;
         
-        Debug.Log("[CameraManager] 리소스 정리 완료");
     }
 }
