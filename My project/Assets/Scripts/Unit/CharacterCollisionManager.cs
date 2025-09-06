@@ -10,20 +10,17 @@ public class CharacterCollisionManager : MonoBehaviour
     [Header("Collision Settings")]
     [SerializeField] private Collider2D bodyCollider;        // Body 콜리전 (적/플레이어 충돌, 피격 판정)
     [SerializeField] private Collider2D attackCollider;     // Attack 콜리전 (공격 범위 감지, 타격 판정)
-    [SerializeField] private Collider2D interactionCollider; // Interaction 콜리전 (아이템/오브젝트 상호작용)
-    [SerializeField] private Collider2D detectionCollider;  // Detection 콜리전 (적 감지용, 상시 활성화)
+    [SerializeField] private Collider2D interactionCollider; // Interaction 콜리전 (감지용, 상시 활성화)
     
     [Header("Collision Layers")]
     [SerializeField] private LayerMask bodyCollisionMask = -1;        // Body 콜리전 대상 레이어
     [SerializeField] private LayerMask attackCollisionMask = -1;      // Attack 콜리전 대상 레이어
     [SerializeField] private LayerMask interactionCollisionMask = -1; // Interaction 콜리전 대상 레이어
-    [SerializeField] private LayerMask detectionCollisionMask = -1;   // Detection 콜리전 대상 레이어
     
     [Header("Collision Tags")]
     [SerializeField] private string[] bodyCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_OBSTACLE };
     [SerializeField] private string[] attackCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_DESTRUCTIBLE };
-    [SerializeField] private string[] interactionCollisionTags = { GameConstants.TAG_ITEM, GameConstants.TAG_INTERACTABLE, GameConstants.TAG_NPC };
-    [SerializeField] private string[] detectionCollisionTags = { GameConstants.TAG_ENEMY }; // Detection은 적만 감지
+    [SerializeField] private string[] interactionCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_ITEM, GameConstants.TAG_INTERACTABLE, GameConstants.TAG_NPC }; // Interaction은 감지용으로 사용
     
     [Header("Attack Collision Settings")]
     [SerializeField] private float attackDuration = GameConstants.DEFAULT_ATTACK_DURATION;
@@ -38,7 +35,6 @@ public class CharacterCollisionManager : MonoBehaviour
     private bool isBodyCollisionEnabled = true;
     private bool isAttackCollisionEnabled = true;
     private bool isInteractionCollisionEnabled = true;
-    private bool isDetectionCollisionEnabled = true;
     
     // Attack 콜리전 관련
     private float attackTimer = 0f;
@@ -113,10 +109,6 @@ public class CharacterCollisionManager : MonoBehaviour
             Debug.LogWarning($"CharacterCollisionManager: {gameObject.name}에 Interaction 콜리전이 할당되지 않았습니다.");
         }
         
-        if (detectionCollider == null)
-        {
-            Debug.LogWarning($"CharacterCollisionManager: {gameObject.name}에 Detection 콜리전이 할당되지 않았습니다.");
-        }
     }
     
     /// <summary>
@@ -146,12 +138,6 @@ public class CharacterCollisionManager : MonoBehaviour
             SetupCollider(interactionCollider, interactionCollisionMask);
         }
         
-        // Detection 콜리전 설정
-        if (detectionCollider != null)
-        {
-            detectionCollider.isTrigger = true; // 트리거로 설정
-            SetupCollider(detectionCollider, detectionCollisionMask);
-        }
     }
     
     /// <summary>
@@ -219,7 +205,6 @@ public class CharacterCollisionManager : MonoBehaviour
         if (enableCollisionLogging)
         {
             Debug.Log($"[콜리전 매니저] {gameObject.name}: OnTriggerEnter2D 감지 - {other.gameObject.name} (태그: {other.tag})");
-            Debug.Log($"[콜리전 매니저] {gameObject.name}: Detection 콜리전 상태 - detectionCollider: {(detectionCollider != null ? "설정됨" : "NULL")}, isDetectionCollisionEnabled: {isDetectionCollisionEnabled}");
         }
         
         // Body 콜리전은 OnCollisionEnter2D에서 처리하므로 제외
@@ -237,35 +222,32 @@ public class CharacterCollisionManager : MonoBehaviour
             Debug.Log($"[콜리전 매니저] {gameObject.name}: Attack 콜리전 상태 - 활성화: {isAttackCollisionEnabled}, 공격 중: {isAttackActive}, attackCollider: {(attackCollider != null ? "설정됨" : "NULL")}");
         }
         
-        // Detection 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Detection 콜리전과 충돌했을 때 (우선 처리)
-        if (detectionCollider != null && other != detectionCollider && isDetectionCollisionEnabled)
-        {
-            if (enableCollisionLogging)
-            {
-                Debug.Log($"[콜리전 매니저] {gameObject.name}: Detection 콜리전 조건 확인 - {other.gameObject.name}");
-            }
-            
-            // 레이어 마스크 확인
-            if (((1 << other.gameObject.layer) & detectionCollisionMask) != 0)
-            {
-                if (enableCollisionLogging)
-                {
-                    Debug.Log($"[콜리전 이벤트] {gameObject.name}: Detection 콜리전 레이어 마스크 조건 만족 - {other.gameObject.name} (레이어: {other.gameObject.layer})");
-                }
-                HandleDetectionCollision(other);
-            }
-            else
-            {
-                if (enableCollisionLogging)
-                {
-                    Debug.Log($"[콜리전 이벤트] {gameObject.name}: Detection 콜리전 레이어 마스크 조건 불만족 - {other.gameObject.name} (레이어: {other.gameObject.layer}, 마스크: {detectionCollisionMask})");
-                }
-            }
-        }
         
         // Attack 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Attack 콜리전과 충돌했을 때
         if (attackCollider != null && other != attackCollider && isAttackCollisionEnabled && isAttackActive)
         {
+            // Attack 콜리전끼리의 충돌은 무시 (Attack 콜리전은 Body 콜리전만 타격해야 함)
+            // 다른 캐릭터의 Attack 콜리전 GameObject인지 확인
+            CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
+            if (otherCollisionManager != null && otherCollisionManager.IsAttackCollider(other))
+            {
+                if (enableCollisionLogging)
+                {
+                    Debug.Log($"[콜리전 매니저] {gameObject.name}: Attack 콜리전끼리 충돌 - 무시: {other.gameObject.name}");
+                }
+                return;
+            }
+            
+            // Interaction 콜리전과의 충돌도 무시 (Attack 콜리전은 Body 콜리전만 타격해야 함)
+            if (otherCollisionManager != null && otherCollisionManager.IsInteractionCollider(other))
+            {
+                if (enableCollisionLogging)
+                {
+                    Debug.Log($"[콜리전 매니저] {gameObject.name}: Attack 콜리전이 Interaction 콜리전과 충돌 - 무시: {other.gameObject.name}");
+                }
+                return;
+            }
+            
             Debug.Log($"[콜리전 매니저] {gameObject.name}: Attack 콜리전 조건 만족 - {other.gameObject.name}");
             
             // 레이어 마스크 확인
@@ -285,8 +267,8 @@ public class CharacterCollisionManager : MonoBehaviour
                 }
             }
         }
-        // Interaction 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Interaction 콜리전과 충돌했을 때
-        else if (interactionCollider != null && other != interactionCollider && isInteractionCollisionEnabled)
+        // Interaction 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Interaction 콜리전과 충돌했을 때 (감지용으로 사용)
+        if (interactionCollider != null && other != interactionCollider && isInteractionCollisionEnabled)
         {
             // 레이어 마스크 확인
             if (((1 << other.gameObject.layer) & interactionCollisionMask) != 0)
@@ -299,6 +281,27 @@ public class CharacterCollisionManager : MonoBehaviour
             if (enableCollisionLogging)
             {
                 Debug.Log($"[콜리전 이벤트] {gameObject.name}: 콜리전 조건 불만족 - {other.gameObject.name} (attackCollider: {attackCollider != null}, other != attackCollider: {other != attackCollider}, isAttackCollisionEnabled: {isAttackCollisionEnabled}, isAttackActive: {isAttackActive})");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 트리거에서 나갔을 때 호출
+    /// </summary>
+    private void OnTriggerExit2D(Collider2D other)
+    {
+        if (enableCollisionLogging)
+        {
+            Debug.Log($"[콜리전 매니저] {gameObject.name}: OnTriggerExit2D 감지 - {other.gameObject.name} (태그: {other.tag})");
+        }
+        
+        // Interaction 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Interaction 콜리전에서 나갔을 때
+        if (interactionCollider != null && other != interactionCollider && isInteractionCollisionEnabled)
+        {
+            // 레이어 마스크 확인
+            if (((1 << other.gameObject.layer) & interactionCollisionMask) != 0)
+            {
+                HandleInteractionExit(other);
             }
         }
     }
@@ -384,21 +387,22 @@ public class CharacterCollisionManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Detection 콜리전을 처리합니다.
+    /// Interaction 콜리전에서 나갔을 때 처리합니다.
     /// </summary>
-    /// <param name="other">충돌한 콜리전</param>
-    private void HandleDetectionCollision(Collider2D other)
+    /// <param name="other">나간 콜리전</param>
+    private void HandleInteractionExit(Collider2D other)
     {
         if (collisionHandler != null)
         {
-            collisionHandler.OnDetectionCollision(other);
+            collisionHandler.OnInteractionExit(other);
         }
         
         if (enableCollisionLogging)
         {
-            Debug.Log($"Detection 콜리전: {gameObject.name} -> {other.gameObject.name}");
+            Debug.Log($"Interaction 콜리전 Exit: {gameObject.name} -> {other.gameObject.name}");
         }
     }
+    
     
     #endregion
     
@@ -450,18 +454,6 @@ public class CharacterCollisionManager : MonoBehaviour
         }
     }
     
-    /// <summary>
-    /// Detection 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetDetectionCollisionEnabled(bool enabled)
-    {
-        isDetectionCollisionEnabled = enabled;
-        if (detectionCollider != null)
-        {
-            detectionCollider.enabled = enabled;
-        }
-    }
     
     /// <summary>
     /// 모든 콜리전을 활성화/비활성화합니다.
@@ -472,7 +464,6 @@ public class CharacterCollisionManager : MonoBehaviour
         SetBodyCollisionEnabled(enabled);
         SetAttackCollisionEnabled(enabled);
         SetInteractionCollisionEnabled(enabled);
-        SetDetectionCollisionEnabled(enabled);
     }
     
     /// <summary>
@@ -490,8 +481,6 @@ public class CharacterCollisionManager : MonoBehaviour
                 return isAttackCollisionEnabled;
             case CollisionType.Interaction:
                 return isInteractionCollisionEnabled;
-            case CollisionType.Detection:
-                return isDetectionCollisionEnabled;
             default:
                 return false;
         }
@@ -555,6 +544,26 @@ public class CharacterCollisionManager : MonoBehaviour
     public bool IsAttackActive()
     {
         return isAttackActive && attackCollider != null && attackCollider.enabled;
+    }
+    
+    /// <summary>
+    /// 주어진 콜리전이 이 캐릭터의 Attack 콜리전인지 확인합니다.
+    /// </summary>
+    /// <param name="collider">확인할 콜리전</param>
+    /// <returns>Attack 콜리전이면 true</returns>
+    public bool IsAttackCollider(Collider2D collider)
+    {
+        return attackCollider == collider;
+    }
+    
+    /// <summary>
+    /// 주어진 콜리전이 이 캐릭터의 Interaction 콜리전인지 확인합니다.
+    /// </summary>
+    /// <param name="collider">확인할 콜리전</param>
+    /// <returns>Interaction 콜리전이면 true</returns>
+    public bool IsInteractionCollider(Collider2D collider)
+    {
+        return interactionCollider == collider;
     }
     
     /// <summary>
@@ -656,12 +665,6 @@ public class CharacterCollisionManager : MonoBehaviour
             DrawColliderGizmo(interactionCollider);
         }
         
-        // Detection 콜리전 표시
-        if (detectionCollider != null)
-        {
-            Gizmos.color = Color.green;
-            DrawColliderGizmo(detectionCollider);
-        }
     }
     
     /// <summary>
@@ -706,10 +709,44 @@ public class CharacterCollisionManager : MonoBehaviour
         bodyCollider = null;
         attackCollider = null;
         interactionCollider = null;
-        detectionCollider = null;
         
         // 캐시된 변수들 정리
         cachedPosition = Vector3.zero;
         cachedScale = Vector3.zero;
+    }
+    
+    /// <summary>
+    /// Attack 콜라이더의 공격 범위를 가져옵니다.
+    /// </summary>
+    /// <returns>공격 범위 (반지름)</returns>
+    public float GetAttackRange()
+    {
+        if (attackCollider == null) return 2.0f; // 기본 범위
+        
+        CircleCollider2D attackCircle = attackCollider as CircleCollider2D;
+        if (attackCircle != null)
+        {
+            return attackCircle.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y);
+        }
+        
+        return 2.0f; // 기본 범위
+    }
+    
+    /// <summary>
+    /// Attack 콜라이더가 활성화되어 있는지 확인합니다.
+    /// </summary>
+    /// <returns>활성화되어 있으면 true</returns>
+    public bool IsAttackColliderEnabled()
+    {
+        return attackCollider != null && attackCollider.enabled;
+    }
+    
+    /// <summary>
+    /// Attack 콜라이더가 설정되어 있는지 확인합니다.
+    /// </summary>
+    /// <returns>설정되어 있으면 true</returns>
+    public bool HasAttackCollider()
+    {
+        return attackCollider != null;
     }
 }

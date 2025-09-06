@@ -98,6 +98,9 @@ public class EnemyController : CharacterBase
             HandleAutoAttack();
         }
         
+        // 공격 범위 체크 - 감지된 플레이어 중 공격 범위를 벗어난 플레이어들 제거
+        CheckAndRemoveOutOfRangePlayers();
+        
         // 정적 적이므로 입력 처리는 하지 않음
         // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
         base.Update();
@@ -400,7 +403,7 @@ public class EnemyController : CharacterBase
 
 
     /// <summary>
-    /// 적의 Interaction 콜리전을 활성화/비활성화합니다.
+    /// 적의 Interaction 콜리전을 활성화/비활성화합니다 (감지용).
     /// </summary>
     /// <param name="enabled">활성화 여부</param>
     public void SetInteractionCollisionEnabled(bool enabled)
@@ -506,58 +509,124 @@ public class EnemyController : CharacterBase
 
     #endregion
 
-    #region Trigger Detection
+
+    #region Interaction Collision Override (Detection용)
 
     /// <summary>
-    /// 트리거에 들어왔을 때 호출 (플레이어가 감지 범위에 들어왔을 때)
+    /// Interaction 콜리전 이벤트 처리 (플레이어 감지 시 자동 공격)
     /// </summary>
-    private void OnTriggerEnter2D(Collider2D other)
+    /// <param name="other">감지된 오브젝트</param>
+    public override void OnInteractionCollision(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 플레이어가 감지 범위에 들어왔을 때
+        // 플레이어 감지 시 목록에 추가 (Attack 콜리전은 제외)
         if (other.CompareTag("Player"))
         {
-            AddDetectedPlayer(other);
+            // Attack 콜리전인지 확인
+            CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
+            if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
+            {
+                AddDetectedPlayer(other);
+                Debug.Log($"[적 감지] Interaction Collision으로 플레이어 감지됨: {other.gameObject.name}");
+            }
         }
+        
+        // 기본 상호작용 처리도 수행
+        base.OnInteractionCollision(other);
     }
     
     /// <summary>
-    /// 트리거에서 나갔을 때 호출 (플레이어가 감지 범위를 벗어났을 때)
+    /// Interaction 콜리전에서 나갔을 때 처리 (플레이어가 감지 범위를 벗어남)
     /// </summary>
-    private void OnTriggerExit2D(Collider2D other)
+    /// <param name="other">나간 오브젝트</param>
+    public override void OnInteractionExit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 플레이어가 감지 범위를 벗어났을 때
+        // 플레이어가 감지 범위를 벗어났을 때 (Attack 콜리전은 제외)
         if (other.CompareTag("Player"))
         {
-            RemoveDetectedPlayer(other);
+            // Attack 콜리전인지 확인
+            CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
+            if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
+            {
+                // 감지 범위를 벗어났지만, 공격 범위 내에 있는지 확인
+                if (IsPlayerInAttackRange(other))
+                {
+                    Debug.Log($"[적 감지] 감지 범위 벗어남, 하지만 공격 범위 내에 있음: {other.gameObject.name}");
+                    // 공격 범위 내에 있으면 제거하지 않음
+                }
+                else
+                {
+                    RemoveDetectedPlayer(other);
+                    Debug.Log($"[적 감지] 공격 범위도 벗어나서 플레이어 제거됨: {other.gameObject.name}");
+                }
+            }
         }
+        
+        // 기본 처리도 수행
+        base.OnInteractionExit(other);
     }
 
     #endregion
 
-    #region Detection and Auto Attack Methods
-
+    #region Attack Range Check Methods
+    
     /// <summary>
-    /// Detection 콜리전 이벤트 처리 (플레이어 감지 시 자동 공격)
+    /// 플레이어가 공격 범위 내에 있는지 확인합니다.
     /// </summary>
-    /// <param name="other">감지된 오브젝트</param>
-    public override void OnDetectionCollision(Collider2D other)
+    /// <param name="playerCollider">확인할 플레이어의 콜라이더</param>
+    /// <returns>공격 범위 내에 있으면 true</returns>
+    private bool IsPlayerInAttackRange(Collider2D playerCollider)
     {
-        if (!enableCollisionSystem) return;
+        if (playerCollider == null || collisionManager == null) return false;
         
-        // 플레이어 감지 시 목록에 추가
-        if (other.CompareTag("Player"))
-        {
-            AddDetectedPlayer(other);
-            Debug.Log($"[적 감지] Detection Collision으로 플레이어 감지됨: {other.gameObject.name}");
-        }
+        // Attack 콜라이더가 설정되어 있는지 확인 (활성화 상태는 확인하지 않음)
+        if (!collisionManager.HasAttackCollider()) return false;
+        
+        // Attack 콜라이더와 플레이어의 거리 계산
+        float distance = Vector2.Distance(transform.position, playerCollider.transform.position);
+        
+        // Attack 콜라이더의 공격 범위 가져오기
+        float attackRange = collisionManager.GetAttackRange();
+        bool inRange = distance <= attackRange;
+        
+        Debug.Log($"[공격 범위 체크] {playerCollider.name}: 거리={distance:F2}, 공격범위={attackRange:F2}, 범위내={inRange}");
+        
+        return inRange;
     }
     
     /// <summary>
-    /// Body 콜리전 이벤트 처리 (임시로 플레이어 감지용으로도 사용)
+    /// 감지된 플레이어 중 공격 범위를 벗어난 플레이어들을 제거합니다.
+    /// </summary>
+    private void CheckAndRemoveOutOfRangePlayers()
+    {
+        if (detectedPlayers.Count == 0) return;
+        
+        // 감지된 플레이어 목록을 복사하여 순회 (제거 시 목록 변경으로 인한 오류 방지)
+        var playersToCheck = new List<Collider2D>(detectedPlayers);
+        
+        foreach (var player in playersToCheck)
+        {
+            if (player == null) continue;
+            
+            // 공격 범위를 벗어났는지 확인
+            if (!IsPlayerInAttackRange(player))
+            {
+                RemoveDetectedPlayer(player);
+                Debug.Log($"[적 감지] 공격 범위 벗어남으로 플레이어 제거됨: {player.gameObject.name}");
+            }
+        }
+    }
+    
+    #endregion
+
+    #region Detection and Auto Attack Methods
+
+    
+    /// <summary>
+    /// Body 콜리전 이벤트 처리
     /// </summary>
     /// <param name="other">충돌한 오브젝트</param>
     public override void OnBodyCollision(Collider2D other)
@@ -566,13 +635,6 @@ public class EnemyController : CharacterBase
         
         // 기본 Body Collision 처리
         base.OnBodyCollision(other);
-        
-        // 임시로 Body Collision을 통해서도 플레이어 감지 (Detection Collider가 설정되지 않은 경우)
-        if (other.CompareTag("Player"))
-        {
-            AddDetectedPlayer(other);
-            Debug.Log($"[적 감지] Body Collision으로 플레이어 감지됨: {other.gameObject.name}");
-        }
     }
     
     /// <summary>

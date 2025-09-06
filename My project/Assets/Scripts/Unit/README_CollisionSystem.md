@@ -18,10 +18,10 @@
 - **태그**: Enemy, Player, Destructible
 
 ### 3. Interaction 콜리전
-- **목적**: 아이템/오브젝트 상호작용 감지
+- **목적**: 감지용, 상시 활성화 (적/플레이어 감지 및 아이템/오브젝트 상호작용)
 - **타입**: 트리거 (isTrigger = true)
 - **처리**: `OnInteractionCollision()` 메서드에서 처리
-- **태그**: Item, Interactable, NPC
+- **태그**: Enemy, Player, Item, Interactable, NPC
 
 ## 설정 방법
 
@@ -70,8 +70,12 @@ public override void OnAttackCollision(Collider2D other)
 
 public override void OnInteractionCollision(Collider2D other)
 {
-    // 상호작용 처리
-    if (other.CompareTag("Item"))
+    // 감지 및 상호작용 처리
+    if (other.CompareTag("Enemy"))
+    {
+        // 적 감지 처리
+    }
+    else if (other.CompareTag("Item"))
     {
         // 아이템 획득
     }
@@ -227,3 +231,4 @@ Unity 애니메이터에서 Attack 애니메이션에 다음 이벤트를 추가
 - `CharacterCollisionManager`의 `enableCollisionLogging`을 활성화하면 콜리전 이벤트를 콘솔에서 확인할 수 있습니다.
 - Scene 뷰에서 선택된 오브젝트의 콜리전 범위가 Gizmo로 표시됩니다.
 - 각 콜리전 타입별로 다른 색상으로 표시됩니다 (Body: 빨강, Attack: 노랑, Interaction: 파랑).
+- Interaction 콜리전은 이제 감지용으로 사용되며, 적/플레이어 감지와 아이템/오브젝트 상호작용을 모두 처리합니다.

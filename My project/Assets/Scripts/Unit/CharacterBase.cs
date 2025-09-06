@@ -329,27 +329,27 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     }
 
     /// <summary>
-    /// Interaction 콜리전 이벤트 처리 (아이템/오브젝트 상호작용)
+    /// Interaction 콜리전 이벤트 처리 (감지용, 상시 활성화)
     /// </summary>
     /// <param name="other">충돌한 오브젝트</param>
     public virtual void OnInteractionCollision(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 기본적인 상호작용 처리
+        // 기본적인 감지 처리
         HandleInteractionCollision(other);
     }
     
     /// <summary>
-    /// Detection 콜리전 이벤트 처리 (적 감지용, 상시 활성화)
+    /// Interaction 콜리전에서 나갔을 때 처리 (감지 범위 벗어남)
     /// </summary>
-    /// <param name="other">충돌한 오브젝트</param>
-    public virtual void OnDetectionCollision(Collider2D other)
+    /// <param name="other">나간 오브젝트</param>
+    public virtual void OnInteractionExit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 기본적인 적 감지 처리
-        HandleDetectionCollision(other);
+        // 기본적인 감지 범위 벗어남 처리
+        HandleInteractionExit(other);
     }
 
     #endregion
@@ -528,13 +528,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     }
 
     /// <summary>
-    /// Interaction 콜리전을 처리합니다.
+    /// Interaction 콜리전을 처리합니다 (감지용으로 사용).
     /// </summary>
     /// <param name="other">충돌한 오브젝트</param>
     protected virtual void HandleInteractionCollision(Collider2D other)
     {
-        // 기본 구현: 상호작용만 처리
-        if (other.CompareTag("Item"))
+        // 기본 구현: 감지 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어 감지 시 처리 로직
+            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
+        }
+        else if (other.CompareTag("Item"))
         {
             // 아이템과의 상호작용 처리
         }
@@ -546,32 +551,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             // NPC와의 상호작용 처리
         }
-        else if (other.CompareTag("Enemy") || other.CompareTag("Player"))
-        {
-            // 적이나 플레이어와의 상호작용 처리 (부모에서 CharacterBase 찾기)
-            CharacterBase targetCharacter = other.GetComponent<CharacterBase>();
-            if (targetCharacter == null)
-            {
-                targetCharacter = other.GetComponentInParent<CharacterBase>();
-            }
-            
-            if (targetCharacter != null)
-            {
-                // 여기에 상호작용 로직 추가 가능
-            }
-        }
     }
     
     /// <summary>
-    /// Detection 콜리전을 처리합니다.
+    /// Interaction 콜리전에서 나갔을 때 처리합니다 (감지 범위 벗어남).
     /// </summary>
-    /// <param name="other">충돌한 오브젝트</param>
-    protected virtual void HandleDetectionCollision(Collider2D other)
+    /// <param name="other">나간 오브젝트</param>
+    protected virtual void HandleInteractionExit(Collider2D other)
     {
-        // 기본 구현: 적 감지만 처리
-        if (other.CompareTag("Enemy"))
+        // 기본 구현: 감지 범위 벗어남 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
-            // 적 감지 시 처리 로직
+            // 적이나 플레이어가 감지 범위를 벗어났을 때 처리 로직
             // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
         }
     }
