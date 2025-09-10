@@ -104,6 +104,13 @@ public class PlayerController : CharacterBase
         // 공격 범위 체크 - 감지된 적 중 공격 범위를 벗어난 적들 제거
         CheckAndRemoveOutOfRangeEnemies();
         
+        // 현재 타겟 유효성 체크 - 타겟이 감지 목록에 없으면 즉시 공격 중단
+        if (currentTarget != null && !detectedEnemies.Contains(currentTarget))
+        {
+            EndAttack(); // 진행 중인 공격 즉시 중단
+            currentTarget = null;
+        }
+        
         // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
         base.Update();
     }
@@ -342,7 +349,6 @@ public class PlayerController : CharacterBase
             if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
             {
                 AddDetectedEnemy(other);
-                Debug.Log($"[플레이어 감지] Interaction Collision으로 적 감지됨: {other.gameObject.name}");
             }
         }
         
@@ -366,15 +372,14 @@ public class PlayerController : CharacterBase
             if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
             {
                 // 감지 범위를 벗어났지만, 공격 범위 내에 있는지 확인
-                if (IsEnemyInAttackRange(other))
+                if (!IsEnemyInAttackRange(other))
                 {
-                    Debug.Log($"[플레이어 감지] 감지 범위 벗어남, 하지만 공격 범위 내에 있음: {other.gameObject.name}");
-                    // 공격 범위 내에 있으면 제거하지 않음
-                }
-                else
-                {
+                    // 현재 타겟이 이 적이면 즉시 공격 중단
+                    if (currentTarget == other)
+                    {
+                        EndAttack(); // 진행 중인 공격 즉시 중단
+                    }
                     RemoveDetectedEnemy(other);
-                    Debug.Log($"[플레이어 감지] 공격 범위도 벗어나서 적 제거됨: {other.gameObject.name}");
                 }
             }
         }
@@ -396,19 +401,18 @@ public class PlayerController : CharacterBase
     {
         if (enemyCollider == null || collisionManager == null) return false;
         
+        // 적이 여전히 존재하고 활성화되어 있는지 확인
+        if (!enemyCollider.gameObject.activeInHierarchy) return false;
+        
         // Attack 콜라이더가 설정되어 있는지 확인 (활성화 상태는 확인하지 않음)
         if (!collisionManager.HasAttackCollider()) return false;
         
-        // Attack 콜라이더와 적의 거리 계산
-        float distance = Vector2.Distance(transform.position, enemyCollider.transform.position);
+        // Attack 콜라이더와 적의 거리 계산 (SqrMagnitude 사용으로 성능 최적화)
+        float sqrDistance = (transform.position - enemyCollider.transform.position).sqrMagnitude;
         
         // Attack 콜라이더의 공격 범위 가져오기
         float attackRange = collisionManager.GetAttackRange();
-        bool inRange = distance <= attackRange;
-        
-        Debug.Log($"[공격 범위 체크] {enemyCollider.name}: 거리={distance:F2}, 공격범위={attackRange:F2}, 범위내={inRange}");
-        
-        return inRange;
+        return sqrDistance <= attackRange * attackRange;
     }
     
     /// <summary>
@@ -429,7 +433,6 @@ public class PlayerController : CharacterBase
             if (!IsEnemyInAttackRange(enemy))
             {
                 RemoveDetectedEnemy(enemy);
-                Debug.Log($"[플레이어 감지] 공격 범위 벗어남으로 적 제거됨: {enemy.gameObject.name}");
             }
         }
     }
@@ -476,7 +479,6 @@ public class PlayerController : CharacterBase
                 SetCurrentTarget(enemy);
             }
             
-            Debug.Log($"[플레이어 감지] 적 추가됨: {enemy.gameObject.name} (총 {detectedEnemies.Count}명)");
         }
     }
     
@@ -504,7 +506,6 @@ public class PlayerController : CharacterBase
                 SelectNewTarget();
             }
             
-            Debug.Log($"[플레이어 감지] 적 제거됨: {enemy.gameObject.name} (총 {detectedEnemies.Count}명)");
         }
     }
     
@@ -556,19 +557,15 @@ public class PlayerController : CharacterBase
             {
                 if (enemy != null && !IsEnemyDead(enemy))
                 {
-                    float distance = Vector2.Distance(transform.position, enemy.transform.position);
-                    if (distance < closestDistance)
+                    float sqrDistance = (transform.position - enemy.transform.position).sqrMagnitude;
+                    if (sqrDistance < closestDistance)
                     {
-                        closestDistance = distance;
+                        closestDistance = sqrDistance;
                         currentTarget = enemy;
                     }
                 }
             }
             
-            if (currentTarget != null)
-            {
-                Debug.Log($"[플레이어 타겟] 새로운 타겟 선택: {currentTarget.gameObject.name}");
-            }
         }
     }
     
@@ -579,7 +576,6 @@ public class PlayerController : CharacterBase
     private void SetCurrentTarget(Collider2D enemy)
     {
         currentTarget = enemy;
-        Debug.Log($"[플레이어 타겟] 타겟 설정: {enemy.gameObject.name}");
     }
     
     /// <summary>
@@ -591,10 +587,10 @@ public class PlayerController : CharacterBase
     {
         if (currentTarget == null) return true;
         
-        float currentDistance = Vector2.Distance(transform.position, currentTarget.transform.position);
-        float newDistance = Vector2.Distance(transform.position, enemy.transform.position);
+        float currentSqrDistance = (transform.position - currentTarget.transform.position).sqrMagnitude;
+        float newSqrDistance = (transform.position - enemy.transform.position).sqrMagnitude;
         
-        return newDistance < currentDistance;
+        return newSqrDistance < currentSqrDistance;
     }
     
     /// <summary>
@@ -611,11 +607,18 @@ public class PlayerController : CharacterBase
                 // 공격 가능한 상태인지 확인
                 if (CanMove() && !IsDead() && currentTarget != null)
                 {
-                    // 자동 공격 실행
-                    StartAttack();
-                    lastAutoAttackTime = Time.time;
-                    
-                    Debug.Log($"[플레이어 자동공격] 타겟 {currentTarget.gameObject.name}에 대한 자동 공격 실행 (지연: {attackDelay}초)");
+                    // 타겟이 여전히 감지된 적 목록에 있는지 확인
+                    if (detectedEnemies.Contains(currentTarget))
+                    {
+                        // 자동 공격 실행
+                        StartAttack();
+                        lastAutoAttackTime = Time.time;
+                    }
+                    else
+                    {
+                        // 타겟이 감지 목록에서 제거되었으면 타겟 초기화
+                        currentTarget = null;
+                    }
                 }
             }
         }
@@ -629,7 +632,6 @@ public class PlayerController : CharacterBase
         detectedEnemies.Clear();
         currentTarget = null;
         firstDetectionTime = 0f;
-        Debug.Log("[플레이어 감지] 모든 감지된 적을 제거했습니다.");
     }
     
     /// <summary>
@@ -689,8 +691,6 @@ public class PlayerController : CharacterBase
     /// </summary>
     public void StartAttack()
     {
-        Debug.Log("[플레이어 공격] 공격 시작 - Attack 애니메이션 실행 및 콜리전 활성화");
-        
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
         
@@ -704,7 +704,6 @@ public class PlayerController : CharacterBase
     /// </summary>
     public void EndAttack()
     {
-        Debug.Log("[플레이어 공격] 공격 종료 - Attack 콜리전은 자동으로 비활성화됩니다");
         OnAttackAnimationEnd();
     }
 

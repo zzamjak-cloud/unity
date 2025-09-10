@@ -81,7 +81,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             if (effectManager == null)
             {
                 effectManager = gameObject.AddComponent<EffectManager>();
-                Debug.Log($"{gameObject.name}: EffectManager 컴포넌트를 자동으로 추가했습니다.");
             }
         }
         
@@ -107,11 +106,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
         if (rb == null)
         {
-            Debug.LogError("Rigidbody2D 컴포넌트가 필요합니다.");
         }
         if (anim == null)
         {
-            Debug.LogError("Animator 컴포넌트가 필요합니다. Inspector에 연결하거나 자식 오브젝트에 추가해주세요.");
         }
         
         // SortingGroup 컴포넌트 찾기 또는 추가
@@ -119,7 +116,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (sortingGroup == null)
         {
             sortingGroup = gameObject.AddComponent<SortingGroup>();
-            Debug.Log($"{gameObject.name}: SortingGroup 컴포넌트를 자동으로 추가했습니다.");
         }
         
         // Attack 콜리전 GameObject 자동 찾기
@@ -128,7 +124,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             attackCollisionObject = transform.Find("AttackCollision")?.gameObject;
             if (attackCollisionObject == null)
             {
-                Debug.LogWarning($"{gameObject.name}: Attack 콜리전 GameObject를 찾을 수 없습니다. 'AttackCollision'이라는 이름의 자식 오브젝트를 생성하거나 Inspector에서 직접 할당해주세요.");
             }
         }
         
@@ -139,26 +134,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             if (collisionManager == null)
             {
                 collisionManager = gameObject.AddComponent<CharacterCollisionManager>();
-                Debug.Log($"{gameObject.name}: CharacterCollisionManager 컴포넌트를 자동으로 추가했습니다.");
             }
         }
         
         // 체력 시스템 초기화
         InitializeHealthSystem();
         
-        /*
-        // 콜리전 시스템 상태 확인 (디버그 모드에서만)
-        #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[콜리전 시스템] {gameObject.name}: 콜리전 시스템 활성화 상태 = {enableCollisionSystem}");
-        Debug.Log($"[콜리전 시스템] {gameObject.name}: CharacterCollisionManager = {(collisionManager != null ? "설정됨" : "NULL")}");
-        if (collisionManager != null)
-        {
-            Debug.Log($"[콜리전 시스템] {gameObject.name}: Body 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Body)}");
-            Debug.Log($"[콜리전 시스템] {gameObject.name}: Attack 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Attack)}");
-            Debug.Log($"[콜리전 시스템] {gameObject.name}: Interaction 콜리전 활성화 = {IsCollisionTypeEnabled(CollisionType.Interaction)}");
-        }
-        #endif
-        */
         
         // 초기 정렬 순서 설정
         if (sortingGroup != null && enableSortingOrderAdjustment)
@@ -528,10 +509,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 첫 번째 공격 문제 해결을 위해 확실하게 활성화
         EnableAttackCollision();
         
-        // 디버그 로그 (첫 번째 공격 문제 진단용)
-        #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log($"[공격 이펙트] {gameObject.name}: PlayAttackEffect 호출됨 - 공격 콜리전 활성화 시도");
-        #endif
     }
 
     // Blank 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
@@ -602,19 +579,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager != null)
         {
             collisionManager.ActivateAttack();
-            /*
-            // 디버그 로그 (첫 번째 공격 문제 진단용)
-            #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.Log($"[공격 콜리전] {gameObject.name}: EnableAttackCollision 호출됨 - ActivateAttack 실행");
-            #endif
-            */
         }
         else
         {
-            // 디버그 로그 (첫 번째 공격 문제 진단용)
-            #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Debug.LogWarning($"[공격 콜리전] {gameObject.name}: collisionManager가 NULL입니다!");
-            #endif
         }
     }
 
@@ -782,7 +749,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
         else
         {
-            Debug.LogWarning($"[상태 UI] {gameObject.name}: StatusBarUI 컴포넌트를 찾을 수 없습니다. 상태바가 표시되지 않습니다.");
         }
     }
     
