@@ -267,7 +267,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 781521589969511869}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0.17, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -275,7 +275,7 @@ Transform:
   - {fileID: 7178539767648392036}
   - {fileID: 8663927687824171487}
   - {fileID: 8183083061081895512}
-  m_Father: {fileID: 5267203820544347734}
+  m_Father: {fileID: 7319875922909795428}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1316247527584920574
 GameObject:
@@ -950,6 +950,39 @@ Transform:
   - {fileID: 3576659807148306742}
   m_Father: {fileID: 7721823987727582110}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2419691674865830463
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7319875922909795428}
+  m_Layer: 0
+  m_Name: Pivot
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7319875922909795428
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2419691674865830463}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 115127438282399964}
+  - {fileID: 4133311231002258023}
+  m_Father: {fileID: 5267203820544347734}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2609420649675534380
 GameObject:
   m_ObjectHideFlags: 0
@@ -976,7 +1009,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2609420649675534380}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: -0.124, y: 1.161, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -987,7 +1020,7 @@ Transform:
   - {fileID: 4760901613603456616}
   - {fileID: 4506180677088588428}
   - {fileID: 734514294069565241}
-  m_Father: {fileID: 5267203820544347734}
+  m_Father: {fileID: 7319875922909795428}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!95 &2174600648370066429
 Animator:
@@ -2348,9 +2381,8 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 115127438282399964}
-  - {fileID: 4133311231002258023}
   - {fileID: 6874551230771281758}
+  - {fileID: 7319875922909795428}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!210 &4519599090590869529
@@ -2422,6 +2454,7 @@ MonoBehaviour:
   isInvincible: 0
   enableStatusBar: 1
   anim: {fileID: 2174600648370066429}
+  pivotTransform: {fileID: 7319875922909795428}
   isStaticEnemy: 1
   spawnPosition: {x: 0, y: 0, z: 0}
   idleAnimationDelay: 2

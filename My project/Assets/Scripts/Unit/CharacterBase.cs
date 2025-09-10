@@ -42,6 +42,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     [Header("Animation")]
     [SerializeField] protected Animator anim;  // 애니메이터 컴포넌트 (Inspector에서 직접 연결)
+    [SerializeField] protected Transform pivotTransform;  // 캐릭터 시각적 요소의 Pivot Transform (좌우 반전용)
     
     protected Rigidbody2D rb;
     protected CharacterAnimationState currentAnimationState = CharacterAnimationState.Idle;
@@ -97,6 +98,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (anim == null)
         {
             anim = GetComponentInChildren<Animator>();
+        }
+        
+        // Pivot Transform 자동 찾기
+        if (pivotTransform == null)
+        {
+            pivotTransform = transform.Find("Pivot");
         }
         if (rb == null)
         {
@@ -349,16 +356,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
 
-    // 캐릭터의 방향을 X축 스케일을 이용해 반전시킵니다.
+    // 캐릭터의 방향을 Pivot Transform의 X축 스케일을 이용해 반전시킵니다.
     protected virtual void FlipCharacter(float moveX)
     {
+        if (pivotTransform == null) return;
+        
         if (moveX > 0)
         {
-            transform.localScale = new Vector3(1, 1, 1);  // 양의 방향으로 이동 (오른쪽) -> 기본 스케일
+            pivotTransform.localScale = new Vector3(1, 1, 1);  // 양의 방향으로 이동 (오른쪽) -> 기본 스케일
         }
         else if (moveX < 0)
         {   
-            transform.localScale = new Vector3(-1, 1, 1);  // 음의 방향으로 이동 (왼쪽) -> X 스케일 -1
+            pivotTransform.localScale = new Vector3(-1, 1, 1);  // 음의 방향으로 이동 (왼쪽) -> X 스케일 -1
         }
     }
 
@@ -498,7 +507,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     #region ICharacterAttackEffect, ICharacterMoveEffect, ICharacterBlankEffect, ICharacterDamageEffect Implementation
 
-    // 먼지 이펙트를 재생하거나 정지합니다. (play : true면 재생, false면 정지)
+    // 이동시 먼지 이펙트를 재생하거나 정지합니다. (play : true면 재생, false면 정지)
     public virtual void PlayMoveEffect(bool play)
     {
         if (effectManager != null)
@@ -593,11 +602,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager != null)
         {
             collisionManager.ActivateAttack();
-            
+            /*
             // 디버그 로그 (첫 번째 공격 문제 진단용)
             #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.Log($"[공격 콜리전] {gameObject.name}: EnableAttackCollision 호출됨 - ActivateAttack 실행");
             #endif
+            */
         }
         else
         {
@@ -707,6 +717,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     public virtual int GetCurrentSortingOrder()
     {
         return sortingGroup != null ? sortingGroup.sortingOrder : 0;
+    }
+    
+    // Pivot Transform을 설정합니다.
+    public virtual void SetPivotTransform(Transform pivot)
+    {
+        pivotTransform = pivot;
+    }
+    
+    // Pivot Transform을 반환합니다.
+    public virtual Transform GetPivotTransform()
+    {
+        return pivotTransform;
     }
 
     #endregion

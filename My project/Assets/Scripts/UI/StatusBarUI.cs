@@ -41,7 +41,7 @@ public class StatusBarUI : MonoBehaviour
     
     // 내부 변수들
     private CharacterBase targetCharacter;
-    private Camera mainCamera;
+    private UnityEngine.Camera mainCamera;
     
     // 각 상태바의 목표 값들
     private float targetHealthValue = 1f;
@@ -85,10 +85,10 @@ public class StatusBarUI : MonoBehaviour
         originalLocalScale = transform.localScale;
         
         // 메인 카메라 찾기
-        mainCamera = Camera.main;
+        mainCamera = UnityEngine.Camera.main;
         if (mainCamera == null)
         {
-            mainCamera = FindFirstObjectByType<Camera>();
+            mainCamera = FindFirstObjectByType<UnityEngine.Camera>();
         }
         
         // 캐시된 변수들 초기화

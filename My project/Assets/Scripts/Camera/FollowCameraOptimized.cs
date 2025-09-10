@@ -97,7 +97,7 @@ public class FollowCameraOptimized : MonoBehaviour
     private Vector3 tempVector3_3 = Vector3.zero;
     
     // 카메라 효과 관련 변수들
-    private Camera cameraComponent;
+    private UnityEngine.Camera cameraComponent;
     private bool isShaking = false;
     private float shakeTimer = 0f;
     private Vector3 originalCameraPosition;
@@ -182,10 +182,10 @@ public class FollowCameraOptimized : MonoBehaviour
     private void InitializeCameraEffects()
     {
         // 카메라 컴포넌트 가져오기
-        cameraComponent = GetComponent<Camera>();
+        cameraComponent = GetComponent<UnityEngine.Camera>();
         if (cameraComponent == null)
         {
-            cameraComponent = Camera.main;
+            cameraComponent = UnityEngine.Camera.main;
         }
         
         if (cameraComponent != null)

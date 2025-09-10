@@ -7,7 +7,7 @@ using UnityEngine;
 public class CameraManager : MonoBehaviour
 {
     [Header("Camera References")]
-    [SerializeField] private Camera mainCamera;
+    [SerializeField] private UnityEngine.Camera mainCamera;
     [SerializeField] private FollowCameraOptimized followCamera;
     
     [Header("Camera Effects")]
@@ -73,11 +73,11 @@ public class CameraManager : MonoBehaviour
         // 메인 카메라 자동 찾기 (안전한 방식)
         if (mainCamera == null)
         {
-            mainCamera = Camera.main;
+            mainCamera = UnityEngine.Camera.main;
             if (mainCamera == null)
             {
                 // FindObjectsByType은 비용이 크므로 한 번만 호출
-                Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+                UnityEngine.Camera[] cameras = FindObjectsByType<UnityEngine.Camera>(FindObjectsSortMode.None);
                 if (cameras.Length > 0)
                 {
                     mainCamera = cameras[0]; // 첫 번째 카메라 사용

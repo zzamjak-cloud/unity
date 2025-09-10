@@ -53,7 +53,6 @@ public class PlayerController : CharacterBase
         InitializePlayerStatusUI();
         
         // 플레이어 전용 초기화
-        Debug.Log("PlayerController 초기화 완료");
     }
     
     /// <summary>
