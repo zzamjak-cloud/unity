@@ -344,6 +344,13 @@ public class PlayerController : CharacterBase
         }
         
         // 공격 중이 아닐 때는 기본 상태 업데이트 수행
+        // 단, 공격 중일 때는 Blank 상태로 전환되지 않도록 체크
+        if (isAttacking && currentAnimationState == CharacterAnimationState.Attack)
+        {
+            // 공격 중이면 Blank 상태로 전환 방지
+            return;
+        }
+        
         base.UpdateAnimationState();
     }
 

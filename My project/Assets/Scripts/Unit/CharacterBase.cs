@@ -541,8 +541,15 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         
         if (targetCharacter != null)
         {
-            // 타겟에게 Blank 애니메이션 실행
-            targetCharacter.TriggerSpecialAnimation(CharacterAnimationState.Blank);
+            // 공격 중이 아닐 때만 Blank 애니메이션 실행
+            if (!targetCharacter.isAttacking)
+            {
+                targetCharacter.TriggerSpecialAnimation(CharacterAnimationState.Blank);
+            }
+            else
+            {
+                Debug.Log($"[CharacterBase] 타겟이 공격 중이므로 Blank 애니메이션 무시 - Target: {targetCharacter.name}");
+            }
         }
     }
 
