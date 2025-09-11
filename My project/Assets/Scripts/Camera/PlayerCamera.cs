@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Animations;
 
 namespace GameCamera
 {
@@ -27,6 +28,9 @@ namespace GameCamera
         [Header("캐릭터 참조")]
         [SerializeField] private PlayerController playerController;
         
+        [Header("자동 설정")]
+        [SerializeField] private bool autoFindPlayer = true;  // 자동으로 PlayerController 찾기 여부
+        
         
         // 내부 변수들
         private Vector3 currentOffset;
@@ -42,29 +46,40 @@ namespace GameCamera
         
         private void Start()
         {
-            // 부모가 캐릭터라고 가정
-            characterTransform = transform.parent;
-            if (characterTransform == null)
+            // 자동으로 PlayerController 찾기
+            if (autoFindPlayer)
             {
-                Debug.LogError("CharacterCamera: 부모 Transform이 없습니다. 캐릭터의 자식으로 배치해주세요.");
-                return;
+                FindAndSetupPlayerController();
             }
-            
-            // PlayerController 컴포넌트 확인
-            if (playerController == null)
+            else
             {
-                // 직접 연결되지 않은 경우 부모에서 찾기 (호환성)
-                playerController = characterTransform.GetComponent<PlayerController>();
+                // 기존 방식: 부모가 캐릭터라고 가정
+                characterTransform = transform.parent;
+                if (characterTransform == null)
+                {
+                    Debug.LogError("CharacterCamera: 부모 Transform이 없습니다. 캐릭터의 자식으로 배치해주세요.");
+                    return;
+                }
+                
+                // PlayerController 컴포넌트 확인
                 if (playerController == null)
                 {
-                    Debug.LogWarning("CharacterCamera: PlayerController 컴포넌트를 찾을 수 없습니다. Input 기반 최적화가 비활성화됩니다.");
+                    // 직접 연결되지 않은 경우 부모에서 찾기 (호환성)
+                    playerController = characterTransform.GetComponent<PlayerController>();
+                    if (playerController == null)
+                    {
+                        Debug.LogWarning("CharacterCamera: PlayerController 컴포넌트를 찾을 수 없습니다. Input 기반 최적화가 비활성화됩니다.");
+                    }
                 }
             }
             
             // 초기 설정
             currentOffset = defaultOffset;
             targetOffset = defaultOffset;
-            lastPosition = characterTransform.position;
+            if (characterTransform != null)
+            {
+                lastPosition = characterTransform.position;
+            }
             transform.localPosition = currentOffset;
             
             // Pivot 시스템 사용으로 카메라 스케일 고정 불필요
@@ -198,11 +213,76 @@ namespace GameCamera
         }
         
         /// <summary>
+        /// 씬에서 PlayerController를 자동으로 찾고 설정합니다.
+        /// </summary>
+        private void FindAndSetupPlayerController()
+        {
+            // 씬에서 PlayerController 컴포넌트를 가진 오브젝트 찾기
+            PlayerController foundPlayer = FindFirstObjectByType<PlayerController>();
+            
+            if (foundPlayer != null)
+            {
+                playerController = foundPlayer;
+                characterTransform = foundPlayer.transform;
+                
+                Debug.Log($"[PlayerCamera] PlayerController 자동 발견: {foundPlayer.name}");
+                
+                // Position Constraint 설정
+                SetupPositionConstraint();
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerCamera] 씬에서 PlayerController를 찾을 수 없습니다.");
+                
+                // 기존 방식으로 폴백
+                characterTransform = transform.parent;
+                if (characterTransform != null)
+                {
+                    playerController = characterTransform.GetComponent<PlayerController>();
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Position Constraint 컴포넌트를 설정합니다.
+        /// </summary>
+        private void SetupPositionConstraint()
+        {
+            if (playerController == null) return;
+            
+            // 부모 오브젝트에서 Position Constraint 컴포넌트 찾기
+            PositionConstraint positionConstraint = transform.parent?.GetComponent<PositionConstraint>();
+            
+            if (positionConstraint != null)
+            {
+                // Sources 설정
+                ConstraintSource source = new ConstraintSource();
+                source.sourceTransform = playerController.transform;
+                source.weight = 1.0f;
+                
+                // 기존 Sources 클리어 후 새로운 Source 추가
+                positionConstraint.SetSources(new System.Collections.Generic.List<ConstraintSource> { source });
+                positionConstraint.constraintActive = true;
+                
+                Debug.Log($"[PlayerCamera] Position Constraint 설정 완료: {playerController.name}");
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerCamera] 부모 오브젝트에 Position Constraint 컴포넌트가 없습니다.");
+            }
+        }
+        
+        /// <summary>
         /// 런타임에서 설정값을 변경할 수 있는 메서드들
         /// </summary>
         public void SetPlayerController(PlayerController controller)
         {
             playerController = controller;
+            if (controller != null)
+            {
+                characterTransform = controller.transform;
+                SetupPositionConstraint();
+            }
         }
         
         public void SetDefaultOffset(Vector3 offset)
@@ -227,6 +307,27 @@ namespace GameCamera
         public void SetEaseCurve(AnimationCurve curve)
         {
             easeCurve = curve;
+        }
+        
+        /// <summary>
+        /// 자동으로 PlayerController를 다시 찾고 설정합니다.
+        /// </summary>
+        public void RefreshPlayerController()
+        {
+            FindAndSetupPlayerController();
+        }
+        
+        /// <summary>
+        /// 자동 설정을 활성화/비활성화합니다.
+        /// </summary>
+        /// <param name="enabled">자동 설정 여부</param>
+        public void SetAutoFindPlayer(bool enabled)
+        {
+            autoFindPlayer = enabled;
+            if (enabled)
+            {
+                FindAndSetupPlayerController();
+            }
         }
         
         /// <summary>
