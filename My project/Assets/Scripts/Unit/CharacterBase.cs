@@ -848,6 +848,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         
         isDead = true;
         
+        // 모든 콜리전 비활성화
+        if (collisionManager != null)
+        {
+            collisionManager.SetAllCollisionsEnabled(false);
+        }
+        
         // 체력바 숨기기
         if (statusBarUI != null)
         {

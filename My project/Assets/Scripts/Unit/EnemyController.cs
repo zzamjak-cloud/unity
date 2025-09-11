@@ -127,6 +127,12 @@ public class EnemyController : CharacterBase
                 currentTarget = null;
             }
             
+            // 모든 콜리전 비활성화
+            if (collisionManager != null)
+            {
+                collisionManager.SetAllCollisionsEnabled(false);
+            }
+            
             return; // 사망 시 더 이상 처리하지 않음
         }
         

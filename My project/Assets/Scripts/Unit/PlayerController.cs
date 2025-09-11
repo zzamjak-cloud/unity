@@ -86,6 +86,31 @@ public class PlayerController : CharacterBase
 
     protected override void Update()
     {
+        // 사망 시 모든 행동 중단
+        if (IsDead())
+        {
+            // 이동 중단
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector2.zero;
+            }
+            
+            // 공격 중단
+            if (currentTarget != null)
+            {
+                EndAttack();
+                currentTarget = null;
+            }
+            
+            // 모든 콜리전 비활성화
+            if (collisionManager != null)
+            {
+                collisionManager.SetAllCollisionsEnabled(false);
+            }
+            
+            return; // 사망 시 더 이상 처리하지 않음
+        }
+        
         // 입력 처리
         if (enableKeyboardInput)
         {
@@ -672,6 +697,21 @@ public class PlayerController : CharacterBase
     public void EndAttack()
     {
         OnAttackAnimationEnd();
+    }
+
+    #endregion
+
+    #region Override Methods
+
+    /// <summary>
+    /// 피격을 받았을 때 처리합니다. (사망 시 콜리전 비활성화)
+    /// </summary>
+    public override void TakeDamage(int damage, CharacterBase attacker = null)
+    {
+        // 기본 피격 처리
+        base.TakeDamage(damage, attacker);
+        
+        // 사망 시 콜리전 비활성화는 CharacterBase.Die()에서 처리됨
     }
 
     #endregion
