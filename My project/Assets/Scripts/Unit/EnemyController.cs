@@ -622,6 +622,12 @@ public class EnemyController : CharacterBase
         
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
+        
+        // IsAttacking 파라미터를 true로 설정
+        if (anim != null)
+        {
+            anim.SetBool("IsAttacking", true);
+        }
     }
 
     /// <summary>
@@ -630,6 +636,12 @@ public class EnemyController : CharacterBase
     /// </summary>
     public void EndAttack()
     {
+        // IsAttacking 파라미터를 false로 설정
+        if (anim != null)
+        {
+            anim.SetBool("IsAttacking", false);
+        }
+        
         OnAttackAnimationEnd();
     }
 
@@ -1226,6 +1238,30 @@ public class EnemyController : CharacterBase
         if (!enabled)
         {
             ClearAllDetectedPlayers();
+        }
+    }
+
+    #endregion
+
+    #region Attack Animation Event Override
+
+    /// <summary>
+    /// 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드 (EnemyController 오버라이드)
+    /// </summary>
+    public override void OnAttackAnimationEvent()
+    {
+        // 공격 판정 시점에서 이동 허용 (Flip 처리 완료 후)
+        isAttacking = false;
+        
+        // IsAttacking 파라미터를 false로 설정
+        if (anim != null)
+        {
+            anim.SetBool("IsAttacking", false);
+        }
+        
+        if (collisionManager != null)
+        {
+            collisionManager.OnAttackAnimationEvent();
         }
     }
 

@@ -269,12 +269,17 @@ public class PlayerController : CharacterBase
         // 사망 상태일 때는 Death 애니메이션이 최우선
         if (IsDead())
         {
+            // 공격 상태를 즉시 해제
+            isAttacking = false;
+            
             if (currentAnimationState != CharacterAnimationState.Death)
             {
                 Debug.Log($"[Player Death] 사망 상태 감지, Death 애니메이션 강제 실행");
                 currentAnimationState = CharacterAnimationState.Death;
                 if (anim != null)
                 {
+                    // IsAttacking 파라미터를 false로 설정
+                    anim.SetBool("IsAttacking", false);
                     anim.SetTrigger(GameConstants.ANIM_DEATH);
                 }
             }
@@ -823,6 +828,14 @@ public class PlayerController : CharacterBase
         if (currentHealth <= 0)
         {
             Debug.Log($"[Player Death] 체력 0 이하, 사망 처리 시작");
+            
+            // 사망 시 공격 상태 즉시 해제
+            isAttacking = false;
+            if (anim != null)
+            {
+                anim.SetBool("IsAttacking", false);
+            }
+            
             Die();
         }
     }
@@ -864,6 +877,13 @@ public class PlayerController : CharacterBase
     /// </summary>
     public override void OnAttackAnimationEvent()
     {
+        // 사망 상태일 때는 공격 이벤트 무시
+        if (IsDead())
+        {
+            Debug.Log($"[Player Attack] OnAttackAnimationEvent 사망 상태로 인해 무시 - Time: {Time.time:F2}");
+            return;
+        }
+        
         // 중복 호출 방지 (시간 기반)
         float currentTime = Time.time;
         if (currentTime - lastAttackEventTime < 0.1f) // 0.1초 내 중복 호출 방지
