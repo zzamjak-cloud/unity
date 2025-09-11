@@ -2,44 +2,37 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// 캐릭터의 3개 콜리전을 관리하는 컴포넌트
-/// Body, Attack, Interaction 콜리전을 각각 처리합니다.
+/// 캐릭터의 2개 콜리전을 관리하는 컴포넌트
+/// Body, AttackRange 콜리전을 각각 처리합니다.
 /// </summary>
 public class CharacterCollisionManager : MonoBehaviour
 {
     [Header("Collision Settings")]
     [SerializeField] private Collider2D bodyCollider;        // Body 콜리전 (적/플레이어 충돌, 피격 판정)
-    [SerializeField] private Collider2D attackCollider;     // Attack 콜리전 (공격 범위 감지, 타격 판정)
-    [SerializeField] private Collider2D interactionCollider; // Interaction 콜리전 (감지용, 상시 활성화)
+    [SerializeField] private Collider2D attackRangeCollider; // AttackRange 콜리전 (공격 범위 감지, 상시 활성화)
     
     [Header("Collision Layers")]
     [SerializeField] private LayerMask bodyCollisionMask = -1;        // Body 콜리전 대상 레이어
-    [SerializeField] private LayerMask attackCollisionMask = -1;      // Attack 콜리전 대상 레이어
-    [SerializeField] private LayerMask interactionCollisionMask = -1; // Interaction 콜리전 대상 레이어
+    [SerializeField] private LayerMask attackRangeCollisionMask = -1; // AttackRange 콜리전 대상 레이어
     
     [Header("Collision Tags")]
     [SerializeField] private string[] bodyCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_OBSTACLE };
-    [SerializeField] private string[] attackCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_DESTRUCTIBLE };
-    [SerializeField] private string[] interactionCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER, GameConstants.TAG_ITEM, GameConstants.TAG_INTERACTABLE, GameConstants.TAG_NPC }; // Interaction은 감지용으로 사용
+    [SerializeField] private string[] attackRangeCollisionTags = { GameConstants.TAG_ENEMY, GameConstants.TAG_PLAYER }; // AttackRange는 공격 대상 감지용
     
-    [Header("Attack Collision Settings")]
-    [SerializeField] private float attackDuration = GameConstants.DEFAULT_ATTACK_DURATION;
-    [SerializeField] private bool allowMultipleHitsPerTarget = false;
-    [SerializeField] private string[] attackIgnoreTags = { "Item" };
-    [SerializeField] private bool onlyHitBodyCollision = true;
+    [Header("Attack Range Settings")]
+    [SerializeField] private string[] attackRangeIgnoreTags = { "Item" };
+    [SerializeField] private bool onlyDetectBodyCollision = true;
     
     // 콜리전 이벤트를 처리할 핸들러
     private ICollisionHandler collisionHandler;
     
     // 콜리전 활성화 상태
     private bool isBodyCollisionEnabled = true;
-    private bool isAttackCollisionEnabled = true;
-    private bool isInteractionCollisionEnabled = true;
+    private bool isAttackRangeCollisionEnabled = true;
     
-    // Attack 콜리전 관련
-    private float attackTimer = 0f;
-    private bool isAttackActive = false;
-    private HashSet<Collider2D> hitTargets = new HashSet<Collider2D>();
+    // AttackRange 콜리전 관련 - 공격 범위 내 적들 관리
+    private List<Collider2D> enemiesInRange = new List<Collider2D>();
+    private Collider2D nearestEnemy = null;
     
     // 메모리 최적화를 위한 캐시된 리스트
     private List<Collider2D> tempColliderList = new List<Collider2D>();
@@ -77,15 +70,8 @@ public class CharacterCollisionManager : MonoBehaviour
     
     private void Update()
     {
-        // Attack 콜리전 타이머 업데이트
-        if (isAttackActive)
-        {
-            attackTimer -= Time.deltaTime;
-            if (attackTimer <= 0f)
-            {
-                DeactivateAttack();
-            }
-        }
+        // AttackRange 내 가장 가까운 적 업데이트
+        UpdateNearestEnemy();
     }
     
     /// <summary>
@@ -97,11 +83,7 @@ public class CharacterCollisionManager : MonoBehaviour
         {
         }
         
-        if (attackCollider == null)
-        {
-        }
-        
-        if (interactionCollider == null)
+        if (attackRangeCollider == null)
         {
         }
         
@@ -119,19 +101,11 @@ public class CharacterCollisionManager : MonoBehaviour
             SetupCollider(bodyCollider, bodyCollisionMask);
         }
         
-        // Attack 콜리전 설정
-        if (attackCollider != null)
+        // AttackRange 콜리전 설정
+        if (attackRangeCollider != null)
         {
-            attackCollider.isTrigger = true; // 트리거로 설정
-            attackCollider.enabled = false; // 초기에는 비활성화 (공격 시에만 활성화)
-            SetupCollider(attackCollider, attackCollisionMask);
-        }
-        
-        // Interaction 콜리전 설정
-        if (interactionCollider != null)
-        {
-            interactionCollider.isTrigger = true; // 트리거로 설정
-            SetupCollider(interactionCollider, interactionCollisionMask);
+            attackRangeCollider.isTrigger = true; // 트리거로 설정
+            SetupCollider(attackRangeCollider, attackRangeCollisionMask);
         }
         
     }
@@ -187,7 +161,7 @@ public class CharacterCollisionManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Attack 콜리전 이벤트 (트리거)
+    /// AttackRange 콜리전 이벤트 (트리거)
     /// </summary>
     private void OnTriggerEnter2D(Collider2D other)
     {
@@ -201,60 +175,32 @@ public class CharacterCollisionManager : MonoBehaviour
             return;
         }
         
-        
-        
-        // Attack 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Attack 콜리전과 충돌했을 때
-        if (attackCollider != null && other != attackCollider && isAttackCollisionEnabled && isAttackActive)
+        // AttackRange 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 AttackRange 콜리전과 충돌했을 때
+        if (attackRangeCollider != null && other != attackRangeCollider && isAttackRangeCollisionEnabled)
         {
-            // Attack 콜리전끼리의 충돌은 무시 (Attack 콜리전은 Body 콜리전만 타격해야 함)
-            // 다른 캐릭터의 Attack 콜리전 GameObject인지 확인
+            // AttackRange 콜리전끼리의 충돌은 무시
             CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
-            if (otherCollisionManager != null && otherCollisionManager.IsAttackCollider(other))
+            if (otherCollisionManager != null && otherCollisionManager.IsAttackRangeCollider(other))
             {
                 if (enableCollisionLogging)
                 {
                 }
                 return;
             }
-            
-            // Interaction 콜리전과의 충돌도 무시 (Attack 콜리전은 Body 콜리전만 타격해야 함)
-            if (otherCollisionManager != null && otherCollisionManager.IsInteractionCollider(other))
-            {
-                if (enableCollisionLogging)
-                {
-                }
-                return;
-            }
-            
             
             // 레이어 마스크 확인
-            if (((1 << other.gameObject.layer) & attackCollisionMask) != 0)
+            if (((1 << other.gameObject.layer) & attackRangeCollisionMask) != 0)
             {
                 if (enableCollisionLogging)
                 {
                 }
-                HandleAttackCollision(other);
+                HandleAttackRangeCollision(other);
             }
             else
             {
                 if (enableCollisionLogging)
                 {
                 }
-            }
-        }
-        // Interaction 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Interaction 콜리전과 충돌했을 때 (감지용으로 사용)
-        if (interactionCollider != null && other != interactionCollider && isInteractionCollisionEnabled)
-        {
-            // 레이어 마스크 확인
-            if (((1 << other.gameObject.layer) & interactionCollisionMask) != 0)
-            {
-                HandleInteractionCollision(other);
-            }
-        }
-        else
-        {
-            if (enableCollisionLogging)
-            {
             }
         }
     }
@@ -265,13 +211,13 @@ public class CharacterCollisionManager : MonoBehaviour
     private void OnTriggerExit2D(Collider2D other)
     {
         
-        // Interaction 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 Interaction 콜리전에서 나갔을 때
-        if (interactionCollider != null && other != interactionCollider && isInteractionCollisionEnabled)
+        // AttackRange 콜리전 처리 - 다른 오브젝트가 이 오브젝트의 AttackRange 콜리전에서 나갔을 때
+        if (attackRangeCollider != null && other != attackRangeCollider && isAttackRangeCollisionEnabled)
         {
             // 레이어 마스크 확인
-            if (((1 << other.gameObject.layer) & interactionCollisionMask) != 0)
+            if (((1 << other.gameObject.layer) & attackRangeCollisionMask) != 0)
             {
-                HandleInteractionExit(other);
+                HandleAttackRangeExit(other);
             }
         }
     }
@@ -290,14 +236,13 @@ public class CharacterCollisionManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Attack 콜리전을 처리합니다.
+    /// AttackRange 콜리전을 처리합니다.
     /// </summary>
     /// <param name="other">충돌한 콜리전</param>
-    private void HandleAttackCollision(Collider2D other)
+    private void HandleAttackRangeCollision(Collider2D other)
     {
-        
         // 타겟 유효성 확인
-        if (!IsValidAttackTarget(other))
+        if (!IsValidAttackRangeTarget(other))
         {
             if (enableCollisionLogging)
             {
@@ -305,50 +250,37 @@ public class CharacterCollisionManager : MonoBehaviour
             return;
         }
         
-        // 중복 타격 방지
-        if (!allowMultipleHitsPerTarget && hitTargets.Contains(other))
+        // 이미 리스트에 있는지 확인
+        if (!enemiesInRange.Contains(other))
         {
-            if (enableCollisionLogging)
+            enemiesInRange.Add(other);
+            
+            // 콜리전 핸들러에 이벤트 전달
+            if (collisionHandler != null)
             {
+                collisionHandler.OnAttackRangeEnter(other);
             }
-            return;
         }
-        
-        // 타격한 대상 목록에 추가
-        hitTargets.Add(other);
-        
-        // 콜리전 핸들러에 이벤트 전달
-        if (collisionHandler != null)
-        {
-            collisionHandler.OnAttackCollision(other);
-        }
-        
     }
     
-    /// <summary>
-    /// Interaction 콜리전을 처리합니다.
-    /// </summary>
-    /// <param name="other">충돌한 콜리전</param>
-    private void HandleInteractionCollision(Collider2D other)
-    {
-        if (collisionHandler != null)
-        {
-            collisionHandler.OnInteractionCollision(other);
-        }
-        
-    }
     
     /// <summary>
-    /// Interaction 콜리전에서 나갔을 때 처리합니다.
+    /// AttackRange 콜리전에서 나갔을 때 처리합니다.
     /// </summary>
     /// <param name="other">나간 콜리전</param>
-    private void HandleInteractionExit(Collider2D other)
+    private void HandleAttackRangeExit(Collider2D other)
     {
-        if (collisionHandler != null)
+        // 리스트에서 제거
+        if (enemiesInRange.Contains(other))
         {
-            collisionHandler.OnInteractionExit(other);
+            enemiesInRange.Remove(other);
+            
+            // 콜리전 핸들러에 이벤트 전달
+            if (collisionHandler != null)
+            {
+                collisionHandler.OnAttackRangeExit(other);
+            }
         }
-        
     }
     
     
@@ -370,37 +302,18 @@ public class CharacterCollisionManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Attack 콜리전을 활성화/비활성화합니다.
+    /// AttackRange 콜리전을 활성화/비활성화합니다.
     /// </summary>
     /// <param name="enabled">활성화 여부</param>
-    public void SetAttackCollisionEnabled(bool enabled)
+    public void SetAttackRangeCollisionEnabled(bool enabled)
     {
-        isAttackCollisionEnabled = enabled;
-        
-        if (enabled)
+        isAttackRangeCollisionEnabled = enabled;
+        if (attackRangeCollider != null)
         {
-            // 공격 콜리전 활성화 시 ActivateAttack 호출
-            ActivateAttack();
-        }
-        else
-        {
-            // 공격 콜리전 비활성화 시 DeactivateAttack 호출
-            DeactivateAttack();
+            attackRangeCollider.enabled = enabled;
         }
     }
     
-    /// <summary>
-    /// Interaction 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetInteractionCollisionEnabled(bool enabled)
-    {
-        isInteractionCollisionEnabled = enabled;
-        if (interactionCollider != null)
-        {
-            interactionCollider.enabled = enabled;
-        }
-    }
     
     
     /// <summary>
@@ -410,8 +323,7 @@ public class CharacterCollisionManager : MonoBehaviour
     public void SetAllCollisionsEnabled(bool enabled)
     {
         SetBodyCollisionEnabled(enabled);
-        SetAttackCollisionEnabled(enabled);
-        SetInteractionCollisionEnabled(enabled);
+        SetAttackRangeCollisionEnabled(enabled);
     }
     
     /// <summary>
@@ -425,10 +337,8 @@ public class CharacterCollisionManager : MonoBehaviour
         {
             case CollisionType.Body:
                 return isBodyCollisionEnabled;
-            case CollisionType.Attack:
-                return isAttackCollisionEnabled;
-            case CollisionType.Interaction:
-                return isInteractionCollisionEnabled;
+            case CollisionType.AttackRange:
+                return isAttackRangeCollisionEnabled;
             default:
                 return false;
         }
@@ -443,76 +353,24 @@ public class CharacterCollisionManager : MonoBehaviour
         enableCollisionLogging = enabled;
     }
     
-    /// <summary>
-    /// Attack 콜리전을 활성화합니다.
-    /// </summary>
-    public void ActivateAttack()
-    {
-        if (attackCollider != null)
-        {
-            // 공격 콜리전 활성화
-            attackCollider.enabled = true;
-            
-            // 디버그 로그 (첫 번째 공격 문제 진단용)
-            if (enableCollisionLogging)
-            {
-            }
-        }
-        
-        isAttackActive = true;
-        attackTimer = attackDuration;
-        hitTargets.Clear();
-        
-        // 디버그 로그 (첫 번째 공격 문제 진단용)
-    }
+    
+    
+    
     
     /// <summary>
-    /// Attack 콜리전을 비활성화합니다.
-    /// </summary>
-    public void DeactivateAttack()
-    {
-        if (attackCollider != null)
-        {
-            attackCollider.enabled = false;
-        }
-        
-        isAttackActive = false;
-        attackTimer = 0f;
-        hitTargets.Clear();
-    }
-    
-    /// <summary>
-    /// Attack 콜리전이 활성화되어 있는지 확인합니다.
-    /// </summary>
-    public bool IsAttackActive()
-    {
-        return isAttackActive && attackCollider != null && attackCollider.enabled;
-    }
-    
-    /// <summary>
-    /// 주어진 콜리전이 이 캐릭터의 Attack 콜리전인지 확인합니다.
+    /// 주어진 콜리전이 이 캐릭터의 AttackRange 콜리전인지 확인합니다.
     /// </summary>
     /// <param name="collider">확인할 콜리전</param>
-    /// <returns>Attack 콜리전이면 true</returns>
-    public bool IsAttackCollider(Collider2D collider)
+    /// <returns>AttackRange 콜리전이면 true</returns>
+    public bool IsAttackRangeCollider(Collider2D collider)
     {
-        return attackCollider == collider;
+        return attackRangeCollider == collider;
     }
     
     /// <summary>
-    /// 주어진 콜리전이 이 캐릭터의 Interaction 콜리전인지 확인합니다.
+    /// AttackRange 타겟이 유효한지 확인합니다.
     /// </summary>
-    /// <param name="collider">확인할 콜리전</param>
-    /// <returns>Interaction 콜리전이면 true</returns>
-    public bool IsInteractionCollider(Collider2D collider)
-    {
-        return interactionCollider == collider;
-    }
-    
-    /// <summary>
-    /// 타겟이 유효한지 확인합니다.
-    /// </summary>
-    private bool IsValidAttackTarget(Collider2D target)
+    private bool IsValidAttackRangeTarget(Collider2D target)
     {
         if (target == null) 
         {
@@ -522,9 +380,8 @@ public class CharacterCollisionManager : MonoBehaviour
             return false;
         }
         
-        
         // 무시할 태그 확인
-        foreach (string ignoreTag in attackIgnoreTags)
+        foreach (string ignoreTag in attackRangeIgnoreTags)
         {
             if (string.Equals(target.tag, ignoreTag, System.StringComparison.OrdinalIgnoreCase))
             {
@@ -537,7 +394,7 @@ public class CharacterCollisionManager : MonoBehaviour
         
         // 타겟 태그 확인
         bool hasValidTag = false;
-        foreach (string targetTag in attackCollisionTags)
+        foreach (string targetTag in attackRangeCollisionTags)
         {
             if (string.Equals(target.tag, targetTag, System.StringComparison.OrdinalIgnoreCase))
             {
@@ -554,8 +411,8 @@ public class CharacterCollisionManager : MonoBehaviour
             return false;
         }
         
-        // Body 콜리전만 타격할지 확인
-        if (onlyHitBodyCollision && !target.gameObject.name.Contains("Body"))
+        // Body 콜리전만 감지할지 확인
+        if (onlyDetectBodyCollision && !target.gameObject.name.Contains("Body"))
         {
             if (enableCollisionLogging)
             {
@@ -564,6 +421,90 @@ public class CharacterCollisionManager : MonoBehaviour
         }
         
         return true;
+    }
+    
+    /// <summary>
+    /// AttackRange 내 가장 가까운 적을 업데이트합니다.
+    /// </summary>
+    private void UpdateNearestEnemy()
+    {
+        if (enemiesInRange.Count == 0)
+        {
+            nearestEnemy = null;
+            return;
+        }
+        
+        float nearestDistance = float.MaxValue;
+        Collider2D newNearestEnemy = null;
+        
+        foreach (Collider2D enemy in enemiesInRange)
+        {
+            if (enemy == null) continue;
+            
+            float distance = Vector2.Distance(transform.position, enemy.transform.position);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                newNearestEnemy = enemy;
+            }
+        }
+        
+        nearestEnemy = newNearestEnemy;
+    }
+    
+    /// <summary>
+    /// AttackRange 내 적 목록을 반환합니다.
+    /// </summary>
+    /// <returns>AttackRange 내 적 목록</returns>
+    public List<Collider2D> GetEnemiesInRange()
+    {
+        return new List<Collider2D>(enemiesInRange);
+    }
+    
+    /// <summary>
+    /// AttackRange 내 가장 가까운 적을 반환합니다.
+    /// </summary>
+    /// <returns>가장 가까운 적, 없으면 null</returns>
+    public Collider2D GetNearestEnemy()
+    {
+        return nearestEnemy;
+    }
+    
+    /// <summary>
+    /// AttackRange 내 적이 있는지 확인합니다.
+    /// </summary>
+    /// <returns>적이 있으면 true</returns>
+    public bool HasEnemiesInRange()
+    {
+        return enemiesInRange.Count > 0;
+    }
+    
+    /// <summary>
+    /// AttackRange 내 적의 수를 반환합니다.
+    /// </summary>
+    /// <returns>적의 수</returns>
+    public int GetEnemyCountInRange()
+    {
+        return enemiesInRange.Count;
+    }
+    
+    /// <summary>
+    /// 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드
+    /// </summary>
+    public void OnAttackAnimationEvent()
+    {
+        if (nearestEnemy != null)
+        {
+            // 콜리전 핸들러에 공격 성공 이벤트 전달
+            if (collisionHandler != null)
+            {
+                collisionHandler.OnAttackHit(nearestEnemy);
+            }
+            else
+            {
+                Debug.LogWarning("[AttackAnimationEvent] collisionHandler가 null입니다!");
+            }
+        }
     }
     
     #endregion
@@ -582,18 +523,18 @@ public class CharacterCollisionManager : MonoBehaviour
             DrawColliderGizmo(bodyCollider);
         }
         
-        // Attack 콜리전 표시
-        if (attackCollider != null)
+        // AttackRange 콜리전 표시
+        if (attackRangeCollider != null)
         {
-            Gizmos.color = Color.yellow;
-            DrawColliderGizmo(attackCollider);
+            Gizmos.color = Color.green;
+            DrawColliderGizmo(attackRangeCollider);
         }
         
-        // Interaction 콜리전 표시
-        if (interactionCollider != null)
+        // 가장 가까운 적 표시
+        if (nearestEnemy != null)
         {
-            Gizmos.color = Color.blue;
-            DrawColliderGizmo(interactionCollider);
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(transform.position, nearestEnemy.transform.position);
         }
         
     }
@@ -624,10 +565,10 @@ public class CharacterCollisionManager : MonoBehaviour
     /// </summary>
     private void OnDestroy()
     {
-        // HashSet과 List 정리
-        if (hitTargets != null)
+        // List 정리
+        if (enemiesInRange != null)
         {
-            hitTargets.Clear();
+            enemiesInRange.Clear();
         }
         
         if (tempColliderList != null)
@@ -638,8 +579,8 @@ public class CharacterCollisionManager : MonoBehaviour
         // 참조 해제
         collisionHandler = null;
         bodyCollider = null;
-        attackCollider = null;
-        interactionCollider = null;
+        attackRangeCollider = null;
+        nearestEnemy = null;
         
         // 캐시된 변수들 정리
         cachedPosition = Vector3.zero;
@@ -647,37 +588,37 @@ public class CharacterCollisionManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Attack 콜라이더의 공격 범위를 가져옵니다.
+    /// AttackRange 콜라이더의 공격 범위를 가져옵니다.
     /// </summary>
     /// <returns>공격 범위 (반지름)</returns>
     public float GetAttackRange()
     {
-        if (attackCollider == null) return 2.0f; // 기본 범위
+        if (attackRangeCollider == null) return 2.0f; // 기본 범위
         
-        CircleCollider2D attackCircle = attackCollider as CircleCollider2D;
-        if (attackCircle != null)
+        CircleCollider2D attackRangeCircle = attackRangeCollider as CircleCollider2D;
+        if (attackRangeCircle != null)
         {
-            return attackCircle.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y);
+            return attackRangeCircle.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y);
         }
         
         return 2.0f; // 기본 범위
     }
     
     /// <summary>
-    /// Attack 콜라이더가 활성화되어 있는지 확인합니다.
+    /// AttackRange 콜라이더가 활성화되어 있는지 확인합니다.
     /// </summary>
     /// <returns>활성화되어 있으면 true</returns>
-    public bool IsAttackColliderEnabled()
+    public bool IsAttackRangeColliderEnabled()
     {
-        return attackCollider != null && attackCollider.enabled;
+        return attackRangeCollider != null && attackRangeCollider.enabled;
     }
     
     /// <summary>
-    /// Attack 콜라이더가 설정되어 있는지 확인합니다.
+    /// AttackRange 콜라이더가 설정되어 있는지 확인합니다.
     /// </summary>
     /// <returns>설정되어 있으면 true</returns>
-    public bool HasAttackCollider()
+    public bool HasAttackRangeCollider()
     {
-        return attackCollider != null;
+        return attackRangeCollider != null;
     }
 }

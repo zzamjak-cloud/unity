@@ -273,7 +273,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 7178539767648392036}
-  - {fileID: 8663927687824171487}
   - {fileID: 8183083061081895512}
   m_Father: {fileID: 7319875922909795428}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -662,9 +661,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8183083061081895512}
-  - component: {fileID: 4643420367369756634}
+  - component: {fileID: 4410476992448481973}
   m_Layer: 9
-  m_Name: Interaction
+  m_Name: AttackRange
   m_TagString: Item
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -685,8 +684,8 @@ Transform:
   m_Children: []
   m_Father: {fileID: 4133311231002258023}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!58 &4643420367369756634
-CircleCollider2D:
+--- !u!70 &4410476992448481973
+CapsuleCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -715,12 +714,13 @@ CircleCollider2D:
   m_CallbackLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
-  m_Radius: 0.7
+  m_Size: {x: 1.7, y: 0.9}
+  m_Direction: 1
 --- !u!1 &2136708260537901000
 GameObject:
   m_ObjectHideFlags: 0
@@ -1255,84 +1255,6 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1.4
---- !u!1 &3915720258814669513
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 8663927687824171487}
-  - component: {fileID: 3297350468795875587}
-  m_Layer: 9
-  m_Name: Attack
-  m_TagString: Enemy
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &8663927687824171487
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3915720258814669513}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.722, y: 0.088, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 4133311231002258023}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!61 &3297350468795875587
-BoxCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3915720258814669513}
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ForceSendLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ForceReceiveLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ContactCaptureLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_CallbackLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_IsTrigger: 1
-  m_UsedByEffector: 0
-  m_CompositeOperation: 0
-  m_CompositeOrder: 0
-  m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0.19999999, y: 0.19999999, z: 0.19999999, w: 0.19999999}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 0.4, y: 0.4}
-    newSize: {x: 1, y: 1}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  m_Size: {x: 0.52, y: 0.49}
-  m_EdgeRadius: 0
 --- !u!1 &3930978161351749269
 GameObject:
   m_ObjectHideFlags: 0
@@ -2444,8 +2366,7 @@ MonoBehaviour:
   effectManager: {fileID: 3613399204160939273}
   collisionManager: {fileID: 2008158564861289818}
   enableCollisionSystem: 1
-  attackCollisionObject: {fileID: 3915720258814669513}
-  attackCollisionDuration: 0.2
+  attackRangeObject: {fileID: 1985677948266308005}
   maxHealth: 100
   currentHealth: 0
   attackPower: 20
@@ -2480,29 +2401,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterCollisionManager
   bodyCollider: {fileID: 8207385214407602332}
-  attackCollider: {fileID: 3297350468795875587}
-  interactionCollider: {fileID: 4643420367369756634}
+  attackRangeCollider: {fileID: 4410476992448481973}
   bodyCollisionMask:
     serializedVersion: 2
     m_Bits: 256
-  attackCollisionMask:
-    serializedVersion: 2
-    m_Bits: 256
-  interactionCollisionMask:
+  attackRangeCollisionMask:
     serializedVersion: 2
     m_Bits: 256
   bodyCollisionTags:
   - Player
-  attackCollisionTags:
+  attackRangeCollisionTags:
   - Player
-  interactionCollisionTags:
-  - Player
-  attackDuration: 0.2
-  allowMultipleHitsPerTarget: 0
-  attackIgnoreTags:
-  - Interaction
+  attackRangeIgnoreTags:
   - Item
-  onlyHitBodyCollision: 1
+  onlyDetectBodyCollision: 1
   enableCollisionLogging: 1
 --- !u!114 &3613399204160939273
 MonoBehaviour:

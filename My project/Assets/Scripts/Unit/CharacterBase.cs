@@ -24,9 +24,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     [SerializeField] protected CharacterCollisionManager collisionManager;  // 콜리전 관리자
     [SerializeField] protected bool enableCollisionSystem = true;  // 콜리전 시스템 활성화 여부
     
-    [Header("Attack Collision Objects")]
-    [SerializeField] protected GameObject attackCollisionObject;  // Attack 콜리전이 적용된 GameObject
-    [SerializeField] protected float attackCollisionDuration = 0.5f;  // Attack 콜리전 지속 시간
+    [Header("Attack Range Objects")]
+    [SerializeField] protected GameObject attackRangeObject;  // AttackRange 콜리전이 적용된 GameObject
     
     [Header("Health System")]
     [SerializeField] protected int maxHealth = 100;  // 최대 체력
@@ -118,11 +117,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             sortingGroup = gameObject.AddComponent<SortingGroup>();
         }
         
-        // Attack 콜리전 GameObject 자동 찾기
-        if (attackCollisionObject == null)
+        // AttackRange 콜리전 GameObject 자동 찾기
+        if (attackRangeObject == null)
         {
-            attackCollisionObject = transform.Find("AttackCollision")?.gameObject;
-            if (attackCollisionObject == null)
+            attackRangeObject = transform.Find("AttackRange")?.gameObject;
+            if (attackRangeObject == null)
             {
             }
         }
@@ -155,11 +154,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         cachedSortingOrder = 0f;
         cachedHealthValue = currentHealth;
         
-        // 공격 콜리전 초기화 (첫 번째 공격 문제 해결)
+        // AttackRange 콜리전 초기화
         if (collisionManager != null)
         {
-            // 공격 콜리전이 비활성화 상태로 초기화되도록 보장
-            DisableAttackCollision();
+            // AttackRange 콜리전이 활성화 상태로 초기화되도록 보장
+            EnableAttackRangeCollision();
         }
     }
 
@@ -269,31 +268,31 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         HandleBodyCollision(other);
     }
 
-    // Attack 콜리전 이벤트 처리 (공격 범위 감지, 타격 판정)
-    public virtual void OnAttackCollision(Collider2D other)
+    // AttackRange 콜리전 이벤트 처리 (공격 범위 진입)
+    public virtual void OnAttackRangeEnter(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 기본적인 타격 판정 처리
-        HandleAttackCollision(other);
+        // 기본적인 공격 범위 진입 처리
+        HandleAttackRangeEnter(other);
     }
 
-    // Interaction 콜리전 이벤트 처리 (감지용, 상시 활성화)
-    public virtual void OnInteractionCollision(Collider2D other)
+    // AttackRange 콜리전에서 나갔을 때 처리 (공격 범위 벗어남)
+    public virtual void OnAttackRangeExit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 기본적인 감지 처리
-        HandleInteractionCollision(other);
+        // 기본적인 공격 범위 벗어남 처리
+        HandleAttackRangeExit(other);
     }
     
-    // Interaction 콜리전에서 나갔을 때 처리 (감지 범위 벗어남)
-    public virtual void OnInteractionExit(Collider2D other)
+    // 애니메이션 이벤트에서 호출되는 공격 성공 판정
+    public virtual void OnAttackHit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 기본적인 감지 범위 벗어남 처리
-        HandleInteractionExit(other);
+        // 기본적인 공격 성공 처리
+        HandleAttackHit(other);
     }
 
     #endregion
@@ -420,10 +419,32 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
 
-    // Attack 콜리전을 처리합니다.
-    protected virtual void HandleAttackCollision(Collider2D other)
+    // AttackRange 콜리전을 처리합니다 (공격 범위 진입).
+    protected virtual void HandleAttackRangeEnter(Collider2D other)
     {
-        // 기본 구현: 타격 판정만 처리
+        // 기본 구현: 공격 범위 진입 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어가 공격 범위에 진입했을 때 처리 로직
+            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
+        }
+    }
+
+    // AttackRange 콜리전에서 나갔을 때 처리합니다 (공격 범위 벗어남).
+    protected virtual void HandleAttackRangeExit(Collider2D other)
+    {
+        // 기본 구현: 공격 범위 벗어남 처리
+        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
+        {
+            // 적이나 플레이어가 공격 범위를 벗어났을 때 처리 로직
+            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
+        }
+    }
+    
+    // 애니메이션 이벤트에서 호출되는 공격 성공 판정을 처리합니다.
+    protected virtual void HandleAttackHit(Collider2D other)
+    {
+        // 기본 구현: 공격 성공 처리
         if (other.CompareTag("Enemy") || other.CompareTag("Player"))
         {
             // 타격받은 대상의 CharacterBase 컴포넌트 찾기
@@ -435,6 +456,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             
             if (targetCharacter != null && !targetCharacter.IsDead())  // 타격받은 대상이 살아있을 때
             {
+                // 공격 이펙트 재생 (공격자)
+                PlayAttackEffect();
+                
                 // 데미지 적용
                 int damage = GetAttackPower();
                 targetCharacter.TakeDamage(damage, this);
@@ -446,40 +470,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         else if (other.CompareTag("Destructible"))
         {
             // 파괴 가능한 오브젝트에 대한 공격 처리
-        }
-    }
-
-    // Interaction 콜리전을 처리합니다 (감지용으로 사용).
-    protected virtual void HandleInteractionCollision(Collider2D other)
-    {
-        // 기본 구현: 감지 처리
-        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
-        {
-            // 적이나 플레이어 감지 시 처리 로직
-            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
-        }
-        else if (other.CompareTag("Item"))
-        {
-            // 아이템과의 상호작용 처리
-        }
-        else if (other.CompareTag("Interactable"))
-        {
-            // 상호작용 가능한 오브젝트와의 처리
-        }
-        else if (other.CompareTag("NPC"))
-        {
-            // NPC와의 상호작용 처리
-        }
-    }
-    
-    // Interaction 콜리전에서 나갔을 때 처리합니다 (감지 범위 벗어남).
-    protected virtual void HandleInteractionExit(Collider2D other)
-    {
-        // 기본 구현: 감지 범위 벗어남 처리
-        if (other.CompareTag("Enemy") || other.CompareTag("Player"))
-        {
-            // 적이나 플레이어가 감지 범위를 벗어났을 때 처리 로직
-            // 자식 클래스에서 오버라이드하여 구체적인 동작 구현
         }
     }
 
@@ -504,11 +494,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             effectManager.PlayAttackEffect();
         }
-        
-        // 공격 콜리전 활성화 (이펙트와 동기화)
-        // 첫 번째 공격 문제 해결을 위해 확실하게 활성화
-        EnableAttackCollision();
-        
+        else
+        {
+            Debug.LogWarning($"[PlayAttackEffect] effectManager가 null입니다! - {gameObject.name}");
+        }
     }
 
     // Blank 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
@@ -573,38 +562,68 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
 
-    // Attack 콜리전을 활성화합니다.
-    public virtual void EnableAttackCollision()
+    // AttackRange 콜리전을 활성화합니다.
+    public virtual void EnableAttackRangeCollision()
     {
         if (collisionManager != null)
         {
-            collisionManager.ActivateAttack();
+            collisionManager.SetAttackRangeCollisionEnabled(true);
         }
         else
         {
         }
     }
 
-    // Attack 콜리전을 비활성화합니다.
-    public virtual void DisableAttackCollision()
+    // AttackRange 콜리전을 비활성화합니다.
+    public virtual void DisableAttackRangeCollision()
     {
         if (collisionManager != null)
         {
-            collisionManager.DeactivateAttack();
+            collisionManager.SetAttackRangeCollisionEnabled(false);
         }
     }
 
-    // Attack 콜리전이 활성화되어 있는지 확인합니다.
-    public virtual bool IsAttackCollisionEnabled()
+    // AttackRange 콜리전이 활성화되어 있는지 확인합니다.
+    public virtual bool IsAttackRangeCollisionEnabled()
     {
         if (collisionManager == null) return false;
-        return collisionManager.IsAttackActive();
+        return collisionManager.IsAttackRangeColliderEnabled();
     }
 
-    // Attack 애니메이션이 끝났을 때 호출됩니다. (이제 AttackCollisionHandler가 자동으로 비활성화하므로 수동 호출이 필요하지 않습니다.)
+    // Attack 애니메이션이 끝났을 때 호출됩니다.
     public virtual void OnAttackAnimationEnd()
     {
-        // AttackCollisionHandler가 자동으로 비활성화하므로 별도 처리 불필요
+        // AttackRange는 상시 활성화되므로 별도 처리 불필요
+    }
+    
+    // AttackRange 내 가장 가까운 적을 반환합니다.
+    public virtual Collider2D GetNearestEnemy()
+    {
+        if (collisionManager == null) return null;
+        return collisionManager.GetNearestEnemy();
+    }
+    
+    // AttackRange 내 적이 있는지 확인합니다.
+    public virtual bool HasEnemiesInRange()
+    {
+        if (collisionManager == null) return false;
+        return collisionManager.HasEnemiesInRange();
+    }
+    
+    // AttackRange 내 적의 수를 반환합니다.
+    public virtual int GetEnemyCountInRange()
+    {
+        if (collisionManager == null) return 0;
+        return collisionManager.GetEnemyCountInRange();
+    }
+    
+    // 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드
+    public virtual void OnAttackAnimationEvent()
+    {
+        if (collisionManager != null)
+        {
+            collisionManager.OnAttackAnimationEvent();
+        }
     }
 
     #endregion
@@ -633,11 +652,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             case CollisionType.Body:
                 collisionManager.SetBodyCollisionEnabled(enabled);
                 break;
-            case CollisionType.Attack:
-                collisionManager.SetAttackCollisionEnabled(enabled);
-                break;
-            case CollisionType.Interaction:
-                collisionManager.SetInteractionCollisionEnabled(enabled);
+            case CollisionType.AttackRange:
+                collisionManager.SetAttackRangeCollisionEnabled(enabled);
                 break;
         }
         
@@ -768,7 +784,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 데미지를 받습니다. (damage : 받을 데미지) (attacker : 공격자)
     public virtual void TakeDamage(int damage, CharacterBase attacker = null)
     {
-        if (isDead || isInvincible) return;
+        if (isDead || isInvincible) 
+        {
+            return;
+        }
         
         // 캐시된 변수 사용으로 메모리 할당 최적화
         cachedHealthValue = Mathf.Max(0, currentHealth - damage);
@@ -986,7 +1005,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         sortingGroup = null;
         effectManager = null;
         collisionManager = null;
-        attackCollisionObject = null;
+        attackRangeObject = null;
         statusBarUI = null;
     }
     

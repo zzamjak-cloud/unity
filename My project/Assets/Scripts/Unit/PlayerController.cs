@@ -92,20 +92,17 @@ public class PlayerController : CharacterBase
             HandleKeyboardInput();
         }
         
-        // 감지된 적 목록 정리 (사망한 적 제거)
+        // AttackRange 내 적 목록 정리 (사망한 적 제거)
         CleanupDetectedEnemies();
         
-        // 자동 공격 처리
-        if (enableAutoAttack && detectedEnemies.Count > 0)
+        // 자동 공격 처리 - AttackRange 내 가장 가까운 적을 자동으로 공격
+        if (enableAutoAttack && HasEnemiesInRange())
         {
             HandleAutoAttack();
         }
         
-        // 공격 범위 체크 - 감지된 적 중 공격 범위를 벗어난 적들 제거
-        CheckAndRemoveOutOfRangeEnemies();
-        
-        // 현재 타겟 유효성 체크 - 타겟이 감지 목록에 없으면 즉시 공격 중단
-        if (currentTarget != null && !detectedEnemies.Contains(currentTarget))
+        // 현재 타겟 유효성 체크 - 타겟이 AttackRange 내에 없으면 즉시 공격 중단
+        if (currentTarget != null && !IsEnemyInAttackRange(currentTarget))
         {
             EndAttack(); // 진행 중인 공격 즉시 중단
             currentTarget = null;
@@ -331,61 +328,47 @@ public class PlayerController : CharacterBase
     #endregion
 
 
-    #region Interaction Collision Override (Detection용)
+    #region AttackRange Collision Override (Detection용)
 
     /// <summary>
-    /// Interaction 콜리전 이벤트 처리 (적 감지 시 자동 공격)
+    /// AttackRange 콜리전 이벤트 처리 (적 감지 시 자동 공격)
     /// </summary>
     /// <param name="other">감지된 오브젝트</param>
-    public override void OnInteractionCollision(Collider2D other)
+    public override void OnAttackRangeEnter(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 적 감지 시 목록에 추가 (Attack 콜리전은 제외)
+        // 적 감지 시 목록에 추가
         if (other.CompareTag("Enemy"))
         {
-            // Attack 콜리전인지 확인
-            CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
-            if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
-            {
-                AddDetectedEnemy(other);
-            }
+            AddDetectedEnemy(other);
         }
         
-        // 기본 상호작용 처리도 수행
-        base.OnInteractionCollision(other);
+        // 기본 AttackRange 진입 처리도 수행
+        base.OnAttackRangeEnter(other);
     }
     
     /// <summary>
-    /// Interaction 콜리전에서 나갔을 때 처리 (적이 감지 범위를 벗어남)
+    /// AttackRange 콜리전에서 나갔을 때 처리 (적이 공격 범위를 벗어남)
     /// </summary>
     /// <param name="other">나간 오브젝트</param>
-    public override void OnInteractionExit(Collider2D other)
+    public override void OnAttackRangeExit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 적이 감지 범위를 벗어났을 때 (Attack 콜리전은 제외)
+        // 적이 공격 범위를 벗어났을 때
         if (other.CompareTag("Enemy"))
         {
-            // Attack 콜리전인지 확인
-            CharacterCollisionManager otherCollisionManager = other.GetComponentInParent<CharacterCollisionManager>();
-            if (otherCollisionManager == null || !otherCollisionManager.IsAttackCollider(other))
+            // 현재 타겟이 이 적이면 즉시 공격 중단
+            if (currentTarget == other)
             {
-                // 감지 범위를 벗어났지만, 공격 범위 내에 있는지 확인
-                if (!IsEnemyInAttackRange(other))
-                {
-                    // 현재 타겟이 이 적이면 즉시 공격 중단
-                    if (currentTarget == other)
-                    {
-                        EndAttack(); // 진행 중인 공격 즉시 중단
-                    }
-                    RemoveDetectedEnemy(other);
-                }
+                EndAttack(); // 진행 중인 공격 즉시 중단
             }
+            RemoveDetectedEnemy(other);
         }
         
         // 기본 처리도 수행
-        base.OnInteractionExit(other);
+        base.OnAttackRangeExit(other);
     }
 
     #endregion
@@ -404,38 +387,17 @@ public class PlayerController : CharacterBase
         // 적이 여전히 존재하고 활성화되어 있는지 확인
         if (!enemyCollider.gameObject.activeInHierarchy) return false;
         
-        // Attack 콜라이더가 설정되어 있는지 확인 (활성화 상태는 확인하지 않음)
-        if (!collisionManager.HasAttackCollider()) return false;
+        // AttackRange 콜라이더가 설정되어 있는지 확인
+        if (!collisionManager.HasAttackRangeCollider()) return false;
         
-        // Attack 콜라이더와 적의 거리 계산 (SqrMagnitude 사용으로 성능 최적화)
+        // AttackRange 콜라이더와 적의 거리 계산 (SqrMagnitude 사용으로 성능 최적화)
         float sqrDistance = (transform.position - enemyCollider.transform.position).sqrMagnitude;
         
-        // Attack 콜라이더의 공격 범위 가져오기
+        // AttackRange 콜라이더의 공격 범위 가져오기
         float attackRange = collisionManager.GetAttackRange();
         return sqrDistance <= attackRange * attackRange;
     }
     
-    /// <summary>
-    /// 감지된 적 중 공격 범위를 벗어난 적들을 제거합니다.
-    /// </summary>
-    private void CheckAndRemoveOutOfRangeEnemies()
-    {
-        if (detectedEnemies.Count == 0) return;
-        
-        // 감지된 적 목록을 복사하여 순회 (제거 시 목록 변경으로 인한 오류 방지)
-        var enemiesToCheck = new List<Collider2D>(detectedEnemies);
-        
-        foreach (var enemy in enemiesToCheck)
-        {
-            if (enemy == null) continue;
-            
-            // 공격 범위를 벗어났는지 확인
-            if (!IsEnemyInAttackRange(enemy))
-            {
-                RemoveDetectedEnemy(enemy);
-            }
-        }
-    }
     
     #endregion
 
@@ -455,7 +417,7 @@ public class PlayerController : CharacterBase
     }
     
     /// <summary>
-    /// 감지된 적을 목록에 추가합니다.
+    /// AttackRange에 진입한 적을 목록에 추가합니다.
     /// </summary>
     /// <param name="enemy">감지된 적</param>
     private void AddDetectedEnemy(Collider2D enemy)
@@ -483,7 +445,7 @@ public class PlayerController : CharacterBase
     }
     
     /// <summary>
-    /// 감지된 적을 목록에서 제거합니다.
+    /// AttackRange에서 나간 적을 목록에서 제거합니다.
     /// </summary>
     /// <param name="enemy">제거할 적</param>
     private void RemoveDetectedEnemy(Collider2D enemy)
@@ -598,6 +560,14 @@ public class PlayerController : CharacterBase
     /// </summary>
     private void HandleAutoAttack()
     {
+        // AttackRange 내 가장 가까운 적을 타겟으로 설정
+        Collider2D nearestEnemy = GetNearestEnemy();
+        if (nearestEnemy != null && nearestEnemy != currentTarget)
+        {
+            currentTarget = nearestEnemy;
+            firstDetectionTime = Time.time; // 새로운 타겟 감지 시간 기록
+        }
+        
         // 첫 감지 후 지연 시간 확인
         if (Time.time - firstDetectionTime >= attackDelay)
         {
@@ -607,8 +577,8 @@ public class PlayerController : CharacterBase
                 // 공격 가능한 상태인지 확인
                 if (CanMove() && !IsDead() && currentTarget != null)
                 {
-                    // 타겟이 여전히 감지된 적 목록에 있는지 확인
-                    if (detectedEnemies.Contains(currentTarget))
+                    // 타겟이 여전히 AttackRange 내에 있는지 확인
+                    if (IsEnemyInAttackRange(currentTarget))
                     {
                         // 자동 공격 실행
                         StartAttack();
@@ -616,7 +586,7 @@ public class PlayerController : CharacterBase
                     }
                     else
                     {
-                        // 타겟이 감지 목록에서 제거되었으면 타겟 초기화
+                        // 타겟이 AttackRange를 벗어났으면 타겟 초기화
                         currentTarget = null;
                     }
                 }
@@ -662,28 +632,28 @@ public class PlayerController : CharacterBase
 
 
     /// <summary>
-    /// 플레이어의 Interaction 콜리전을 활성화/비활성화합니다 (감지용).
+    /// 플레이어의 AttackRange 콜리전을 활성화/비활성화합니다 (감지용).
     /// </summary>
     /// <param name="enabled">활성화 여부</param>
-    public void SetInteractionCollisionEnabled(bool enabled)
+    public void SetAttackRangeCollisionEnabled(bool enabled)
     {
-        SetCollisionTypeEnabled(CollisionType.Interaction, enabled);
+        SetCollisionTypeEnabled(CollisionType.AttackRange, enabled);
     }
 
     /// <summary>
-    /// 공격 중일 때 Attack 콜리전을 활성화합니다.
+    /// AttackRange 콜리전을 활성화합니다.
     /// </summary>
-    public override void EnableAttackCollision()
+    public override void EnableAttackRangeCollision()
     {
-        SetCollisionTypeEnabled(CollisionType.Attack, true);
+        SetCollisionTypeEnabled(CollisionType.AttackRange, true);
     }
 
     /// <summary>
-    /// 공격이 끝났을 때 Attack 콜리전을 비활성화합니다.
+    /// AttackRange 콜리전을 비활성화합니다.
     /// </summary>
-    public override void DisableAttackCollision()
+    public override void DisableAttackRangeCollision()
     {
-        SetCollisionTypeEnabled(CollisionType.Attack, false);
+        SetCollisionTypeEnabled(CollisionType.AttackRange, false);
     }
 
     /// <summary>
@@ -693,9 +663,6 @@ public class PlayerController : CharacterBase
     {
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
-        
-        // Attack 콜리전 즉시 활성화 (타격 판정 시작)
-        EnableAttackCollision();
     }
 
     /// <summary>

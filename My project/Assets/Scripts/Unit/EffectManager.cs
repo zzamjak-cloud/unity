@@ -111,6 +111,18 @@ public class EffectManager : MonoBehaviour
     /// </summary>
     public void PlayAttackEffect()
     {
+        if (attackEffectData.effectPrefab == null)
+        {
+            // 공격 이펙트가 설정되지 않은 경우는 정상적인 상황이므로 로그를 출력하지 않음
+            return;
+        }
+        
+        if (attackEffectData.effectContainer == null)
+        {
+            Debug.LogWarning($"[EffectManager] 공격 이펙트 컨테이너가 설정되지 않았습니다. - {gameObject.name}");
+            return;
+        }
+        
         PlayEffect(attackEffectData, activeAttackEffects, attackEffectPool, true);
     }
 
@@ -119,6 +131,12 @@ public class EffectManager : MonoBehaviour
     /// </summary>
     public void PlayBlankEffect()
     {
+        if (blankEffectData.effectPrefab == null || blankEffectData.effectContainer == null)
+        {
+            Debug.Log($"[EffectManager] Blank 이펙트 데이터가 설정되지 않았습니다. 이펙트를 재생하지 않습니다. - {gameObject.name}");
+            return;
+        }
+        
         PlayEffect(blankEffectData, activeBlankEffects, blankEffectPool, true);
     }
 
@@ -155,7 +173,10 @@ public class EffectManager : MonoBehaviour
     /// </summary>
     private void PlayEffect(EffectData effectData, List<ParticleSystem> activeEffectsList, Queue<ParticleSystem> pool, bool play)
     {
-        if (effectData.effectPrefab == null || effectData.effectContainer == null) return;
+        if (effectData.effectPrefab == null || effectData.effectContainer == null) 
+        {
+            return;
+        }
 
         if (play)
         {
@@ -165,6 +186,10 @@ public class EffectManager : MonoBehaviour
                 activeEffectsList.Add(effectPS);
                 effectPS.Play();
                 StartCoroutine(WaitForEffectToCompleteAndReturnToPool(effectPS, activeEffectsList, pool));
+            }
+            else
+            {
+                Debug.LogWarning($"[EffectManager] 이펙트를 풀에서 가져올 수 없습니다! - {gameObject.name}");
             }
         }
     }
