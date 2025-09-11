@@ -752,6 +752,9 @@ public class PlayerController : CharacterBase
         
         // Attack 애니메이션 실행 (피격 중이어도 실행)
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
+        
+        // 공격 이펙트 재생
+        PlayAttackEffect();
     }
 
     /// <summary>
