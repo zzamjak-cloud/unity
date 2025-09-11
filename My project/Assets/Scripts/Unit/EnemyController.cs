@@ -57,6 +57,9 @@ public class EnemyController : CharacterBase
     // 전투 상태 관련 변수들
     private bool isInCombat = false;           // 전투 중인지
     private float lastCombatTime = 0f;         // 마지막 전투 시간
+    
+    // 스폰 시스템 관련
+    private EnemySpawnManager spawnManager;    // 스폰 매니저 참조
 
     protected override void Start()
     {
@@ -74,6 +77,12 @@ public class EnemyController : CharacterBase
         
         // 적 전용 초기화
         InitializeEnemy();
+        
+        // 스폰 매니저 찾기
+        if (spawnManager == null)
+        {
+            spawnManager = FindFirstObjectByType<EnemySpawnManager>();
+        }
     }
     
     /// <summary>
@@ -1092,6 +1101,139 @@ public class EnemyController : CharacterBase
         if (!enabled)
         {
             ClearAllDetectedPlayers();
+        }
+    }
+
+    #endregion
+
+    #region Spawn System
+
+    /// <summary>
+    /// 감지 범위를 설정합니다. (스폰 시 호출)
+    /// </summary>
+    public void SetDetectionRange(float range)
+    {
+        detectionRange = range;
+    }
+    
+    /// <summary>
+    /// 현재 감지 범위를 반환합니다.
+    /// </summary>
+    public float GetDetectionRange()
+    {
+        return detectionRange;
+    }
+    
+    /// <summary>
+    /// 사망 시 풀로 복귀하도록 오버라이드
+    /// </summary>
+    protected override void Die()
+    {
+        // 기본 사망 처리 (Death 애니메이션 실행)
+        base.Die();
+        
+        // Death 애니메이션 완료 후 풀로 복귀하도록 코루틴 시작
+        StartCoroutine(WaitForDeathAnimationAndReturnToPool());
+    }
+    
+    /// <summary>
+    /// Death 애니메이션 완료를 기다린 후 풀로 복귀하는 코루틴
+    /// </summary>
+    private System.Collections.IEnumerator WaitForDeathAnimationAndReturnToPool()
+    {
+        // Death 애니메이션 완료까지 대기 (실제 애니메이션 길이 사용)
+        float deathAnimationDuration = GetDeathAnimationLength();
+        yield return new WaitForSeconds(deathAnimationDuration);
+        
+        // 스폰 매니저에 풀로 복귀 요청
+        if (spawnManager != null)
+        {
+            spawnManager.ReturnEnemyToPool(gameObject);
+        }
+        else
+        {
+            // 스폰 매니저가 없으면 파괴
+            Destroy(gameObject);
+        }
+    }
+    
+    /// <summary>
+    /// 스폰 매니저를 설정합니다.
+    /// </summary>
+    public void SetSpawnManager(EnemySpawnManager manager)
+    {
+        spawnManager = manager;
+    }
+    
+    /// <summary>
+    /// 체력을 초기화합니다.
+    /// </summary>
+    public void ResetHealth()
+    {
+        currentHealth = maxHealth;
+        isDead = false;
+        isInvincible = false;
+        
+        // 체력바 표시
+        if (statusBarUI != null)
+        {
+            statusBarUI.SetVisible(true);
+            statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+        }
+    }
+    
+    /// <summary>
+    /// 사망 상태를 초기화합니다.
+    /// </summary>
+    public void ResetDeathState()
+    {
+        isDead = false;
+    }
+    
+    /// <summary>
+    /// 이동 상태를 초기화합니다.
+    /// </summary>
+    public void ResetMovementState()
+    {
+        isChasingPlayer = false;
+        isInCombat = false;
+        canStartChasing = true;
+        lastPlayerDetectionTime = 0f;
+        lastChaseTime = 0f;
+        lastCombatTime = 0f;
+        
+        // 초기 위치로 리셋
+        transform.position = initialPosition;
+        
+        // 애니메이션 상태 초기화
+        if (anim != null)
+        {
+            anim.SetBool("IsMoving", false);
+            anim.SetBool("IsRunning", false);
+            anim.Play("Idle", 0, 0f); // Idle 상태로 강제 전환
+        }
+    }
+    
+    /// <summary>
+    /// 공격 상태를 초기화합니다.
+    /// </summary>
+    public void ResetAttackState()
+    {
+        isAttacking = false;
+        currentTarget = null;
+        firstDetectionTime = 0f;
+        lastAutoAttackTime = 0f;
+        
+        // 감지된 플레이어 목록 초기화
+        detectedPlayers.Clear();
+        
+        // 애니메이션 상태 초기화
+        if (anim != null)
+        {
+            anim.SetBool("IsAttacking", false);
+            anim.SetBool("IsMoving", false);
+            anim.SetBool("IsRunning", false);
+            anim.Play("Idle", 0, 0f); // Idle 상태로 강제 전환
         }
     }
 

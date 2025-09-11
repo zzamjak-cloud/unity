@@ -21,8 +21,9 @@ public class PlayerController : CharacterBase
     
     [Header("Auto Attack Settings")]
     [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
-    [SerializeField] private float autoAttackCooldown = 1.0f;  // 자동 공격 쿨다운 시간
     [SerializeField] private float attackDelay = 0.05f;  // 적 감지 후 공격 지연 시간 (Player는 더 빠르게)
+    [SerializeField] private float attackCooldownMultiplier = 1.2f;  // 공격 애니메이션 길이에 곱할 배수
+    [SerializeField] private float movementCooldownMultiplier = 2.0f;  // 이동 시 쿨다운 배수
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -40,6 +41,11 @@ public class PlayerController : CharacterBase
     private List<Collider2D> detectedEnemies = new List<Collider2D>();  // 감지된 적 목록
     private Collider2D currentTarget = null;  // 현재 타겟
     private float firstDetectionTime = 0f;  // 첫 감지 시간
+    
+    // 이동 상태 추적
+    private bool isMoving = false;  // 현재 이동 중인지
+    private Vector2 lastMovementInput = Vector2.zero;  // 마지막 이동 입력
+    private float lastMovementTime = 0f;  // 마지막 이동 시간
 
     protected override void Start()
     {
@@ -187,8 +193,8 @@ public class PlayerController : CharacterBase
     /// <returns>이동 방향 벡터 (정규화됨)</returns>
     public override Vector2 GetMovementInput()
     {
-        // 공격 중일 때는 이동 입력 무시
-        if (isAttacking)
+        // 공격 중일 때는 이동 입력 무시 (단, 무적 시간 중에는 이동 허용)
+        if (isAttacking && !isInvincible)
         {
             return Vector2.zero;
         }
@@ -199,7 +205,20 @@ public class PlayerController : CharacterBase
         
         // 입력 벡터 생성 및 정규화
         Vector2 input = new Vector2(moveX, moveY);
-        return input.normalized;
+        Vector2 normalizedInput = input.normalized;
+        
+        // 이동 상태 추적
+        bool wasMoving = isMoving;
+        isMoving = input.magnitude > 0.1f; // 임계값 이상일 때 이동으로 판단
+        
+        if (isMoving)
+        {
+            lastMovementInput = normalizedInput;
+            lastMovementTime = Time.time;
+        }
+        // 이동 상태 변경 시 쿨다운 조정 제거 - 항상 규칙적인 공격 속도 유지
+        
+        return normalizedInput;
     }
 
     #endregion
@@ -259,6 +278,7 @@ public class PlayerController : CharacterBase
         // Attack 애니메이션
         if (isAttackPressed)
         {
+            Debug.Log($"[Player Attack] 수동 공격 입력 감지 - Time: {Time.time:F2}");
             // 수동 공격 실행 (StartAttack에서 Flip 처리)
             StartAttack();
             isAttackPressed = false;
@@ -592,19 +612,33 @@ public class PlayerController : CharacterBase
     /// </summary>
     private void HandleAutoAttack()
     {
-        // AttackRange 내 가장 가까운 적을 타겟으로 설정
+        // AttackRange 내 가장 가까운 적을 타겟으로 설정 (쿨다운 초기화 없음)
         Collider2D nearestEnemy = GetNearestEnemy();
         if (nearestEnemy != null && nearestEnemy != currentTarget)
         {
+            Debug.Log($"[Player Attack] 타겟 변경 - 이전: {(currentTarget != null ? currentTarget.name : "null")}, 새로운: {nearestEnemy.name}");
             currentTarget = nearestEnemy;
-            firstDetectionTime = Time.time; // 새로운 타겟 감지 시간 기록
+            // firstDetectionTime은 변경하지 않음 (규칙적인 공격 속도 유지)
         }
         
         // 첫 감지 후 지연 시간 확인
         if (Time.time - firstDetectionTime >= attackDelay)
         {
+            // 공격 애니메이션 길이를 기반으로 고정 쿨다운 시간 계산 (이동 상태 무관)
+            float attackAnimationLength = GetAttackAnimationLength();
+            float currentCooldown = attackAnimationLength * attackCooldownMultiplier;
+            
+            float timeSinceLastAttack = Time.time - lastAutoAttackTime;
+            bool canAttack = timeSinceLastAttack >= currentCooldown;
+            
+            // 쿨다운 체크 로그는 공격 가능할 때만 출력
+            if (canAttack)
+            {
+                Debug.Log($"[Player Attack] 쿨다운 체크 - Time: {Time.time:F2}, LastAttack: {lastAutoAttackTime:F2}, TimeSince: {timeSinceLastAttack:F2}, Required: {currentCooldown:F2}, CanAttack: {canAttack}");
+            }
+            
             // 쿨다운 확인
-            if (Time.time - lastAutoAttackTime >= autoAttackCooldown)
+            if (canAttack)
             {
                 // 공격 가능한 상태인지 확인
                 if (CanMove() && !IsDead() && currentTarget != null)
@@ -612,15 +646,20 @@ public class PlayerController : CharacterBase
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsEnemyInAttackRange(currentTarget))
                     {
-                        // 자동 공격 실행 (StartAttack에서 Flip 처리)
+                        Debug.Log($"[Player Attack] 자동 공격 실행 - Target: {currentTarget.name}, Time: {Time.time:F2}");
+                        // 자동 공격 실행 (StartAttack에서 쿨타임 업데이트)
                         StartAttack();
-                        lastAutoAttackTime = Time.time;
                     }
                     else
                     {
+                        Debug.Log($"[Player Attack] 타겟이 AttackRange 벗어남 - Target: {currentTarget.name}");
                         // 타겟이 AttackRange를 벗어났으면 타겟 초기화
                         currentTarget = null;
                     }
+                }
+                else
+                {
+                    Debug.Log($"[Player Attack] 공격 불가 - CanMove: {CanMove()}, IsDead: {IsDead()}, HasTarget: {currentTarget != null}");
                 }
             }
         }
@@ -693,6 +732,12 @@ public class PlayerController : CharacterBase
     /// </summary>
     public void StartAttack()
     {
+        // 호출 스택 정보 추가
+        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace(true);
+        string caller = stackTrace.GetFrame(1).GetMethod().Name;
+        
+        Debug.Log($"[Player Attack] StartAttack 호출됨 - Time: {Time.time:F2}, LastAttackTime: {lastAutoAttackTime:F2}, IsMoving: {isMoving}, Caller: {caller}");
+        
         // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
         Collider2D nearestEnemy = GetNearestEnemy();
         if (nearestEnemy != null)
@@ -703,6 +748,14 @@ public class PlayerController : CharacterBase
                 FlipCharacter(directionToTarget.x);
             }
         }
+        
+        // 공격 쿨타임을 현재 시간으로 설정 (연속 공격 방지)
+        lastAutoAttackTime = Time.time;
+        
+        float attackAnimationLength = GetAttackAnimationLength();
+        float newCooldownTime = attackAnimationLength * attackCooldownMultiplier;
+        
+        Debug.Log($"[Player Attack] 쿨타임 설정 - AnimationLength: {attackAnimationLength:F2}, Multiplier: {attackCooldownMultiplier:F2}, NewCooldown: {newCooldownTime:F2}, LastAttackTime: {lastAutoAttackTime:F2}");
         
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
@@ -730,6 +783,50 @@ public class PlayerController : CharacterBase
         base.TakeDamage(damage, attacker);
         
         // 사망 시 콜리전 비활성화는 CharacterBase.Die()에서 처리됨
+    }
+    
+    /// <summary>
+    /// 공격 애니메이션 이벤트에서 호출되는 메서드 (즉시 이동 허용)
+    /// </summary>
+    public override void OnAttackAnimationEvent()
+    {
+        Debug.Log($"[Player Attack] OnAttackAnimationEvent 호출됨 - Time: {Time.time:F2}");
+        
+        // 공격 판정 직후 즉시 이동 허용
+        isAttacking = false;
+        
+        // 기본 공격 처리
+        base.OnAttackAnimationEvent();
+    }
+    
+    /// <summary>
+    /// 물리 기반 이동을 처리합니다. (피격 시 이동 속도 조정)
+    /// </summary>
+    protected override void HandlePhysicsMovement(Vector2 movement, bool isRunning)
+    {
+        if (rb == null) return;
+        
+        float currentSpeed = moveSpeed;
+        
+        // 피격 중일 때는 이동 속도를 70%로 제한 (완전히 막지 않음)
+        if (isInvincible)
+        {
+            currentSpeed *= 0.7f;
+        }
+        
+        if (isRunning)
+        {
+            currentSpeed *= runSpeedMultiplier;
+        }
+        
+        // Rigidbody를 사용해 이동
+        rb.linearVelocity = movement.normalized * currentSpeed;
+        
+        // 캐릭터 방향 전환 처리
+        if (movement.x != 0)
+        {
+            FlipCharacter(movement.x);
+        }
     }
 
     #endregion

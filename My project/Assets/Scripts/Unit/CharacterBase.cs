@@ -633,6 +633,60 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             collisionManager.OnAttackAnimationEvent();
         }
     }
+    
+    /// <summary>
+    /// Death 애니메이션의 길이를 반환합니다.
+    /// </summary>
+    public virtual float GetDeathAnimationLength()
+    {
+        if (anim == null) return 2.0f; // 기본값
+        
+        // Death 애니메이션 클립의 길이를 가져옵니다
+        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+        if (stateInfo.IsName("Death"))
+        {
+            return stateInfo.length;
+        }
+        
+        // Death 애니메이션이 현재 재생 중이 아닌 경우, 애니메이션 클립에서 직접 찾기
+        AnimationClip[] clips = anim.runtimeAnimatorController.animationClips;
+        foreach (AnimationClip clip in clips)
+        {
+            if (clip.name.ToLower().Contains("death") || clip.name.ToLower().Contains("die"))
+            {
+                return clip.length;
+            }
+        }
+        
+        return 2.0f; // 기본값 (2초)
+    }
+    
+    /// <summary>
+    /// Attack 애니메이션의 길이를 반환합니다.
+    /// </summary>
+    public virtual float GetAttackAnimationLength()
+    {
+        if (anim == null) return 1.0f; // 기본값
+        
+        // Attack 애니메이션 클립의 길이를 가져옵니다
+        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+        if (stateInfo.IsName("Attack"))
+        {
+            return stateInfo.length;
+        }
+        
+        // Attack 애니메이션이 현재 재생 중이 아닌 경우, 애니메이션 클립에서 직접 찾기
+        AnimationClip[] clips = anim.runtimeAnimatorController.animationClips;
+        foreach (AnimationClip clip in clips)
+        {
+            if (clip.name.ToLower().Contains("attack") || clip.name.ToLower().Contains("atk"))
+            {
+                return clip.length;
+            }
+        }
+        
+        return 1.0f; // 기본값 (1초)
+    }
 
     #endregion
 
