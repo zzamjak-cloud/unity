@@ -14,6 +14,8 @@ public class PlayerController : CharacterBase
     [Header("Player Stats")]
     [SerializeField] private int playerMaxHealth = 150;  // 플레이어 최대 체력
     [SerializeField] private int playerAttackPower = 25;  // 플레이어 공격력
+    [SerializeField] private float playerInvincibilityDuration = 1.0f;  // 플레이어 무적 시간 (초)
+    [SerializeField] private float damageMovementSpeedMultiplier = 0.7f;  // 피격 시 이동속도 배수
     
     [Header("Player Status UI")]
     [SerializeField] private Vector3 playerStatusBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 상태바 오프셋
@@ -23,7 +25,7 @@ public class PlayerController : CharacterBase
     [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
     [SerializeField] private float attackDelay = 0.05f;  // 적 감지 후 공격 지연 시간 (Player는 더 빠르게)
     [SerializeField] private float attackCooldownMultiplier = 1.2f;  // 공격 애니메이션 길이에 곱할 배수
-    [SerializeField] private float movementCooldownMultiplier = 2.0f;  // 이동 시 쿨다운 배수
+    // [SerializeField] private float movementCooldownMultiplier = 2.0f;  // 이동 시 쿨다운 배수
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -54,6 +56,9 @@ public class PlayerController : CharacterBase
         attackPower = playerAttackPower;
         
         base.Start();
+        
+        // 플레이어 전용 무적 시간 설정
+        invincibilityDuration = playerInvincibilityDuration;
         
         // 플레이어 전용 체력바 설정
         InitializePlayerStatusUI();
@@ -193,11 +198,7 @@ public class PlayerController : CharacterBase
     /// <returns>이동 방향 벡터 (정규화됨)</returns>
     public override Vector2 GetMovementInput()
     {
-        // 공격 중일 때는 이동 입력 무시 (단, 무적 시간 중에는 이동 허용)
-        if (isAttacking && !isInvincible)
-        {
-            return Vector2.zero;
-        }
+        // CanMove()에서 이미 이동 가능 여부를 체크하므로 여기서는 입력만 처리
         
         // WASD 또는 화살표 키 입력 받기
         moveX = Input.GetAxisRaw("Horizontal");
@@ -233,6 +234,24 @@ public class PlayerController : CharacterBase
     public override bool IsRunning()
     {
         return isShiftPressed;
+    }
+
+    /// <summary>
+    /// 플레이어의 이동 가능 여부를 반환합니다.
+    /// 무적 상태일 때는 공격 중이어도 이동을 허용합니다.
+    /// </summary>
+    /// <returns>이동 가능하면 true</returns>
+    public override bool CanMove()
+    {
+        // 무적 상태일 때는 공격 중이어도 이동 허용
+        if (isInvincible)
+        {
+            // 사망 상태만 체크
+            return currentAnimationState != CharacterAnimationState.Death;
+        }
+        
+        // 기본 이동 가능 여부 체크
+        return base.CanMove();
     }
 
     #endregion
@@ -640,8 +659,8 @@ public class PlayerController : CharacterBase
             // 쿨다운 확인
             if (canAttack)
             {
-                // 공격 가능한 상태인지 확인
-                if (CanMove() && !IsDead() && currentTarget != null)
+                // 공격 가능한 상태인지 확인 (이동 중이면 공격 불가)
+                if (CanMove() && !IsDead() && currentTarget != null && !isMoving)
                 {
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsEnemyInAttackRange(currentTarget))
@@ -659,7 +678,7 @@ public class PlayerController : CharacterBase
                 }
                 else
                 {
-                    Debug.Log($"[Player Attack] 공격 불가 - CanMove: {CanMove()}, IsDead: {IsDead()}, HasTarget: {currentTarget != null}");
+                    Debug.Log($"[Player Attack] 공격 불가 - CanMove: {CanMove()}, IsDead: {IsDead()}, HasTarget: {currentTarget != null}, IsMoving: {isMoving}");
                 }
             }
         }
@@ -808,10 +827,10 @@ public class PlayerController : CharacterBase
         
         float currentSpeed = moveSpeed;
         
-        // 피격 중일 때는 이동 속도를 70%로 제한 (완전히 막지 않음)
+        // 피격 중일 때는 이동 속도를 제한 (완전히 막지 않음)
         if (isInvincible)
         {
-            currentSpeed *= 0.7f;
+            currentSpeed *= damageMovementSpeedMultiplier;
         }
         
         if (isRunning)
@@ -854,6 +873,9 @@ public class PlayerController : CharacterBase
             GUILayout.Label($"Current Target: {(currentTarget != null ? currentTarget.gameObject.name : "None")}");
             GUILayout.Label($"Attack Delay: {attackDelay}s");
             GUILayout.Label($"Last Auto Attack: {Time.time - lastAutoAttackTime:F1}s ago");
+            GUILayout.Label($"Is Invincible: {isInvincible}");
+            GUILayout.Label($"Invincibility Timer: {invincibilityTimer:F2}s");
+            GUILayout.Label($"Damage Speed Multiplier: {damageMovementSpeedMultiplier:F2}");
             GUILayout.EndArea();
         }
     }

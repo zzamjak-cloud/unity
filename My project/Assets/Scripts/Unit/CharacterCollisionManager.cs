@@ -135,6 +135,11 @@ public class CharacterCollisionManager : MonoBehaviour
     /// </summary>
     private void OnCollisionEnter2D(Collision2D collision)
     {
+        // 적끼리의 Body 콜리전은 무시 (물리 충돌 방지)
+        if (gameObject.CompareTag(GameConstants.TAG_ENEMY) && collision.gameObject.CompareTag(GameConstants.TAG_ENEMY))
+        {
+            return;
+        }
         
         if (!isBodyCollisionEnabled || bodyCollider == null) 
         {
@@ -228,11 +233,16 @@ public class CharacterCollisionManager : MonoBehaviour
     /// <param name="other">충돌한 콜리전</param>
     private void HandleBodyCollision(Collider2D other)
     {
+        // 적끼리의 Body 콜리전은 무시 (물리 충돌 방지)
+        if (gameObject.CompareTag(GameConstants.TAG_ENEMY) && other.CompareTag(GameConstants.TAG_ENEMY))
+        {
+            return;
+        }
+        
         if (collisionHandler != null)
         {
             collisionHandler.OnBodyCollision(other);
         }
-        
     }
     
     /// <summary>
