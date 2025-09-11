@@ -8,8 +8,11 @@ using System.Collections.Generic;
 public class EnemyController : CharacterBase
 {
     [Header("Enemy Settings")]
-    [SerializeField] private bool isStaticEnemy = true;  // 정적 적 여부 (현재는 true로 고정)
+    [SerializeField] private bool isStaticEnemy = false;  // 정적 적 여부 (플레이어 추적을 위해 false로 변경)
     [SerializeField] private Vector3 spawnPosition;      // 스폰 위치
+    [SerializeField] private float detectionRange = 5f;  // 플레이어 감지 범위
+    [SerializeField] private float chaseDelay = 1.5f;   // 플레이어 재추적 지연 시간
+    [SerializeField] private float combatCooldown = 3f; // 전투 후 추적 재개까지의 시간
     
     [Header("Enemy Behavior")]
     [SerializeField] private float idleAnimationDelay = 2f;  // Idle 애니메이션 전환 지연 시간
@@ -42,12 +45,27 @@ public class EnemyController : CharacterBase
     private List<Collider2D> detectedPlayers = new List<Collider2D>();  // 감지된 플레이어 목록
     private Collider2D currentTarget = null;  // 현재 타겟
     private float firstDetectionTime = 0f;  // 첫 감지 시간
+    
+    // 플레이어 추적 관련 변수들
+    private Transform playerTransform = null;  // 플레이어 Transform
+    private bool isChasingPlayer = false;      // 플레이어 추적 중인지
+    private float lastPlayerDetectionTime = 0f; // 마지막 플레이어 감지 시간
+    private float playerLostTime = 2f;         // 플레이어를 잃은 후 복귀까지의 시간
+    private float lastChaseTime = 0f;          // 마지막 추적 시작 시간
+    private bool canStartChasing = true;       // 추적을 시작할 수 있는지
+    
+    // 전투 상태 관련 변수들
+    private bool isInCombat = false;           // 전투 중인지
+    private float lastCombatTime = 0f;         // 마지막 전투 시간
 
     protected override void Start()
     {
         // 적 전용 체력 설정
         maxHealth = enemyMaxHealth;
         attackPower = enemyAttackPower;
+        
+        // 적 전용 이동 속도 설정 (플레이어보다 느리게)
+        moveSpeed = 1.5f;
         
         base.Start();
         
@@ -89,6 +107,35 @@ public class EnemyController : CharacterBase
 
     protected override void Update()
     {
+        // 사망 시 모든 행동 중단
+        if (IsDead())
+        {
+            // 추적 중단
+            isChasingPlayer = false;
+            isInCombat = false;
+            
+            // 이동 중단
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector2.zero;
+            }
+            
+            // 공격 중단
+            if (currentTarget != null)
+            {
+                EndAttack();
+                currentTarget = null;
+            }
+            
+            return; // 사망 시 더 이상 처리하지 않음
+        }
+        
+        // 전투 상태 업데이트
+        UpdateCombatState();
+        
+        // 플레이어 감지 및 추적 처리
+        HandlePlayerDetectionAndChasing();
+        
         // AttackRange 내 플레이어 목록 정리 (사망한 플레이어 제거)
         CleanupDetectedPlayers();
         
@@ -105,7 +152,6 @@ public class EnemyController : CharacterBase
             currentTarget = null;
         }
         
-        // 정적 적이므로 입력 처리는 하지 않음
         // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
         base.Update();
     }
@@ -114,23 +160,31 @@ public class EnemyController : CharacterBase
 
     /// <summary>
     /// 적의 이동을 업데이트합니다.
-    /// 정적 적이므로 이동하지 않습니다.
+    /// 플레이어를 추적하거나 정적 적으로 동작합니다.
     /// </summary>
     public override void UpdateMovement()
     {
-        // 정적 적이므로 이동하지 않음
-        // 위치가 변경되었다면 초기 위치로 복귀
-        if (isStaticEnemy && Vector3.Distance(transform.position, initialPosition) > 0.1f)
+        if (isStaticEnemy)
         {
-            ReturnToInitialPosition();
+            // 정적 적이므로 이동하지 않음
+            // 위치가 변경되었다면 초기 위치로 복귀
+            if (Vector3.Distance(transform.position, initialPosition) > 0.1f)
+            {
+                ReturnToInitialPosition();
+            }
+            
+            // 물리 이동 정지
+            HandlePhysicsMovement(Vector2.zero, false);
+            
+            // 현재 상태 저장
+            currentMovement = Vector2.zero;
+            isCurrentlyRunning = false;
         }
-        
-        // 물리 이동 정지
-        HandlePhysicsMovement(Vector2.zero, false);
-        
-        // 현재 상태 저장
-        currentMovement = Vector2.zero;
-        isCurrentlyRunning = false;
+        else
+        {
+            // 동적 적 - 플레이어 추적 또는 복귀
+            HandleEnemyMovement();
+        }
     }
 
     /// <summary>
@@ -142,27 +196,43 @@ public class EnemyController : CharacterBase
         // 애니메이션 상태 업데이트
         UpdateAnimationState();
         
-        // Idle 애니메이션 처리
-        HandleIdleAnimation();
-        
-        // 랜덤 애니메이션 처리
-        if (enableRandomAnimations)
+        if (isStaticEnemy)
         {
-            HandleRandomAnimations();
+            // Idle 애니메이션 처리
+            HandleIdleAnimation();
+            
+            // 랜덤 애니메이션 처리
+            if (enableRandomAnimations)
+            {
+                HandleRandomAnimations();
+            }
+            
+            // 이동 애니메이션은 항상 Idle 상태
+            HandleAnimations(0f, false);
         }
-        
-        // 이동 애니메이션은 항상 Idle 상태
-        HandleAnimations(0f, false);
+        else
+        {
+            // 동적 적 - 이동 상태에 따른 애니메이션 처리
+            HandleAnimations(currentMovement.magnitude, isCurrentlyRunning);
+        }
     }
 
     /// <summary>
-    /// 적은 이동하지 않으므로 항상 Vector2.zero를 반환합니다.
+    /// 적의 이동 입력을 반환합니다.
     /// </summary>
-    /// <returns>이동하지 않음 (0, 0)</returns>
+    /// <returns>이동 벡터</returns>
     public override Vector2 GetMovementInput()
     {
-        // 정적 적이므로 이동하지 않음
-        return Vector2.zero;
+        if (isStaticEnemy)
+        {
+            // 정적 적이므로 이동하지 않음
+            return Vector2.zero;
+        }
+        else
+        {
+            // 동적 적 - 현재 이동 상태 반환
+            return currentMovement;
+        }
     }
 
     #endregion
@@ -178,8 +248,12 @@ public class EnemyController : CharacterBase
         initialPosition = transform.position;
         spawnPosition = initialPosition;
         
-        // 정적 적 설정
-        isStaticEnemy = true;
+        // 플레이어 찾기
+        FindPlayer();
+        
+        // 추적 지연 초기화
+        canStartChasing = true;
+        lastChaseTime = 0f;
         
     }
 
@@ -437,6 +511,215 @@ public class EnemyController : CharacterBase
     public void EndAttack()
     {
         OnAttackAnimationEnd();
+    }
+
+    #endregion
+
+    #region Player Detection and Chasing
+
+    /// <summary>
+    /// 플레이어 감지 및 추적을 처리합니다.
+    /// </summary>
+    private void HandlePlayerDetectionAndChasing()
+    {
+        if (isStaticEnemy) return;
+        
+        // 사망 시 추적 중단
+        if (IsDead())
+        {
+            isChasingPlayer = false;
+            return;
+        }
+        
+        // 전투 중이면 추적하지 않음
+        if (isInCombat)
+        {
+            isChasingPlayer = false;
+            return;
+        }
+        
+        // 플레이어 찾기
+        if (playerTransform == null)
+        {
+            FindPlayer();
+        }
+        
+        if (playerTransform != null)
+        {
+            float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+            
+            if (distanceToPlayer <= detectionRange)
+            {
+                // 플레이어가 감지 범위 내에 있음
+                lastPlayerDetectionTime = Time.time;
+                
+                // 전투 후 쿨다운 시간 체크
+                bool canChaseAfterCombat = !isInCombat || (Time.time - lastCombatTime >= combatCooldown);
+                
+                // 추적 지연 시간 체크
+                if (canStartChasing && canChaseAfterCombat && Time.time - lastChaseTime >= chaseDelay)
+                {
+                    isChasingPlayer = true;
+                    canStartChasing = false;
+                }
+            }
+            else if (isChasingPlayer && Time.time - lastPlayerDetectionTime > playerLostTime)
+            {
+                // 플레이어를 잃었고, 일정 시간이 지났으면 추적 중단
+                isChasingPlayer = false;
+                canStartChasing = true;
+                lastChaseTime = Time.time; // 다음 추적을 위한 시간 기록
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 플레이어를 찾습니다.
+    /// </summary>
+    private void FindPlayer()
+    {
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            playerTransform = player.transform;
+        }
+    }
+    
+    /// <summary>
+    /// 적의 이동을 처리합니다.
+    /// </summary>
+    private void HandleEnemyMovement()
+    {
+        Vector2 movement = Vector2.zero;
+        bool isRunning = false;
+        
+        // 사망 시 이동 중단
+        if (IsDead())
+        {
+            movement = Vector2.zero;
+            isRunning = false;
+        }
+        // 전투 중이면 이동하지 않음
+        else if (isInCombat)
+        {
+            movement = Vector2.zero;
+            isRunning = false;
+        }
+        else if (isChasingPlayer && playerTransform != null)
+        {
+            // 플레이어를 향해 이동 (방향만 계산, 속도는 HandlePhysicsMovement에서 처리)
+            Vector2 direction = (playerTransform.position - transform.position).normalized;
+            movement = direction;
+            isRunning = true;
+        }
+        else if (Vector3.Distance(transform.position, initialPosition) > 0.1f)
+        {
+            // 초기 위치로 복귀 (방향만 계산, 속도는 HandlePhysicsMovement에서 처리)
+            Vector2 direction = (initialPosition - transform.position).normalized;
+            movement = direction;
+            isRunning = false; // 복귀 시에는 걷기 속도
+        }
+        
+        // 물리 이동 처리 (HandlePhysicsMovement에서 속도와 회전 처리)
+        HandlePhysicsMovement(movement, isRunning);
+        
+        // 현재 상태 저장
+        currentMovement = movement;
+        isCurrentlyRunning = isRunning;
+    }
+
+    #endregion
+
+    #region Override Methods
+
+    /// <summary>
+    /// 적의 물리 이동을 처리합니다. (복귀 시 속도 조정)
+    /// </summary>
+    protected override void HandlePhysicsMovement(Vector2 movement, bool isRunning)
+    {
+        if (rb == null) return;
+        
+        float currentSpeed = moveSpeed;
+        
+        // 복귀 중일 때는 더 느리게 이동
+        if (!isChasingPlayer && Vector3.Distance(transform.position, initialPosition) > 0.1f)
+        {
+            currentSpeed *= 0.3f; // 복귀 시에는 매우 느리게
+        }
+        else if (isRunning)
+        {
+            currentSpeed *= runSpeedMultiplier;
+        }
+        
+        // Rigidbody를 사용해 이동
+        rb.linearVelocity = movement.normalized * currentSpeed;
+        
+        // 캐릭터 방향 전환 처리
+        if (movement.x != 0)
+        {
+            FlipCharacter(movement.x);
+        }
+    }
+    
+    /// <summary>
+    /// 공격 성공 판정을 처리합니다. (전투 상태 설정)
+    /// </summary>
+    protected override void HandleAttackHit(Collider2D other)
+    {
+        // 전투 상태 시작
+        StartCombat();
+        
+        // 기본 공격 처리
+        base.HandleAttackHit(other);
+    }
+    
+    /// <summary>
+    /// 피격을 받았을 때 처리합니다. (전투 상태 설정)
+    /// </summary>
+    public override void TakeDamage(int damage, CharacterBase attacker = null)
+    {
+        // 전투 상태 시작
+        StartCombat();
+        
+        // 기본 피격 처리
+        base.TakeDamage(damage, attacker);
+    }
+
+    #endregion
+
+    #region Combat State Management
+
+    /// <summary>
+    /// 전투 상태를 시작합니다.
+    /// </summary>
+    private void StartCombat()
+    {
+        isInCombat = true;
+        lastCombatTime = Time.time;
+        
+        // 추적 중단
+        isChasingPlayer = false;
+        canStartChasing = true;
+        lastChaseTime = Time.time;
+    }
+    
+    /// <summary>
+    /// 전투 상태를 종료합니다.
+    /// </summary>
+    private void EndCombat()
+    {
+        isInCombat = false;
+    }
+    
+    /// <summary>
+    /// 전투 상태를 업데이트합니다.
+    /// </summary>
+    private void UpdateCombatState()
+    {
+        if (isInCombat && Time.time - lastCombatTime >= combatCooldown)
+        {
+            EndCombat();
+        }
     }
 
     #endregion

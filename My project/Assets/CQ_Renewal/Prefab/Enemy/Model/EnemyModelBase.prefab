@@ -2358,8 +2358,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a809a8436049bbd4e8c27b19bdfdbecd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyController
-  moveSpeed: 1
-  runSpeedMultiplier: 3
+  moveSpeed: 0.5
+  runSpeedMultiplier: 1
   enableSortingOrderAdjustment: 1
   baseSortingOrder: 0
   sortingOrderMultiplier: -10
@@ -2378,6 +2378,9 @@ MonoBehaviour:
   pivotTransform: {fileID: 7319875922909795428}
   isStaticEnemy: 1
   spawnPosition: {x: 0, y: 0, z: 0}
+  detectionRange: 5
+  chaseDelay: 1.5
+  combatCooldown: 1.5
   idleAnimationDelay: 2
   enableRandomAnimations: 0
   randomAnimationChance: 0.1
