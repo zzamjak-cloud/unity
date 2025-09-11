@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 5281690656387721607}
   - component: {fileID: 6364588306718757868}
   - component: {fileID: 2367061859486927605}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Layout V
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -334,7 +334,7 @@ MonoBehaviour:
   playerStatusBarOffset: {x: 0, y: 1.261, z: 0}
   playerStatusBarObject: {fileID: 6489921415781988296}
   enableAutoAttack: 1
-  autoAttackCooldown: 1
+  autoAttackCooldown: 2
   attackDelay: 0.01
 --- !u!114 &6303384091237590385
 MonoBehaviour:
@@ -400,7 +400,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7542717435773906377}
   - component: {fileID: 5156566907805890770}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: 'Slider : HP'
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -488,7 +488,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1262482829746989317}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Fill Area
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -526,7 +526,7 @@ GameObject:
   - component: {fileID: 5381602646255867412}
   - component: {fileID: 1176877011220313964}
   - component: {fileID: 3952835819590199621}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Background
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -700,7 +700,8 @@ MonoBehaviour:
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
   m_CameraType: 0
-  m_Cameras: []
+  m_Cameras:
+  - {fileID: 0}
   m_RendererIndex: -1
   m_VolumeLayerMask:
     serializedVersion: 2
@@ -780,7 +781,7 @@ GameObject:
   - component: {fileID: 177018954327586247}
   - component: {fileID: 4498762678515101187}
   - component: {fileID: 3482052127222463222}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Fill
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -900,7 +901,7 @@ GameObject:
   - component: {fileID: 7941810563257361620}
   - component: {fileID: 8951399778715259025}
   - component: {fileID: 5579752509748334309}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Background
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -974,7 +975,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3650587119023877697}
   - component: {fileID: 4948769794227035843}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Canvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1022,7 +1023,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 0
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 0
+  m_SortingOrder: 100
   m_TargetDisplay: 0
 --- !u!1 &3525228730976875678
 GameObject:
@@ -1104,7 +1105,7 @@ GameObject:
   - component: {fileID: 1974695486471070762}
   - component: {fileID: 5996270807761244402}
   - component: {fileID: 1648096448142056889}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Fill
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1126,7 +1127,7 @@ RectTransform:
   m_Father: {fileID: 9013708776383224513}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0.0000076293945, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -1368,7 +1369,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3614401922084904325}
   - component: {fileID: 250971074634048939}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: StatusBars
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1493,7 +1494,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 9013708776383224513}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: Fill Area
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1530,7 +1531,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3667042850169821682}
   - component: {fileID: 133744056252475278}
-  m_Layer: 8
+  m_Layer: 0
   m_Name: 'Slider : MP'
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1553,9 +1554,9 @@ RectTransform:
   - {fileID: 9013708776383224513}
   m_Father: {fileID: 5281690656387721607}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 30, y: -13}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 60, y: 10}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &133744056252475278

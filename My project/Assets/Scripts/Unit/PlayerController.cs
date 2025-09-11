@@ -187,6 +187,12 @@ public class PlayerController : CharacterBase
     /// <returns>이동 방향 벡터 (정규화됨)</returns>
     public override Vector2 GetMovementInput()
     {
+        // 공격 중일 때는 이동 입력 무시
+        if (isAttacking)
+        {
+            return Vector2.zero;
+        }
+        
         // WASD 또는 화살표 키 입력 받기
         moveX = Input.GetAxisRaw("Horizontal");
         moveY = Input.GetAxisRaw("Vertical");
@@ -253,7 +259,8 @@ public class PlayerController : CharacterBase
         // Attack 애니메이션
         if (isAttackPressed)
         {
-            TriggerSpecialAnimation(CharacterAnimationState.Attack);
+            // 수동 공격 실행 (StartAttack에서 Flip 처리)
+            StartAttack();
             isAttackPressed = false;
         }
         
@@ -605,7 +612,7 @@ public class PlayerController : CharacterBase
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsEnemyInAttackRange(currentTarget))
                     {
-                        // 자동 공격 실행
+                        // 자동 공격 실행 (StartAttack에서 Flip 처리)
                         StartAttack();
                         lastAutoAttackTime = Time.time;
                     }
@@ -686,6 +693,17 @@ public class PlayerController : CharacterBase
     /// </summary>
     public void StartAttack()
     {
+        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
+        Collider2D nearestEnemy = GetNearestEnemy();
+        if (nearestEnemy != null)
+        {
+            Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
+            if (directionToTarget.x != 0)
+            {
+                FlipCharacter(directionToTarget.x);
+            }
+        }
+        
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
     }

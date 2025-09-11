@@ -48,6 +48,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected SortingGroup sortingGroup; // 정렬 순서 조절을 위한 SortingGroup 컴포넌트
     protected int lastSortingOrder = 0; // 마지막 정렬 순서 (중복 업데이트 방지)
     
+    // 공격 상태 추적
+    protected bool isAttacking = false; // 공격 중인지 여부
+    
     // 메모리 할당 최적화를 위한 캐시된 변수들
     protected Vector3 cachedPosition;
     protected Vector3 cachedVelocity;
@@ -214,6 +217,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         switch (animationType)
         {
             case CharacterAnimationState.Attack:
+                isAttacking = true; // 공격 시작
                 anim.SetTrigger(GameConstants.ANIM_ATTACK);
                 break;
             case CharacterAnimationState.Ceremony:
@@ -593,6 +597,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // Attack 애니메이션이 끝났을 때 호출됩니다.
     public virtual void OnAttackAnimationEnd()
     {
+        // 공격 상태는 OnAttackAnimationEvent에서 이미 해제됨
         // AttackRange는 상시 활성화되므로 별도 처리 불필요
     }
     
@@ -620,6 +625,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드
     public virtual void OnAttackAnimationEvent()
     {
+        // 공격 판정 시점에서 이동 허용 (Flip 처리 완료 후)
+        isAttacking = false;
+        
         if (collisionManager != null)
         {
             collisionManager.OnAttackAnimationEvent();

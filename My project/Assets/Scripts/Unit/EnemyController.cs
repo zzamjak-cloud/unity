@@ -229,6 +229,12 @@ public class EnemyController : CharacterBase
     /// <returns>이동 벡터</returns>
     public override Vector2 GetMovementInput()
     {
+        // 공격 중일 때는 이동 입력 무시
+        if (isAttacking)
+        {
+            return Vector2.zero;
+        }
+        
         if (isStaticEnemy)
         {
             // 정적 적이므로 이동하지 않음
@@ -505,6 +511,16 @@ public class EnemyController : CharacterBase
     /// </summary>
     public void StartAttack()
     {
+        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
+        Collider2D nearestEnemy = GetNearestEnemy();
+        if (nearestEnemy != null)
+        {
+            Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
+            if (directionToTarget.x != 0)
+            {
+                FlipCharacter(directionToTarget.x);
+            }
+        }
         
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
@@ -1042,7 +1058,7 @@ public class EnemyController : CharacterBase
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsPlayerInAttackRange(currentTarget))
                     {
-                        // 자동 공격 실행
+                        // 자동 공격 실행 (StartAttack에서 Flip 처리)
                         StartAttack();
                         lastAutoAttackTime = Time.time;
                     }
