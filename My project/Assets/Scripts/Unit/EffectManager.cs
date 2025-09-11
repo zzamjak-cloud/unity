@@ -265,6 +265,14 @@ public class EffectManager : MonoBehaviour
     }
 
     /// <summary>
+    /// 피격 이펙트가 재생 중인지 확인합니다.
+    /// </summary>
+    public bool IsPlayingDamageEffect()
+    {
+        return isPlayingDamageEffect;
+    }
+
+    /// <summary>
     /// 이펙트 데이터를 설정합니다.
     /// </summary>
     public void SetEffectData(EffectData moveData, EffectData attackData, EffectData blankData, EffectData damageData)
