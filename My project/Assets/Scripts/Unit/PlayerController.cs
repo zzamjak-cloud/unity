@@ -24,11 +24,8 @@ public class PlayerController : CharacterBase
     [SerializeField] private Vector3 playerStatusBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 상태바 오프셋
     [SerializeField] private GameObject playerStatusBarObject;  // 플레이어 상태바 GameObject (직접 연결)
     
-    [Header("Auto Attack Settings")]
-    [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
-    [SerializeField] private float attackDelay = 0.05f;  // 적 감지 후 공격 지연 시간 (Player는 더 빠르게)
+    [Header("Attack Settings")]
     [SerializeField] private float attackCooldownMultiplier = 1.2f;  // 공격 애니메이션 길이에 곱할 배수
-    // [SerializeField] private float movementCooldownMultiplier = 2.0f;  // 이동 시 쿨다운 배수
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -41,11 +38,8 @@ public class PlayerController : CharacterBase
     private bool isBlankPressed = false;
     private bool isDeathPressed = false;
     
-    // 자동 공격 관련 변수들
-    private float lastAutoAttackTime = 0f;
-    private List<Collider2D> detectedEnemies = new List<Collider2D>();  // 감지된 적 목록
-    private Collider2D currentTarget = null;  // 현재 타겟
-    private float firstDetectionTime = 0f;  // 첫 감지 시간
+    // 공격 관련 변수들
+    private float lastAttackTime = 0f;
     
     // 이동 상태 추적
     private bool isMoving = false;  // 현재 이동 중인지
@@ -110,11 +104,7 @@ public class PlayerController : CharacterBase
             }
             
             // 공격 중단
-            if (currentTarget != null)
-            {
-                EndAttack();
-                currentTarget = null;
-            }
+            EndAttack();
             
             // 모든 콜리전 비활성화
             if (collisionManager != null)
@@ -131,21 +121,6 @@ public class PlayerController : CharacterBase
             HandleKeyboardInput();
         }
         
-        // AttackRange 내 적 목록 정리 (사망한 적 제거)
-        CleanupDetectedEnemies();
-        
-        // 자동 공격 처리 - AttackRange 내 가장 가까운 적을 자동으로 공격
-        if (enableAutoAttack && HasEnemiesInRange())
-        {
-            HandleAutoAttack();
-        }
-        
-        // 현재 타겟 유효성 체크 - 타겟이 AttackRange 내에 없으면 즉시 공격 중단
-        if (currentTarget != null && !IsEnemyInAttackRange(currentTarget))
-        {
-            EndAttack(); // 진행 중인 공격 즉시 중단
-            currentTarget = null;
-        }
         
         // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
         base.Update();
@@ -405,79 +380,32 @@ public class PlayerController : CharacterBase
     #region AttackRange Collision Override (Detection용)
 
     /// <summary>
-    /// AttackRange 콜리전 이벤트 처리 (적 감지 시 자동 공격)
+    /// AttackRange 콜리전 이벤트 처리 (기본 처리만 수행)
     /// </summary>
     /// <param name="other">감지된 오브젝트</param>
     public override void OnAttackRangeEnter(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 적 감지 시 목록에 추가
-        if (other.CompareTag("Enemy"))
-        {
-            AddDetectedEnemy(other);
-        }
-        
-        // 기본 AttackRange 진입 처리도 수행
+        // 기본 AttackRange 진입 처리만 수행
         base.OnAttackRangeEnter(other);
     }
     
     /// <summary>
-    /// AttackRange 콜리전에서 나갔을 때 처리 (적이 공격 범위를 벗어남)
+    /// AttackRange 콜리전에서 나갔을 때 처리 (기본 처리만 수행)
     /// </summary>
     /// <param name="other">나간 오브젝트</param>
     public override void OnAttackRangeExit(Collider2D other)
     {
         if (!enableCollisionSystem) return;
         
-        // 적이 공격 범위를 벗어났을 때
-        if (other.CompareTag("Enemy"))
-        {
-            // 현재 타겟이 이 적이면 즉시 공격 중단
-            if (currentTarget == other)
-            {
-                EndAttack(); // 진행 중인 공격 즉시 중단
-            }
-            RemoveDetectedEnemy(other);
-        }
-        
-        // 기본 처리도 수행
+        // 기본 처리만 수행
         base.OnAttackRangeExit(other);
     }
 
     #endregion
 
-    #region Attack Range Check Methods
-    
-    /// <summary>
-    /// 적이 공격 범위 내에 있는지 확인합니다.
-    /// </summary>
-    /// <param name="enemyCollider">확인할 적의 콜라이더</param>
-    /// <returns>공격 범위 내에 있으면 true</returns>
-    private bool IsEnemyInAttackRange(Collider2D enemyCollider)
-    {
-        if (enemyCollider == null || collisionManager == null) return false;
-        
-        // 적이 여전히 존재하고 활성화되어 있는지 확인
-        if (!enemyCollider.gameObject.activeInHierarchy) return false;
-        
-        // AttackRange 콜라이더가 설정되어 있는지 확인
-        if (!collisionManager.HasAttackRangeCollider()) return false;
-        
-        // AttackRange 콜라이더와 적의 거리 계산 (SqrMagnitude 사용으로 성능 최적화)
-        float sqrDistance = (transform.position - enemyCollider.transform.position).sqrMagnitude;
-        
-        // AttackRange 콜라이더의 공격 범위 가져오기
-        float attackRange = collisionManager.GetAttackRange();
-        return sqrDistance <= attackRange * attackRange;
-    }
-    
-    
-    #endregion
 
-    #region Detection and Auto Attack Methods
-
-    
     /// <summary>
     /// Body 콜리전 이벤트 처리
     /// </summary>
@@ -489,228 +417,6 @@ public class PlayerController : CharacterBase
         // 기본 Body Collision 처리
         base.OnBodyCollision(other);
     }
-    
-    /// <summary>
-    /// AttackRange에 진입한 적을 목록에 추가합니다.
-    /// </summary>
-    /// <param name="enemy">감지된 적</param>
-    private void AddDetectedEnemy(Collider2D enemy)
-    {
-        if (enemy == null) return;
-        
-        // 이미 목록에 있는지 확인
-        if (!detectedEnemies.Contains(enemy))
-        {
-            detectedEnemies.Add(enemy);
-            
-            // 첫 번째 적이 감지되면 감지 시간 기록
-            if (detectedEnemies.Count == 1)
-            {
-                firstDetectionTime = Time.time;
-            }
-            
-            // 현재 타겟이 없거나 더 가까운 적이면 타겟 변경
-            if (currentTarget == null || IsCloserThanCurrentTarget(enemy))
-            {
-                SetCurrentTarget(enemy);
-            }
-            
-        }
-    }
-    
-    /// <summary>
-    /// AttackRange에서 나간 적을 목록에서 제거합니다.
-    /// </summary>
-    /// <param name="enemy">제거할 적</param>
-    private void RemoveDetectedEnemy(Collider2D enemy)
-    {
-        if (enemy == null) return;
-        
-        if (detectedEnemies.Contains(enemy))
-        {
-            detectedEnemies.Remove(enemy);
-            
-            // 모든 적이 제거되면 감지 시간 리셋
-            if (detectedEnemies.Count == 0)
-            {
-                firstDetectionTime = 0f;
-            }
-            
-            // 현재 타겟이 제거된 적이면 새로운 타겟 선택
-            if (currentTarget == enemy)
-            {
-                SelectNewTarget();
-            }
-            
-        }
-    }
-    
-    /// <summary>
-    /// 감지된 적 목록을 정리합니다 (사망한 적 제거).
-    /// </summary>
-    private void CleanupDetectedEnemies()
-    {
-        for (int i = detectedEnemies.Count - 1; i >= 0; i--)
-        {
-            var enemy = detectedEnemies[i];
-            if (enemy == null || IsEnemyDead(enemy))
-            {
-                RemoveDetectedEnemy(enemy);
-            }
-        }
-    }
-    
-    /// <summary>
-    /// 적이 사망했는지 확인합니다.
-    /// </summary>
-    /// <param name="enemy">확인할 적</param>
-    /// <returns>사망했으면 true</returns>
-    private bool IsEnemyDead(Collider2D enemy)
-    {
-        if (enemy == null) return true;
-        
-        CharacterBase enemyCharacter = enemy.GetComponent<CharacterBase>();
-        if (enemyCharacter == null)
-        {
-            enemyCharacter = enemy.GetComponentInParent<CharacterBase>();
-        }
-        
-        return enemyCharacter != null && enemyCharacter.IsDead();
-    }
-    
-    /// <summary>
-    /// 새로운 타겟을 선택합니다.
-    /// </summary>
-    private void SelectNewTarget()
-    {
-        currentTarget = null;
-        
-        if (detectedEnemies.Count > 0)
-        {
-            // 가장 가까운 적을 타겟으로 선택
-            float closestDistance = float.MaxValue;
-            foreach (var enemy in detectedEnemies)
-            {
-                if (enemy != null && !IsEnemyDead(enemy))
-                {
-                    float sqrDistance = (transform.position - enemy.transform.position).sqrMagnitude;
-                    if (sqrDistance < closestDistance)
-                    {
-                        closestDistance = sqrDistance;
-                        currentTarget = enemy;
-                    }
-                }
-            }
-            
-        }
-    }
-    
-    /// <summary>
-    /// 현재 타겟을 설정합니다.
-    /// </summary>
-    /// <param name="enemy">새로운 타겟</param>
-    private void SetCurrentTarget(Collider2D enemy)
-    {
-        currentTarget = enemy;
-    }
-    
-    /// <summary>
-    /// 주어진 적이 현재 타겟보다 가까운지 확인합니다.
-    /// </summary>
-    /// <param name="enemy">확인할 적</param>
-    /// <returns>더 가까우면 true</returns>
-    private bool IsCloserThanCurrentTarget(Collider2D enemy)
-    {
-        if (currentTarget == null) return true;
-        
-        float currentSqrDistance = (transform.position - currentTarget.transform.position).sqrMagnitude;
-        float newSqrDistance = (transform.position - enemy.transform.position).sqrMagnitude;
-        
-        return newSqrDistance < currentSqrDistance;
-    }
-    
-    /// <summary>
-    /// 자동 공격을 처리합니다.
-    /// </summary>
-    private void HandleAutoAttack()
-    {
-        // AttackRange 내 가장 가까운 적을 타겟으로 설정 (쿨다운 초기화 없음)
-        Collider2D nearestEnemy = GetNearestEnemy();
-        if (nearestEnemy != null && nearestEnemy != currentTarget)
-        {
-            Debug.Log($"[Player Attack] 타겟 변경 - 이전: {(currentTarget != null ? currentTarget.name : "null")}, 새로운: {nearestEnemy.name}");
-            currentTarget = nearestEnemy;
-            // firstDetectionTime은 변경하지 않음 (규칙적인 공격 속도 유지)
-        }
-        
-        // 첫 감지 후 지연 시간 확인
-        if (Time.time - firstDetectionTime >= attackDelay)
-        {
-            // 공격 애니메이션 길이를 기반으로 고정 쿨다운 시간 계산 (이동 상태 무관)
-            float attackAnimationLength = GetAttackAnimationLength();
-            float currentCooldown = attackAnimationLength * attackCooldownMultiplier;
-            
-            float timeSinceLastAttack = Time.time - lastAutoAttackTime;
-            bool canAttack = timeSinceLastAttack >= currentCooldown;
-            
-            // 쿨다운 체크 로그는 공격 가능할 때만 출력
-            if (canAttack)
-            {
-                Debug.Log($"[Player Attack] 쿨다운 체크 - Time: {Time.time:F2}, LastAttack: {lastAutoAttackTime:F2}, TimeSince: {timeSinceLastAttack:F2}, Required: {currentCooldown:F2}, CanAttack: {canAttack}");
-            }
-            
-            // 쿨다운 확인
-            if (canAttack)
-            {
-                // 공격 가능한 상태인지 확인 (이동 중이면 공격 불가)
-                if (CanMove() && !IsDead() && currentTarget != null && !isMoving)
-                {
-                    // 타겟이 여전히 AttackRange 내에 있는지 확인
-                    if (IsEnemyInAttackRange(currentTarget))
-                    {
-                        Debug.Log($"[Player Attack] 자동 공격 실행 - Target: {currentTarget.name}, Time: {Time.time:F2}");
-                        // 자동 공격 실행 (StartAttack에서 쿨타임 업데이트)
-                        StartAttack();
-                    }
-                    else
-                    {
-                        Debug.Log($"[Player Attack] 타겟이 AttackRange 벗어남 - Target: {currentTarget.name}");
-                        // 타겟이 AttackRange를 벗어났으면 타겟 초기화
-                        currentTarget = null;
-                    }
-                }
-                else
-                {
-                    Debug.Log($"[Player Attack] 공격 불가 - CanMove: {CanMove()}, IsDead: {IsDead()}, HasTarget: {currentTarget != null}, IsMoving: {isMoving}");
-                }
-            }
-        }
-    }
-    
-    /// <summary>
-    /// 모든 감지된 적을 제거합니다.
-    /// </summary>
-    public void ClearAllDetectedEnemies()
-    {
-        detectedEnemies.Clear();
-        currentTarget = null;
-        firstDetectionTime = 0f;
-    }
-    
-    /// <summary>
-    /// 자동 공격을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetAutoAttackEnabled(bool enabled)
-    {
-        enableAutoAttack = enabled;
-        if (!enabled)
-        {
-            ClearAllDetectedEnemies();
-        }
-    }
-
-    #endregion
 
     #region Collision System Methods
 
@@ -750,15 +456,29 @@ public class PlayerController : CharacterBase
     }
 
     /// <summary>
-    /// 공격 애니메이션을 시작합니다.
+    /// 수동 공격 애니메이션을 시작합니다.
     /// </summary>
     public void StartAttack()
     {
-        // 호출 스택 정보 추가
-        System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace(true);
-        string caller = stackTrace.GetFrame(1).GetMethod().Name;
+        // 공격 쿨다운 체크
+        float attackAnimationLength = GetAttackAnimationLength();
+        float cooldownTime = attackAnimationLength * attackCooldownMultiplier;
+        float timeSinceLastAttack = Time.time - lastAttackTime;
         
-        Debug.Log($"[Player Attack] StartAttack 호출됨 - Time: {Time.time:F2}, LastAttackTime: {lastAutoAttackTime:F2}, IsMoving: {isMoving}, Caller: {caller}");
+        if (timeSinceLastAttack < cooldownTime)
+        {
+            Debug.Log($"[Player Attack] 공격 쿨다운 중 - 남은 시간: {cooldownTime - timeSinceLastAttack:F2}초");
+            return;
+        }
+        
+        // 공격 가능한 상태인지 확인
+        if (!CanMove() || IsDead())
+        {
+            Debug.Log($"[Player Attack] 공격 불가능한 상태 - CanMove: {CanMove()}, IsDead: {IsDead()}");
+            return;
+        }
+        
+        Debug.Log($"[Player Attack] 수동 공격 실행 - Time: {Time.time:F2}");
         
         // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
         Collider2D nearestEnemy = GetNearestEnemy();
@@ -771,13 +491,8 @@ public class PlayerController : CharacterBase
             }
         }
         
-        // 공격 쿨타임을 현재 시간으로 설정 (연속 공격 방지)
-        lastAutoAttackTime = Time.time;
-        
-        float attackAnimationLength = GetAttackAnimationLength();
-        float newCooldownTime = attackAnimationLength * attackCooldownMultiplier;
-        
-        Debug.Log($"[Player Attack] 쿨타임 설정 - AnimationLength: {attackAnimationLength:F2}, Multiplier: {attackCooldownMultiplier:F2}, NewCooldown: {newCooldownTime:F2}, LastAttackTime: {lastAutoAttackTime:F2}");
+        // 공격 쿨타임을 현재 시간으로 설정
+        lastAttackTime = Time.time;
         
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
@@ -895,11 +610,7 @@ public class PlayerController : CharacterBase
             GUILayout.Label($"Animation State: {GetCurrentAnimationState()}");
             GUILayout.Label($"Move Speed: {moveSpeed}");
             GUILayout.Label($"Run Multiplier: {runSpeedMultiplier}");
-            GUILayout.Label($"Auto Attack: {enableAutoAttack}");
-            GUILayout.Label($"Detected Enemies: {detectedEnemies.Count}");
-            GUILayout.Label($"Current Target: {(currentTarget != null ? currentTarget.gameObject.name : "None")}");
-            GUILayout.Label($"Attack Delay: {attackDelay}s");
-            GUILayout.Label($"Last Auto Attack: {Time.time - lastAutoAttackTime:F1}s ago");
+            GUILayout.Label($"Last Attack: {Time.time - lastAttackTime:F1}s ago");
             GUILayout.Label($"Is Invincible: {isInvincible}");
             GUILayout.Label($"Invincibility Timer: {invincibilityTimer:F2}s");
             GUILayout.Label($"Damage Speed Multiplier: {damageMovementSpeedMultiplier:F2}");

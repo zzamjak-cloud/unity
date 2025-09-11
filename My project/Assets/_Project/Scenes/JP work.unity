@@ -267,6 +267,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   movementThreshold: 0.1
   stopThreshold: 0.05
+  playerController: {fileID: 944894688}
 --- !u!114 &283022412
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -521,63 +522,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2013b0a43ac8d9e4fa604c1cacc77568, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FollowCameraOptimized
-  target: {fileID: 0}
-  autoFindPlayer: 1
-  offset: {x: 0, y: 0.4, z: -10}
-  followSpeed: 2
-  lazyDistance: 1
-  lazySpeed: 1
-  lazyCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  enableLookAhead: 1
-  lookAheadDistance: 0.5
-  lookAheadMultiplier: 1.2
-  lookAheadSmoothing: 0.08
-  enableDefaultLookAhead: 1
-  defaultLookAheadDistance: 3
-  defaultLookAheadSmoothing: 0
-  enableBoundaries: 0
-  minBoundary: {x: -10, y: -10}
-  maxBoundary: {x: 10, y: 10}
-  useAdvancedSmoothing: 1
-  positionSmoothing: 0.06
-  velocitySmoothing: 0.05
-  maxVelocity: 5
-  enableScreenShake: 1
-  shakeIntensity: 0.5
-  shakeDuration: 0.3
-  enableZoom: 1
-  defaultOrthographicSize: 4
-  zoomSpeed: 2
-  minZoom: 3
-  maxZoom: 8
-  enablePerformanceMode: 1
-  updateFrequency: 1
-  lookAheadUpdateInterval: 0.1
-  showDebugInfo: 0
-  showGizmos: 1
 --- !u!1 &336770630
 GameObject:
   m_ObjectHideFlags: 0
@@ -1294,6 +1238,17 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &944894688 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8189968149715602249, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
+  m_PrefabInstance: {fileID: 2998760364580761897}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd658276bc9297d4986ee3f395df9773, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
 --- !u!4 &959501331 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 138017451727906904, guid: 7c4fe484a205c8c4eb53228a5c3ab0af, type: 3}

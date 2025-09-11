@@ -6,7 +6,7 @@ namespace GameCamera
     /// 캐릭터 전용 카메라 컴포넌트
     /// 캐릭터 이동 방향에 따라 카메라 오프셋을 자연스럽게 블렌딩 처리합니다.
     /// </summary>
-    public class CharacterCamera : MonoBehaviour
+    public class PlayerCamera : MonoBehaviour
     {
         [Header("카메라 오프셋 설정")]
         [SerializeField] private Vector3 defaultOffset = new Vector3(0, 0.54f, -10f);
@@ -24,6 +24,9 @@ namespace GameCamera
         [SerializeField] private float movementThreshold = 0.1f;
         [SerializeField] private float stopThreshold = 0.05f;
         
+        [Header("캐릭터 참조")]
+        [SerializeField] private PlayerController playerController;
+        
         
         // 내부 변수들
         private Vector3 currentOffset;
@@ -36,7 +39,6 @@ namespace GameCamera
         
         // 캐릭터 참조
         private Transform characterTransform;
-        private PlayerController playerController;
         
         private void Start()
         {
@@ -48,11 +50,15 @@ namespace GameCamera
                 return;
             }
             
-            // PlayerController 컴포넌트 찾기
-            playerController = characterTransform.GetComponent<PlayerController>();
+            // PlayerController 컴포넌트 확인
             if (playerController == null)
             {
-                Debug.LogWarning("CharacterCamera: PlayerController 컴포넌트를 찾을 수 없습니다. Input 기반 최적화가 비활성화됩니다.");
+                // 직접 연결되지 않은 경우 부모에서 찾기 (호환성)
+                playerController = characterTransform.GetComponent<PlayerController>();
+                if (playerController == null)
+                {
+                    Debug.LogWarning("CharacterCamera: PlayerController 컴포넌트를 찾을 수 없습니다. Input 기반 최적화가 비활성화됩니다.");
+                }
             }
             
             // 초기 설정
@@ -194,6 +200,11 @@ namespace GameCamera
         /// <summary>
         /// 런타임에서 설정값을 변경할 수 있는 메서드들
         /// </summary>
+        public void SetPlayerController(PlayerController controller)
+        {
+            playerController = controller;
+        }
+        
         public void SetDefaultOffset(Vector3 offset)
         {
             defaultOffset = offset;
