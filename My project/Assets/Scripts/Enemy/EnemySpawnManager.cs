@@ -36,15 +36,34 @@ public class EnemySpawnManager : MonoBehaviour
     // 스폰 코루틴 참조
     private Coroutine spawnCoroutine;
     
+    // 플레이어 사망 상태 추적
+    private bool isPlayerDead = false;
+    
     private void Start()
     {
         InitializeSpawnPoints();
         InitializeEnemyPools();
         
+        // 플레이어 사망 이벤트 구독
+        PlayerController.OnPlayerDeath += OnPlayerDeath;
+        
         if (autoSpawn)
         {
             StartSpawning();
         }
+    }
+    
+    /// <summary>
+    /// 플레이어 사망 시 호출되는 메서드
+    /// </summary>
+    private void OnPlayerDeath()
+    {
+        isPlayerDead = true;
+        
+        // 스폰 중지
+        StopSpawning();
+        
+        Debug.Log("[EnemySpawnManager] 플레이어 사망으로 인해 적 스폰이 중지됩니다.");
     }
     
     /// <summary>
@@ -133,6 +152,12 @@ public class EnemySpawnManager : MonoBehaviour
         {
             yield return new WaitForSeconds(spawnInterval);
             
+            // 플레이어가 사망했으면 스폰 중지
+            if (isPlayerDead)
+            {
+                break;
+            }
+            
             // 최대 적 수 체크
             if (activeEnemies.Count >= maxEnemies)
             {
@@ -197,6 +222,9 @@ public class EnemySpawnManager : MonoBehaviour
         // 활성 적 리스트에 추가
         activeEnemies.Add(enemy);
         
+        // 새로 스폰된 적이 기존 적들과 충돌을 무시하도록 설정
+        SetupEnemyCollisionIgnore(enemy);
+        
         Debug.Log($"EnemySpawnManager: {enemyPrefab.name}을 {position}에 스폰했습니다. (감지범위: {randomDetectionRange:F1})");
         
         return enemy;
@@ -251,6 +279,36 @@ public class EnemySpawnManager : MonoBehaviour
         for (int i = activeEnemies.Count - 1; i >= 0; i--)
         {
             ReturnEnemyToPool(activeEnemies[i]);
+        }
+    }
+    
+    /// <summary>
+    /// 새로 스폰된 적이 기존 적들과 충돌을 무시하도록 설정합니다.
+    /// </summary>
+    /// <param name="newEnemy">새로 스폰된 적</param>
+    private void SetupEnemyCollisionIgnore(GameObject newEnemy)
+    {
+        if (newEnemy == null) return;
+        
+        CharacterCollisionManager newEnemyCollisionManager = newEnemy.GetComponent<CharacterCollisionManager>();
+        if (newEnemyCollisionManager == null) return;
+        
+        Collider2D newEnemyBodyCollider = newEnemyCollisionManager.GetBodyCollider();
+        if (newEnemyBodyCollider == null) return;
+        
+        // 모든 기존 적들과의 충돌을 무시하도록 설정
+        foreach (GameObject existingEnemy in activeEnemies)
+        {
+            if (existingEnemy == newEnemy) continue; // 자기 자신은 제외
+            
+            CharacterCollisionManager existingEnemyCollisionManager = existingEnemy.GetComponent<CharacterCollisionManager>();
+            if (existingEnemyCollisionManager == null) continue;
+            
+            Collider2D existingEnemyBodyCollider = existingEnemyCollisionManager.GetBodyCollider();
+            if (existingEnemyBodyCollider == null) continue;
+            
+            // 양방향으로 충돌 무시 설정
+            Physics2D.IgnoreCollision(newEnemyBodyCollider, existingEnemyBodyCollider, true);
         }
     }
     
@@ -343,6 +401,9 @@ public class EnemySpawnManager : MonoBehaviour
     
     private void OnDestroy()
     {
+        // 플레이어 사망 이벤트 구독 해제
+        PlayerController.OnPlayerDeath -= OnPlayerDeath;
+        
         StopSpawning();
     }
 }

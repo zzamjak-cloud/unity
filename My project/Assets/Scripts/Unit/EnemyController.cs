@@ -60,6 +60,9 @@ public class EnemyController : CharacterBase
     
     // 스폰 시스템 관련
     private EnemySpawnManager spawnManager;    // 스폰 매니저 참조
+    
+    // 플레이어 사망 상태 추적
+    private bool isPlayerDead = false;         // 플레이어 사망 여부
 
     protected override void Start()
     {
@@ -72,6 +75,9 @@ public class EnemyController : CharacterBase
         
         base.Start();
         
+        // 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
+        SetupEnemyRigidbody();
+        
         // 적 전용 체력바 설정
         InitializeEnemyStatusUI();
         
@@ -82,6 +88,62 @@ public class EnemyController : CharacterBase
         if (spawnManager == null)
         {
             spawnManager = FindFirstObjectByType<EnemySpawnManager>();
+        }
+        
+        // 플레이어 사망 이벤트 구독
+        PlayerController.OnPlayerDeath += OnPlayerDeath;
+    }
+    
+    protected override void OnDestroy()
+    {
+        // 플레이어 사망 이벤트 구독 해제
+        PlayerController.OnPlayerDeath -= OnPlayerDeath;
+        
+        // 부모 클래스의 OnDestroy 호출
+        base.OnDestroy();
+    }
+    
+    /// <summary>
+    /// 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
+    /// </summary>
+    private void SetupEnemyRigidbody()
+    {
+        if (rb != null)
+        {
+            // 적들 간의 물리적 상호작용을 방지하기 위한 설정
+            rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous; // 연속 충돌 감지
+            rb.sleepMode = RigidbodySleepMode2D.NeverSleep; // 절대 잠들지 않음
+            rb.freezeRotation = true; // 회전 고정
+            rb.gravityScale = 0f; // 중력 비활성화 (2D 탑다운 게임)
+            
+            // 적들 간의 물리적 충돌을 방지하기 위해 Physics2D.IgnoreCollision 사용
+            // 이는 런타임에 다른 적들과의 충돌을 무시하도록 설정
+            SetupEnemyCollisionIgnore();
+        }
+    }
+    
+    /// <summary>
+    /// 적들 간의 충돌을 무시하도록 설정
+    /// </summary>
+    private void SetupEnemyCollisionIgnore()
+    {
+        if (collisionManager == null) return;
+        
+        // 모든 적 오브젝트를 찾아서 이 적과의 충돌을 무시하도록 설정
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag(GameConstants.TAG_ENEMY);
+        foreach (GameObject enemy in enemies)
+        {
+            if (enemy != gameObject) // 자기 자신은 제외
+            {
+                // Body 콜리전 간의 충돌 무시
+                Collider2D thisBodyCollider = collisionManager.GetBodyCollider();
+                Collider2D otherBodyCollider = enemy.GetComponent<CharacterCollisionManager>()?.GetBodyCollider();
+                
+                if (thisBodyCollider != null && otherBodyCollider != null)
+                {
+                    Physics2D.IgnoreCollision(thisBodyCollider, otherBodyCollider, true);
+                }
+            }
         }
     }
     
@@ -143,6 +205,33 @@ public class EnemyController : CharacterBase
             }
             
             return; // 사망 시 더 이상 처리하지 않음
+        }
+        
+        // 플레이어가 사망했으면 모든 행동 중단하고 Idle 상태로 전환
+        if (isPlayerDead)
+        {
+            // 추적 중단
+            isChasingPlayer = false;
+            isInCombat = false;
+            
+            // 이동 중단
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector2.zero;
+            }
+            
+            // 공격 중단
+            if (currentTarget != null)
+            {
+                EndAttack();
+                currentTarget = null;
+            }
+            
+            // 애니메이션 상태 업데이트 (Idle 상태 유지)
+            UpdateAnimationState();
+            HandleAnimations(0f, false);
+            
+            return; // 플레이어 사망 시 더 이상 처리하지 않음
         }
         
         // 전투 상태 업데이트
@@ -740,6 +829,42 @@ public class EnemyController : CharacterBase
     private void EndCombat()
     {
         isInCombat = false;
+    }
+    
+    /// <summary>
+    /// 플레이어 사망 시 호출되는 메서드
+    /// </summary>
+    private void OnPlayerDeath()
+    {
+        isPlayerDead = true;
+        
+        // 모든 행동 중단
+        isChasingPlayer = false;
+        isInCombat = false;
+        
+        // 이동 중단
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+        }
+        
+        // 공격 중단
+        if (currentTarget != null)
+        {
+            EndAttack();
+            currentTarget = null;
+        }
+        
+        Debug.Log($"[Enemy] {gameObject.name}: 플레이어 사망으로 인해 Idle 상태로 전환됩니다.");
+    }
+    
+    /// <summary>
+    /// 플레이어 사망 시에도 정렬 순서 업데이트를 계속합니다.
+    /// </summary>
+    protected override void LateUpdate()
+    {
+        // 플레이어가 사망했어도 정렬 순서는 계속 업데이트
+        UpdateSortingOrder();
     }
     
     /// <summary>

@@ -363,6 +363,24 @@ public class CharacterCollisionManager : MonoBehaviour
         enableCollisionLogging = enabled;
     }
     
+    /// <summary>
+    /// Body 콜리전을 반환합니다.
+    /// </summary>
+    /// <returns>Body 콜리전</returns>
+    public Collider2D GetBodyCollider()
+    {
+        return bodyCollider;
+    }
+    
+    /// <summary>
+    /// AttackRange 콜리전을 반환합니다.
+    /// </summary>
+    /// <returns>AttackRange 콜리전</returns>
+    public Collider2D GetAttackRangeCollider()
+    {
+        return attackRangeCollider;
+    }
+    
     
     
     

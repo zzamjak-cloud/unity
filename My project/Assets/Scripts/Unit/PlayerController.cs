@@ -17,6 +17,9 @@ public class PlayerController : CharacterBase
     [SerializeField] private float playerInvincibilityDuration = 1.0f;  // 플레이어 무적 시간 (초)
     [SerializeField] private float damageMovementSpeedMultiplier = 0.7f;  // 피격 시 이동속도 배수
     
+    // 플레이어 사망 이벤트
+    public static System.Action OnPlayerDeath;
+    
     [Header("Player Status UI")]
     [SerializeField] private Vector3 playerStatusBarOffset = new Vector3(0, 1.8f, 0);  // 플레이어 상태바 오프셋
     [SerializeField] private GameObject playerStatusBarObject;  // 플레이어 상태바 GameObject (직접 연결)
@@ -802,6 +805,30 @@ public class PlayerController : CharacterBase
         base.TakeDamage(damage, attacker);
         
         // 사망 시 콜리전 비활성화는 CharacterBase.Die()에서 처리됨
+    }
+    
+    /// <summary>
+    /// 플레이어 사망 시 추가 처리 (적들에게 사망 알림)
+    /// </summary>
+    protected override void OnDeath()
+    {
+        // 플레이어 사망 이벤트 발생
+        OnPlayerDeath?.Invoke();
+        
+        Debug.Log("[Player] 플레이어가 사망했습니다. 모든 적들이 Idle 상태로 전환됩니다.");
+        
+        // 기본 사망 처리는 하지 않음 (DisableAfterDeath 호출 방지)
+        // 사망 애니메이션과 콜리전 비활성화는 CharacterBase.Die()에서 이미 처리됨
+    }
+    
+    /// <summary>
+    /// 플레이어 사망 후 오브젝트를 비활성화하지 않음 (카메라 유지를 위해)
+    /// </summary>
+    protected override void DisableAfterDeath()
+    {
+        // 플레이어 사망 후에도 오브젝트를 비활성화하지 않음
+        // 카메라가 계속 작동하도록 함
+        Debug.Log("[Player] 플레이어가 사망했지만 카메라 유지를 위해 오브젝트를 비활성화하지 않습니다.");
     }
     
     /// <summary>
