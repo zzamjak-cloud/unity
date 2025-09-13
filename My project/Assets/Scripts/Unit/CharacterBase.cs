@@ -111,6 +111,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // CharacterCollisionManager 설정
         if (collisionManager == null) { collisionManager = GetComponent<CharacterCollisionManager>(); }
         
+        // 콜리전 시스템 초기화 (비활성화된 경우 이벤트 핸들러 등록하지 않음)
+        InitializeCollisionSystem();
+        
         InitializeHealthSystem();  // 체력 시스템 초기화
         
         // 초기 정렬 순서 설정
@@ -232,8 +235,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // Body 콜리전 이벤트 처리 (적/플레이어 충돌, 피격 판정)
     public virtual void OnBodyCollision(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본적인 피격 판정 처리
         HandleBodyCollision(other);
     }
@@ -241,8 +242,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // AttackRange 콜리전 이벤트 처리 (공격 범위 진입)
     public virtual void OnAttackRangeEnter(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본적인 공격 범위 진입 처리
         HandleAttackRangeEnter(other);
     }
@@ -250,8 +249,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // AttackRange 콜리전에서 나갔을 때 처리 (공격 범위 벗어남)
     public virtual void OnAttackRangeExit(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본적인 공격 범위 벗어남 처리
         HandleAttackRangeExit(other);
     }
@@ -259,8 +256,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 애니메이션 이벤트에서 호출되는 공격 성공 판정
     public virtual void OnAttackHit(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본적인 공격 성공 처리
         HandleAttackHit(other);
     }
@@ -651,6 +646,29 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     #endregion
 
     #region Collision System Control
+
+    /// <summary>
+    /// 콜리전 시스템을 초기화합니다.
+    /// enableCollisionSystem이 false인 경우 이벤트 핸들러를 등록하지 않습니다.
+    /// </summary>
+    protected virtual void InitializeCollisionSystem()
+    {
+        if (!enableCollisionSystem)
+        {
+            // 콜리전 시스템이 비활성화된 경우 CharacterCollisionManager 비활성화
+            if (collisionManager != null)
+            {
+                collisionManager.enabled = false;
+            }
+            return;
+        }
+        
+        // 콜리전 시스템이 활성화된 경우 정상 초기화
+        if (collisionManager != null)
+        {
+            collisionManager.enabled = true;
+        }
+    }
 
     // 콜리전 시스템을 활성화/비활성화합니다. (enabled : 활성화 여부)
     public virtual void SetCollisionSystemEnabled(bool enabled)

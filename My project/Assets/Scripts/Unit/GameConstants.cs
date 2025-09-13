@@ -38,8 +38,12 @@ public static class GameConstants
     #endregion
 
     #region Attack System
-    public const float DEFAULT_ATTACK_DURATION = 0.2f;  // 공격 지속 시간
-    public const float DEFAULT_ATTACK_COOLDOWN = 0.1f;  // 공격 쿨다운
+    public const float DEFAULT_ATTACK_COOLDOWN = 0.2f;  // 공격 애니메이션 후 추가 대기 시간
+    #endregion
+
+    #region Character Stats
+    public const float PLAYER_INVINCIBILITY_DURATION = 1.0f;  // 플레이어 무적 시간
+    public const float ENEMY_INVINCIBILITY_DURATION = 0.5f;  // 적 무적 시간
     #endregion
 
     #region Movement

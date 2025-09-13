@@ -31,6 +31,7 @@ public class EnemyController : CharacterBase
     [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
     [SerializeField] private float autoAttackCooldown = GameConstants.ENEMY_AUTO_ATTACK_COOLDOWN;  // 자동 공격 쿨다운 시간 (적은 조금 더 느리게)
     [SerializeField] private float attackDelay = GameConstants.ENEMY_ATTACK_DELAY;  // 플레이어 감지 후 공격 지연 시간
+    [SerializeField] private float attackCooldown = GameConstants.DEFAULT_ATTACK_COOLDOWN;  // 공격 애니메이션 후 추가 대기 시간 (초)
     
     // 적 전용 상태 변수들
     private Vector3 initialPosition;
@@ -45,6 +46,10 @@ public class EnemyController : CharacterBase
     private List<Collider2D> detectedPlayers = new List<Collider2D>();  // 감지된 플레이어 목록
     private Collider2D currentTarget = null;  // 현재 타겟
     private float firstDetectionTime = 0f;  // 첫 감지 시간
+    
+    // 공격 쿨다운 관련 변수들
+    private float lastAttackTime = 0f;  // 마지막 공격 시간
+    private float attackAnimationEndTime = 0f;  // 공격 애니메이션 종료 예상 시간
     
     // 플레이어 추적 관련 변수들
     private Transform playerTransform = null;  // 플레이어 Transform
@@ -82,6 +87,9 @@ public class EnemyController : CharacterBase
             enabled = false; // 컴포넌트 비활성화
             return;
         }
+        
+        // 적 전용 무적 시간 설정 (CharacterBase의 기본값을 덮어쓰기)
+        invincibilityDuration = GameConstants.ENEMY_INVINCIBILITY_DURATION;
         
         // 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
         SetupEnemyRigidbody();
@@ -613,10 +621,41 @@ public class EnemyController : CharacterBase
     }
 
     /// <summary>
+    /// 공격 가능 여부를 확인합니다.
+    /// </summary>
+    /// <returns>공격 가능하면 true</returns>
+    public bool CanAttack()
+    {
+        if (IsDead()) return false;
+        return GetTimeSinceLastAttack() >= GetAttackCooldownTime();
+    }
+    
+    /// <summary>
+    /// 공격 쿨다운 시간을 계산합니다.
+    /// </summary>
+    /// <returns>공격 쿨다운 시간 (초)</returns>
+    private float GetAttackCooldownTime()
+    {
+        return GetAttackAnimationLength() + attackCooldown;
+    }
+    
+    /// <summary>
+    /// 마지막 공격으로부터 경과된 시간을 반환합니다.
+    /// </summary>
+    /// <returns>경과된 시간 (초)</returns>
+    private float GetTimeSinceLastAttack()
+    {
+        return Time.time - lastAttackTime;
+    }
+    
+    /// <summary>
     /// 공격 애니메이션을 시작합니다.
     /// </summary>
     public void StartAttack()
     {
+        // 공격 가능 여부 체크
+        if (!CanAttack()) return;
+        
         // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
         Collider2D nearestEnemy = GetNearestEnemy();
         if (nearestEnemy != null)
@@ -627,6 +666,12 @@ public class EnemyController : CharacterBase
                 FlipCharacter(directionToTarget.x);
             }
         }
+        
+        // 공격 쿨타임을 현재 시간으로 설정
+        lastAttackTime = Time.time;
+        
+        // 공격 애니메이션 종료 시간 설정
+        attackAnimationEndTime = Time.time + GetAttackAnimationLength();
         
         // Attack 애니메이션 실행
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
@@ -959,8 +1004,6 @@ public class EnemyController : CharacterBase
     /// <param name="other">감지된 오브젝트</param>
     public override void OnAttackRangeEnter(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 플레이어 감지 시 목록에 추가
         if (other.CompareTag(GameConstants.TAG_PLAYER))
         {
@@ -977,8 +1020,6 @@ public class EnemyController : CharacterBase
     /// <param name="other">나간 오브젝트</param>
     public override void OnAttackRangeExit(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 플레이어가 공격 범위를 벗어났을 때
         if (other.CompareTag(GameConstants.TAG_PLAYER))
         {
@@ -1033,8 +1074,6 @@ public class EnemyController : CharacterBase
     /// <param name="other">충돌한 오브젝트</param>
     public override void OnBodyCollision(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본 Body Collision 처리
         base.OnBodyCollision(other);
     }
@@ -1197,11 +1236,11 @@ public class EnemyController : CharacterBase
         // 첫 감지 후 지연 시간 확인
         if (Time.time - firstDetectionTime >= attackDelay)
         {
-            // 쿨다운 확인
+            // 자동 공격 쿨다운 확인
             if (Time.time - lastAutoAttackTime >= autoAttackCooldown)
             {
-                // 공격 가능한 상태인지 확인
-                if (CanMove() && !IsDead() && currentTarget != null)
+                // 공격 가능한 상태인지 확인 (개별 공격 쿨다운도 체크)
+                if (CanMove() && !IsDead() && currentTarget != null && CanAttack())
                 {
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsPlayerInAttackRange(currentTarget))
@@ -1380,6 +1419,8 @@ public class EnemyController : CharacterBase
         currentTarget = null;
         firstDetectionTime = 0f;
         lastAutoAttackTime = 0f;
+        lastAttackTime = 0f;  // 공격 쿨다운 초기화
+        attackAnimationEndTime = 0f;  // 공격 애니메이션 종료 시간 초기화
         
         // 감지된 플레이어 목록 초기화
         detectedPlayers.Clear();

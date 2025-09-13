@@ -14,7 +14,6 @@ public class PlayerController : CharacterBase
     [Header("Player Stats")]
     [SerializeField] private int playerMaxHealth = 150;  // 플레이어 최대 체력
     [SerializeField] private int playerAttackPower = 25;  // 플레이어 공격력
-    [SerializeField] private float playerInvincibilityDuration = 1.0f;  // 플레이어 무적 시간 (초)
     [SerializeField] private float damageMovementSpeedMultiplier = 0.7f;  // 피격 시 이동속도 배수
     
     public static System.Action OnPlayerDeath; // 플레이어 사망 이벤트
@@ -24,7 +23,7 @@ public class PlayerController : CharacterBase
     [SerializeField] private GameObject playerStatusBarObject;  // 플레이어 상태바 GameObject (직접 연결)
     
     [Header("Attack Settings")]
-    [SerializeField] private float attackCooldownMultiplier = 1.2f;  // 공격 애니메이션 길이에 곱할 배수
+    [SerializeField] private float attackCooldown = GameConstants.DEFAULT_ATTACK_COOLDOWN;  // 공격 애니메이션 후 추가 대기 시간 (초)
     
     // 입력 처리용 변수들
     private float moveX = 0f;
@@ -40,6 +39,7 @@ public class PlayerController : CharacterBase
     // 공격 관련 변수들
     private float lastAttackTime = 0f;
     private float lastAttackEventTime = 0f; // 마지막 공격 이벤트 시간
+    private float attackAnimationEndTime = 0f; // 공격 애니메이션 종료 예상 시간
     
     // 이동 상태 추적
     private bool isMoving = false;  // 현재 이동 중인지
@@ -62,7 +62,9 @@ public class PlayerController : CharacterBase
             return;
         }
         
-        invincibilityDuration = playerInvincibilityDuration;  // 플레이어 전용 무적 시간 설정
+        // 플레이어 전용 무적 시간 설정 (CharacterBase의 기본값을 덮어쓰기)
+        invincibilityDuration = GameConstants.PLAYER_INVINCIBILITY_DURATION;
+        
         InitializePlayerStatusUI();  // 플레이어 전용 체력 UI 초기화
     }
     
@@ -161,10 +163,12 @@ public class PlayerController : CharacterBase
 
     #region Override Methods
 
-    public override bool IsRunning()  // 달리기 상태 확인
+    // 달리기 상태 확인
+    public override bool IsRunning()  
     { return isShiftPressed; }
 
-    public override bool CanMove()  // 이동 가능 여부 확인
+
+    public override bool CanMove()
     {
         // 무적 상태일 때는 공격 중이어도 이동 허용
         if (isInvincible)
@@ -174,72 +178,62 @@ public class PlayerController : CharacterBase
         
         return base.CanMove(); // 기본 이동 가능 여부 확인
     }
-    
-    public bool CanAttack()  // 공격 가능 여부 확인
+
+    // 공격 가능 여부 확인
+    public bool CanAttack()
     {
-        if (IsDead())  // 사망시 공격불가
-        { return false; }
-        
-        // 공격 쿨다운 체크
-        float attackAnimationLength = GetAttackAnimationLength();
-        float cooldownTime = attackAnimationLength * attackCooldownMultiplier;  // 공격 쿨다운 시간 계산
-        float timeSinceLastAttack = Time.time - lastAttackTime;  // 마지막 공격 시간 계산
-        
-        return timeSinceLastAttack >= cooldownTime;
+        if (IsDead()) return false;
+        return GetTimeSinceLastAttack() >= GetAttackCooldownTime();
     }
     
+    //공격 쿨다운 시간을 계산합니다.
+    private float GetAttackCooldownTime()
+    { return GetAttackAnimationLength() + attackCooldown; }
+    
+    //마지막 공격으로부터 경과된 시간을 반환합니다.
+    private float GetTimeSinceLastAttack()
+    { return Time.time - lastAttackTime; }
 
-    /// <summary>
-    /// 플레이어의 애니메이션 상태를 업데이트합니다.
-    /// 공격 중일 때는 다른 애니메이션이 우선순위를 가지지 않도록 처리합니다.
-    /// 단, 사망 상태일 때는 Death 애니메이션이 최우선입니다.
-    /// </summary>
+    //플레이어의 애니메이션 상태를 업데이트합니다.
     protected override void UpdateAnimationState()
     {
-        if (anim == null) return;
-        
-        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
-        
-        // 사망시 Death 애니메이션 강제 처리
+        // 사망시 Death 애니메이션 강제 처리 (즉시 처리)
         if (IsDead())
         {
-            isAttacking = false;  // 공격 상태 해제
-            
-            if (anim != null && currentAnimationState != CharacterAnimationState.Death)  // Death state 가 아니면
+            if (currentAnimationState != CharacterAnimationState.Death)
             {
+                isAttacking = false;
                 currentAnimationState = CharacterAnimationState.Death;
                 anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-                anim.SetTrigger(GameConstants.ANIM_DEATH);  // Death 애니메이션 강제 실행
+                anim.SetTrigger(GameConstants.ANIM_DEATH);
             }
-
             return;
         }
         
-        // 공격 애니메이션 중일 때는 다른 애니메이션으로 상태 변경하지 않음
-        if (currentAnimationState == CharacterAnimationState.Attack)
+        // 공격 중일 때만 체크 (타이머 기반)
+        if (isAttacking)
         {
-            // 공격 애니메이션이 완료되었는지 확인
-            if (!stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK) || stateInfo.normalizedTime >= GameConstants.ANIMATION_COMPLETE_THRESHOLD)
+            // 공격 애니메이션 종료 시간 체크 (매 프레임 체크 대신 타이머 사용)
+            if (Time.time >= attackAnimationEndTime)
             {
-                // 공격 애니메이션이 완료되었으면 상태 초기화 (공격 상태 해제)
+                // 공격 애니메이션 완료
                 isAttacking = false;
-                currentAnimationState = CharacterAnimationState.Idle; // 명시적으로 Idle로 설정
-
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);  // 공격 상태 해제
-
-                base.UpdateAnimationState();
-            }
-            else
-            {
-                // 공격 애니메이션 중이면 상태 강제 유지 (피격 애니메이션 무시)
-                currentAnimationState = CharacterAnimationState.Attack;
-                isAttacking = true;
+                currentAnimationState = CharacterAnimationState.Idle;
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
                 
-                // 피격 애니메이션이나 다른 애니메이션이 실행되려고 하면 강제로 공격 애니메이션으로 되돌림
-                if (!stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK))
-                {
-                    anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-                }
+                // 기본 상태 업데이트 수행
+                base.UpdateAnimationState();
+                return;
+            }
+            
+            // 공격 애니메이션 중에는 상태 강제 유지 (다른 애니메이션 방해 방지)
+            currentAnimationState = CharacterAnimationState.Attack;
+            
+            // 공격 애니메이션이 방해받지 않도록 강제 복원
+            AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+            if (!stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK))
+            {
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
             }
             return;
         }
@@ -247,36 +241,28 @@ public class PlayerController : CharacterBase
         // Blank 상태일 때는 공격 입력이 있으면 공격 애니메이션으로 덮어쓰기
         if (currentAnimationState == CharacterAnimationState.Blank && isAttackPressed)
         {
-            Debug.Log($"[Player Attack] Blank 상태에서 공격 입력 감지, 공격 애니메이션으로 덮어쓰기");
-            // 공격 상태 강제 설정
-            currentAnimationState = CharacterAnimationState.Attack;
-            isAttacking = true;
-            
-            // Animator 파라미터 설정
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-            
-            // Attack 애니메이션은 이미 위에서 트리거됨
+            StartAttackAnimation();
             return;
         }
-        
-        // 공격 중이 아닐 때는 기본 상태 업데이트 수행
-        // 단, 공격 중일 때는 Blank 상태로 전환되지 않도록 체크
-        if (isAttacking && currentAnimationState == CharacterAnimationState.Attack)
-        {
-            // 공격 중이면 Blank 상태로 전환 방지
-            return;
-        }
-        
+   
         base.UpdateAnimationState();
+    }
+    
+    // 공격 애니메이션을 시작하고 타이머를 설정합니다.
+    private void StartAttackAnimation()
+    {
+        currentAnimationState = CharacterAnimationState.Attack;
+        isAttacking = true;
+        
+        attackAnimationEndTime = Time.time + GetAttackAnimationLength();  // 공격 애니메이션 종료 시간 설정
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
     }
 
     #endregion
 
     #region Input Handling
 
-    /// <summary>
-    /// 키보드 입력을 처리합니다. 이동, 달리기, 특수 애니메이션 입력을 처리합니다.
-    /// </summary>
+    ///키보드 입력을 처리합니다. 이동, 달리기, 특수 애니메이션 입력을 처리합니다.
     private void HandleKeyboardInput()
     {
         // 이동 입력
@@ -305,13 +291,10 @@ public class PlayerController : CharacterBase
         }
     }
 
-    /// <summary>
-    /// 특수 애니메이션 Attack, Ceremony, Blank, Death 애니메이션을 처리합니다.
-    /// 피격 중에도 공격 입력이 처리됩니다.
-    /// </summary>
+    //특수 애니메이션 Attack, Ceremony, Blank, Death 애니메이션을 처리합니다.
     private void HandleSpecialAnimationInputs()
     {
-        // 사망 상태일 때는 모든 입력 무시
+        // 사망시 모든 입력 무시
         if (IsDead())
         {
             // 입력 상태 초기화
@@ -325,48 +308,28 @@ public class PlayerController : CharacterBase
         // Attack 애니메이션 - 피격 중에도 반드시 처리
         if (isAttackPressed)
         {
-            // 공격 중일 때는 추가 공격 입력 무시 (중복 공격 방지)
+            // 공격중에 추가 공격 입력 방지
             if (currentAnimationState == CharacterAnimationState.Attack && isAttacking)
             {
-                Debug.Log($"[Player Attack] 공격 중이므로 추가 공격 입력 무시 - CurrentState: {currentAnimationState}, IsAttacking: {isAttacking}");
                 isAttackPressed = false;
                 return;
             }
-            
-            Debug.Log($"[Player Attack] 수동 공격 입력 감지 - Time: {Time.time:F2}, CurrentState: {currentAnimationState}, IsInvincible: {isInvincible}");
-            
             // 쿨다운 체크
-            float attackAnimationLength = GetAttackAnimationLength();
-            float cooldownTime = attackAnimationLength * attackCooldownMultiplier;  // 공격 쿨다운 시간 계산
-            float timeSinceLastAttack = Time.time - lastAttackTime;  // 마지막 공격 시간 계산
+            float cooldownTime = GetAttackCooldownTime();
             
             // 무적 상태일 때는 쿨다운을 더 짧게 적용 (반격 기회 제공)
             if (isInvincible)
-            {
-                cooldownTime *= GameConstants.INVINCIBLE_COOLDOWN_MULTIPLIER; // 무적 상태일 때는 쿨다운을 30%로 단축
-                Debug.Log($"[Player Attack] 무적 상태 - 쿨다운 단축: {cooldownTime:F2}초");
-            }
+            { cooldownTime *= GameConstants.INVINCIBLE_COOLDOWN_MULTIPLIER; }
             
             // Blank 상태일 때는 쿨다운을 더욱 짧게 적용 (피격 중 반격)
             if (currentAnimationState == CharacterAnimationState.Blank)
-            {
-                cooldownTime *= GameConstants.BLANK_COOLDOWN_MULTIPLIER; // Blank 상태일 때는 쿨다운을 20%로 단축
-                Debug.Log($"[Player Attack] Blank 상태 - 쿨다운 대폭 단축: {cooldownTime:F2}초");
-            }
+            { cooldownTime *= GameConstants.BLANK_COOLDOWN_MULTIPLIER; }
             
-            if (timeSinceLastAttack >= cooldownTime && !IsDead())
+            // 쿨다운 체크 후 공격 가능하면 공격 애니메이션 실행
+            if (GetTimeSinceLastAttack() >= cooldownTime && !IsDead())
             {
-                Debug.Log($"[Player Attack] 공격 실행 - 쿨다운 통과, 강제 공격 실행");
-                
-                // 공격 상태 강제 설정 (피격 애니메이션 무시)
-                currentAnimationState = CharacterAnimationState.Attack;
-                isAttacking = true;
-                
-                // Animator 파라미터 설정
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-                
-                // 공격 쿨타임을 현재 시간으로 설정
-                lastAttackTime = Time.time;
+                StartAttackAnimation();
+                lastAttackTime = Time.time;  // 공격 쿨타임 리셋
                 
                 // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
                 Collider2D nearestEnemy = GetNearestEnemy();
@@ -374,31 +337,17 @@ public class PlayerController : CharacterBase
                 {
                     Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
                     if (directionToTarget.x != 0)
-                    {
-                        FlipCharacter(directionToTarget.x);
-                    }
+                    { FlipCharacter(directionToTarget.x); }
                 }
-                
-                // Attack 애니메이션은 IsAttacking 파라미터로 관리됨
-                Debug.Log($"[Player Attack] 공격 애니메이션 강제 실행 완료 - 피격 애니메이션 덮어씀");
             }
+            // Blank 상태일 때는 쿨다운이 조금 남아있어도 공격 허용 (반격 기회)
             else if (currentAnimationState == CharacterAnimationState.Blank)
             {
-                // Blank 상태일 때는 쿨다운이 조금 남아있어도 공격 허용 (반격 기회)
-                float blankCooldownTime = cooldownTime * GameConstants.BLANK_QUICK_COOLDOWN_MULTIPLIER; // Blank 상태일 때는 10% 쿨다운만 적용
-                if (timeSinceLastAttack >= blankCooldownTime && !IsDead())
+                float blankCooldownTime = cooldownTime * GameConstants.BLANK_QUICK_COOLDOWN_MULTIPLIER;
+                if (GetTimeSinceLastAttack() >= blankCooldownTime && !IsDead())
                 {
-                    Debug.Log($"[Player Attack] Blank 상태 반격 - 쿨다운 단축 적용, 공격 실행");
-                    
-                    // 공격 상태 강제 설정
-                    currentAnimationState = CharacterAnimationState.Attack;
-                    isAttacking = true;
-                    
-                    // Animator 파라미터 설정
-                    anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-                    
-                    // 공격 쿨타임을 현재 시간으로 설정
-                    lastAttackTime = Time.time;
+                    StartAttackAnimation();
+                    lastAttackTime = Time.time;  // 공격 쿨타임 리셋
                     
                     // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
                     Collider2D nearestEnemy = GetNearestEnemy();
@@ -406,24 +355,10 @@ public class PlayerController : CharacterBase
                     {
                         Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
                         if (directionToTarget.x != 0)
-                        {
-                            FlipCharacter(directionToTarget.x);
-                        }
+                        { FlipCharacter(directionToTarget.x); }
                     }
-                    
-                    // Attack 애니메이션은 IsAttacking 파라미터로 관리됨
-                    Debug.Log($"[Player Attack] Blank 상태 반격 공격 실행 완료");
-                }
-                else
-                {
-                    Debug.Log($"[Player Attack] Blank 상태 반격 불가 - 쿨다운: {blankCooldownTime - timeSinceLastAttack:F2}초 남음");
                 }
             }
-            else
-            {
-                Debug.Log($"[Player Attack] 공격 불가 - 쿨다운: {cooldownTime - timeSinceLastAttack:F2}초 남음, IsDead: {IsDead()}, IsInvincible: {isInvincible}");
-            }
-            
             isAttackPressed = false;
         }
         
@@ -453,9 +388,7 @@ public class PlayerController : CharacterBase
 
     #region Public Methods
 
-    /// <summary>
-    /// 키보드 입력을 활성화/비활성화합니다.
-    /// </summary>
+    // 키보드 입력을 활성화/비활성화합니다.
     public void SetKeyboardInputEnabled(bool enable)
     {
         enableKeyboardInput = enable;
@@ -469,37 +402,23 @@ public class PlayerController : CharacterBase
         }
     }
 
-    /// <summary>
-    /// 현재 키보드 입력 상태를 반환합니다.
-    /// </summary>
-    /// <returns>키보드 입력이 활성화되어 있으면 true</returns>
+    // 현재 키보드 입력 상태를 반환합니다.
     public bool IsKeyboardInputEnabled()
-    {
-        return enableKeyboardInput;
-    }
+    { return enableKeyboardInput; }
 
-    /// <summary>
-    /// 플레이어를 특정 위치로 즉시 이동시킵니다.
-    /// </summary>
-    /// <param name="position">목표 위치</param>
+    /*
+    // 플레이어를 특정 위치로 즉시 이동시킵니다.
     public void TeleportTo(Vector3 position)
     {
         if (rb != null)
         {
-            // Rigidbody 위치 설정
             rb.position = position;
-            
-            // 이동 상태 초기화
             currentMovement = Vector2.zero;
             isCurrentlyRunning = false;
             HandlePhysicsMovement(Vector2.zero, false);
         }
     }
-
-    /// <summary>
-    /// 플레이어의 이동 속도를 조정합니다.
-    /// </summary>
-    /// <param name="newSpeed">새로운 이동 속도</param>
+    // 플레이어의 이동 속도를 조정합니다.
     public void SetMoveSpeed(float newSpeed)
     {
         if (newSpeed >= 0)
@@ -507,11 +426,7 @@ public class PlayerController : CharacterBase
             moveSpeed = newSpeed;
         }
     }
-
-    /// <summary>
-    /// 플레이어의 달리기 속도 배수를 조정합니다.
-    /// </summary>
-    /// <param name="newMultiplier">새로운 달리기 속도 배수</param>
+    //플레이어의 달리기 속도 배수를 조정합니다.
     public void SetRunSpeedMultiplier(float newMultiplier)
     {
         if (newMultiplier >= 1.0f)
@@ -519,32 +434,22 @@ public class PlayerController : CharacterBase
             runSpeedMultiplier = newMultiplier;
         }
     }
-
+    */
     #endregion
 
 
     #region AttackRange Collision Override (Detection용)
 
-    /// <summary>
-    /// AttackRange 콜리전 이벤트 처리 (기본 처리만 수행)
-    /// </summary>
-    /// <param name="other">감지된 오브젝트</param>
+    // AttackRange 콜리전 이벤트 처리 (기본 처리만 수행)
     public override void OnAttackRangeEnter(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본 AttackRange 진입 처리만 수행
         base.OnAttackRangeEnter(other);
     }
     
-    /// <summary>
-    /// AttackRange 콜리전에서 나갔을 때 처리 (기본 처리만 수행)
-    /// </summary>
-    /// <param name="other">나간 오브젝트</param>
+    // AttackRange 콜리전에서 나갔을 때 처리 (기본 처리만 수행)
     public override void OnAttackRangeExit(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본 처리만 수행
         base.OnAttackRangeExit(other);
     }
@@ -552,14 +457,9 @@ public class PlayerController : CharacterBase
     #endregion
 
 
-    /// <summary>
-    /// Body 콜리전 이벤트 처리
-    /// </summary>
-    /// <param name="other">충돌한 오브젝트</param>
+    // Body 콜리전 이벤트 처리
     public override void OnBodyCollision(Collider2D other)
     {
-        if (!enableCollisionSystem) return;
-        
         // 기본 Body Collision 처리
         base.OnBodyCollision(other);
     }
@@ -608,16 +508,7 @@ public class PlayerController : CharacterBase
     public void StartAttack()
     {
         // 공격 가능 여부 체크 (피격 중이어도 쿨다운이 지났으면 허용)
-        if (!CanAttack())
-        {
-            float attackAnimationLength = GetAttackAnimationLength();
-            float cooldownTime = attackAnimationLength * attackCooldownMultiplier;
-            float timeSinceLastAttack = Time.time - lastAttackTime;
-            Debug.Log($"[Player Attack] 공격 불가 - 쿨다운 중: {cooldownTime - timeSinceLastAttack:F2}초 남음, IsDead: {IsDead()}");
-            return;
-        }
-        
-        Debug.Log($"[Player Attack] 수동 공격 실행 - Time: {Time.time:F2}, IsInvincible: {isInvincible}");
+        if (!CanAttack()) return;
         
         // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
         Collider2D nearestEnemy = GetNearestEnemy();
@@ -634,7 +525,7 @@ public class PlayerController : CharacterBase
         lastAttackTime = Time.time;
         
         // Attack 애니메이션 실행 (피격 중이어도 실행)
-        TriggerSpecialAnimation(CharacterAnimationState.Attack);
+        StartAttackAnimation();
         
         // 공격 이펙트 재생
         PlayAttackEffect();
@@ -700,26 +591,12 @@ public class PlayerController : CharacterBase
             Debug.Log($"[Player Damage] 피격 애니메이션 트리거 (공격 중이 아님)");
         }
         else
-        {
-            Debug.Log($"[Player Damage] 공격 중이므로 피격 애니메이션 트리거하지 않음");
-            
-            // 공격 애니메이션 상태 강제 유지
-            currentAnimationState = CharacterAnimationState.Attack;
-            isAttacking = true;
-            
-            // Animator 파라미터 설정
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-            
-            // 공격 애니메이션은 IsAttacking 파라미터로 관리됨
-            Debug.Log($"[Player Damage] 공격 애니메이션으로 피격 애니메이션 덮어쓰기");
-        }
+        { StartAttackAnimation(); }  // 공격 애니메이션 상태 강제 유지
         
         // 체력이 0 이하가 되면 사망 처리
         if (currentHealth <= 0)
         {
-            Debug.Log($"[Player Death] 체력 0 이하, 사망 처리 시작");
-            
-            // 사망 시 공격 상태 즉시 해제
+            Debug.Log($"Player 사망");
             isAttacking = false;
             anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
             
@@ -861,3 +738,4 @@ public class PlayerController : CharacterBase
     #endregion
     */
 }
+
