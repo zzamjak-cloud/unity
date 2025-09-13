@@ -171,7 +171,7 @@ public class PlayerController : CharacterBase
     public override bool CanMove()
     {
         // 무적 상태일 때는 공격 중이어도 이동 허용
-        if (isInvincible)
+        if (IsInvincible())
         {
             return currentAnimationState != CharacterAnimationState.Death; // 사망 상태만 체크
         }
@@ -257,6 +257,19 @@ public class PlayerController : CharacterBase
         attackAnimationEndTime = Time.time + GetAttackAnimationLength();  // 공격 애니메이션 종료 시간 설정
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
     }
+    
+    // 공격을 시작합니다. (공격 쿨다운 리셋, 애니메이션 시작, 이펙트 재생)
+    protected override void StartAttackSequence()
+    {
+        // 공격 쿨다운 리셋
+        lastAttackTime = Time.time;
+        
+        // 공격 애니메이션 시작 (isAttacking 설정 포함)
+        StartAttackAnimation();
+        
+        // 공격 이펙트 재생
+        PlayAttackEffect();
+    }
 
     #endregion
 
@@ -317,47 +330,10 @@ public class PlayerController : CharacterBase
             // 쿨다운 체크
             float cooldownTime = GetAttackCooldownTime();
             
-            // 무적 상태일 때는 쿨다운을 더 짧게 적용 (반격 기회 제공)
-            if (isInvincible)
-            { cooldownTime *= GameConstants.INVINCIBLE_COOLDOWN_MULTIPLIER; }
-            
-            // Blank 상태일 때는 쿨다운을 더욱 짧게 적용 (피격 중 반격)
-            if (currentAnimationState == CharacterAnimationState.Blank)
-            { cooldownTime *= GameConstants.BLANK_COOLDOWN_MULTIPLIER; }
-            
             // 쿨다운 체크 후 공격 가능하면 공격 애니메이션 실행
             if (GetTimeSinceLastAttack() >= cooldownTime && !IsDead())
             {
-                StartAttackAnimation();
-                lastAttackTime = Time.time;  // 공격 쿨타임 리셋
-                
-                // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-                Collider2D nearestEnemy = GetNearestEnemy();
-                if (nearestEnemy != null)
-                {
-                    Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
-                    if (directionToTarget.x != 0)
-                    { FlipCharacter(directionToTarget.x); }
-                }
-            }
-            // Blank 상태일 때는 쿨다운이 조금 남아있어도 공격 허용 (반격 기회)
-            else if (currentAnimationState == CharacterAnimationState.Blank)
-            {
-                float blankCooldownTime = cooldownTime * GameConstants.BLANK_QUICK_COOLDOWN_MULTIPLIER;
-                if (GetTimeSinceLastAttack() >= blankCooldownTime && !IsDead())
-                {
-                    StartAttackAnimation();
-                    lastAttackTime = Time.time;  // 공격 쿨타임 리셋
-                    
-                    // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-                    Collider2D nearestEnemy = GetNearestEnemy();
-                    if (nearestEnemy != null)
-                    {
-                        Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
-                        if (directionToTarget.x != 0)
-                        { FlipCharacter(directionToTarget.x); }
-                    }
-                }
+                StartAttackSequence();
             }
             isAttackPressed = false;
         }
@@ -406,159 +382,64 @@ public class PlayerController : CharacterBase
     public bool IsKeyboardInputEnabled()
     { return enableKeyboardInput; }
 
-    /*
-    // 플레이어를 특정 위치로 즉시 이동시킵니다.
-    public void TeleportTo(Vector3 position)
-    {
-        if (rb != null)
-        {
-            rb.position = position;
-            currentMovement = Vector2.zero;
-            isCurrentlyRunning = false;
-            HandlePhysicsMovement(Vector2.zero, false);
-        }
-    }
-    // 플레이어의 이동 속도를 조정합니다.
-    public void SetMoveSpeed(float newSpeed)
-    {
-        if (newSpeed >= 0)
-        {
-            moveSpeed = newSpeed;
-        }
-    }
-    //플레이어의 달리기 속도 배수를 조정합니다.
-    public void SetRunSpeedMultiplier(float newMultiplier)
-    {
-        if (newMultiplier >= 1.0f)
-        {
-            runSpeedMultiplier = newMultiplier;
-        }
-    }
-    */
     #endregion
 
+    #region Collision Override (Detection용)
 
-    #region AttackRange Collision Override (Detection용)
-
-    // AttackRange 콜리전 이벤트 처리 (기본 처리만 수행)
     public override void OnAttackRangeEnter(Collider2D other)
-    {
-        // 기본 AttackRange 진입 처리만 수행
-        base.OnAttackRangeEnter(other);
-    }
+    { base.OnAttackRangeEnter(other); }
     
-    // AttackRange 콜리전에서 나갔을 때 처리 (기본 처리만 수행)
     public override void OnAttackRangeExit(Collider2D other)
-    {
-        // 기본 처리만 수행
-        base.OnAttackRangeExit(other);
-    }
+    { base.OnAttackRangeExit(other); }
+
+    public override void OnBodyCollision(Collider2D other)
+    { base.OnBodyCollision(other); }
 
     #endregion
-
-
-    // Body 콜리전 이벤트 처리
-    public override void OnBodyCollision(Collider2D other)
-    {
-        // 기본 Body Collision 처리
-        base.OnBodyCollision(other);
-    }
 
     #region Collision System Methods
 
-    /// <summary>
-    /// 플레이어의 Body 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
+    // Body 콜리전 활성화/비활성화
     public void SetBodyCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.Body, enabled);
-    }
+    { SetCollisionTypeEnabled(CollisionType.Body, enabled); }
 
+    // AttackRange 콜리전 활성화/비활성화
+    public override void SetAttackRangeCollisionEnabled(bool enabled)
+    {  SetCollisionTypeEnabled(CollisionType.AttackRange, enabled); }
 
-    /// <summary>
-    /// 플레이어의 AttackRange 콜리전을 활성화/비활성화합니다 (감지용).
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
-    public void SetAttackRangeCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, enabled);
-    }
-
-    /// <summary>
-    /// AttackRange 콜리전을 활성화합니다.
-    /// </summary>
-    public override void EnableAttackRangeCollision()
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, true);
-    }
-
-    /// <summary>
-    /// AttackRange 콜리전을 비활성화합니다.
-    /// </summary>
-    public override void DisableAttackRangeCollision()
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, false);
-    }
-
-    /// <summary>
-    /// 수동 공격 애니메이션을 시작합니다.
-    /// 피격 중에도 일정 쿨타임 내에서 공격이 가능합니다.
-    /// </summary>
+    // 수동 공격 애니메이션을 시작합니다.
     public void StartAttack()
     {
-        // 공격 가능 여부 체크 (피격 중이어도 쿨다운이 지났으면 허용)
         if (!CanAttack()) return;
-        
-        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-        Collider2D nearestEnemy = GetNearestEnemy();
-        if (nearestEnemy != null)
-        {
-            Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
-            if (directionToTarget.x != 0)
-            {
-                FlipCharacter(directionToTarget.x);
-            }
-        }
-        
-        // 공격 쿨타임을 현재 시간으로 설정
-        lastAttackTime = Time.time;
-        
-        // Attack 애니메이션 실행 (피격 중이어도 실행)
-        StartAttackAnimation();
-        
-        // 공격 이펙트 재생
-        PlayAttackEffect();
+        StartAttackSequence();
     }
 
-    /// <summary>
-    /// 공격 애니메이션이 끝났을 때 호출됩니다.
-    /// 이제 AttackCollisionHandler가 자동으로 비활성화하므로 수동 호출이 필요하지 않습니다.
-    /// </summary>
+    //공격 애니메이션이 끝났을 때 호출됩니다.
     public void EndAttack()
     {
-        OnAttackAnimationEnd();
+        // 공격 상태 해제 (이제 이동 허용)
+        isAttacking = false;
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+    }
+    
+    // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
+    public override void OnAttackAnimationEnd()
+    {
+        // 공격 상태 해제 (이제 이동 허용)
+        isAttacking = false;
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
     }
 
     #endregion
 
     #region Override Methods
 
-    /// <summary>
-    /// 피격을 받았을 때 처리합니다. (사망 시 콜리전 비활성화)
-    /// 공격 중일 때는 피격 애니메이션이 우선순위를 가지지 않습니다.
-    /// </summary>
+    // 피격을 받았을 때 처리합니다. (사망 시 콜리전 비활성화)
+    // 공격 중일 때는 피격 애니메이션이 우선순위를 가지지 않습니다.
     public override void TakeDamage(int damage, CharacterBase attacker = null)
     {
-        if (isDead || isInvincible) 
-        {
-            return;
-        }
-        
-        // 공격 중일 때는 피격 애니메이션을 트리거하지 않음
-        bool wasAttacking = (currentAnimationState == CharacterAnimationState.Attack);
-        
-        Debug.Log($"[Player Damage] 피격 받음 - Damage: {damage}, WasAttacking: {wasAttacking}, CurrentState: {currentAnimationState}");
+        if (IsDead() || IsInvincible()) 
+        { return; }
         
         // 캐시된 변수 사용으로 메모리 할당 최적화
         cachedHealthValue = Mathf.Max(0, currentHealth - damage);
@@ -573,111 +454,69 @@ public class PlayerController : CharacterBase
             }
         }
         
-        // 무적 상태 시작
-        StartInvincibility();
-        
-        // 피격 이펙트 재생 (애니메이션과 무관하게 이펙트는 재생)
-        // 중복 재생 방지를 위해 조건부 실행
-        if (effectManager != null)
-        {
-            PlayDamageEffect();
-        }
-        
-        // 공격 중이 아닐 때만 피격 애니메이션 트리거
-        if (!wasAttacking)
-        {
-            // 피격 애니메이션 트리거 (기본 구현에서는 처리하지 않음)
-            // 필요시 여기에 피격 애니메이션 로직 추가
-            Debug.Log($"[Player Damage] 피격 애니메이션 트리거 (공격 중이 아님)");
-        }
-        else
-        { StartAttackAnimation(); }  // 공격 애니메이션 상태 강제 유지
+        StartInvincibility();  // 무적 상태
+        PlayDamageEffect();
+  
+        // 공격 중에는 애니메이션 상태를 강제로 유지할 필요 없음
+        // StartAttackAnimation()은 공격 시작 시에만 호출됨
         
         // 체력이 0 이하가 되면 사망 처리
         if (currentHealth <= 0)
         {
             Debug.Log($"Player 사망");
-            isAttacking = false;
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-            
             Die();
         }
     }
     
-    /// <summary>
-    /// 플레이어 사망 시 추가 처리 (적들에게 사망 알림)
-    /// </summary>
-    protected override void OnDeath()
+    // 플레이어 사망 처리 (Death 애니메이션 포함)
+    protected override void Die()
     {
-        // 플레이어 사망 이벤트 발생
-        OnPlayerDeath?.Invoke();
+        // 공격 상태 해제
+        isAttacking = false;
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
-        Debug.Log("[Player] 플레이어가 사망했습니다. 모든 적들이 Idle 상태로 전환됩니다.");
-        
-        // Death 애니메이션 강제 실행 (공격 애니메이션 보호 로직 무시)
-        Debug.Log("[Player Death] Death 애니메이션 강제 실행");
+        // 애니메이션 상태 설정
         currentAnimationState = CharacterAnimationState.Death;
-        anim.SetTrigger(GameConstants.ANIM_DEATH);
         
-        // 기본 사망 처리는 하지 않음 (DisableAfterDeath 호출 방지)
-        // 사망 애니메이션과 콜리전 비활성화는 CharacterBase.Die()에서 이미 처리됨
+        // 기본 사망 처리 (Death 애니메이션 실행 포함)
+        base.Die();
     }
     
-    /// <summary>
-    /// 플레이어 사망 후 오브젝트를 비활성화하지 않음 (카메라 유지를 위해)
-    /// </summary>
+    // 플레이어 사망시 추가 처리 (적들에게 사망 알림)
+    protected override void OnDeath()
+    {
+        OnPlayerDeath?.Invoke();
+    }
+    
+    // 플레이어 사망 후 오브젝트를 비활성화하지 않음 (카메라 유지를 위해)
     protected override void DisableAfterDeath()
     {
         // 플레이어 사망 후에도 오브젝트를 비활성화하지 않음
         // 카메라가 계속 작동하도록 함
-        Debug.Log("[Player] 플레이어가 사망했지만 카메라 유지를 위해 오브젝트를 비활성화하지 않습니다.");
+        // (아무것도 하지 않음 - 오브젝트 유지)
     }
     
-    /// <summary>
-    /// 공격 애니메이션 이벤트에서 호출되는 메서드 (즉시 이동 허용)
-    /// </summary>
+    // 공격 애니메이션 이벤트에서 호출되는 메서드 (공격 판정만 처리)
     public override void OnAttackAnimationEvent()
     {
         // 사망 상태일 때는 공격 이벤트 무시
-        if (IsDead())
-        {
-            Debug.Log($"[Player Attack] OnAttackAnimationEvent 사망 상태로 인해 무시 - Time: {Time.time:F2}");
-            return;
-        }
+        if (IsDead()) return;
         
         // 중복 호출 방지 (시간 기반)
         float currentTime = Time.time;
-        if (currentTime - lastAttackEventTime < GameConstants.ANIMATION_EVENT_COOLDOWN) // 0.1초 내 중복 호출 방지
-        {
-            Debug.Log($"[Player Attack] OnAttackAnimationEvent 시간 기반 중복 호출 방지 - Time: {currentTime:F2}, LastEvent: {lastAttackEventTime:F2}");
-            return;
-        }
+        if (currentTime - lastAttackEventTime < GameConstants.ANIMATION_EVENT_COOLDOWN) return;
         
         // 중복 호출 방지 (상태 기반)
-        if (!isAttacking)
-        {
-            Debug.Log($"[Player Attack] OnAttackAnimationEvent 상태 기반 중복 호출 방지 - isAttacking: {isAttacking}, CurrentState: {currentAnimationState}");
-            return;
-        }
-        
-        Debug.Log($"[Player Attack] OnAttackAnimationEvent 호출됨 - Time: {currentTime:F2}");
+        if (!isAttacking) return;
         
         // 마지막 이벤트 시간 업데이트
         lastAttackEventTime = currentTime;
-        
-        // 공격 판정 직후 즉시 이동 허용
-        isAttacking = false;
-        
-        // Animator 파라미터 설정
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
         // 기본 공격 처리
         base.OnAttackAnimationEvent();
     }
     
-    /// <summary>
-    /// 물리 기반 이동을 처리합니다. (피격 시 이동 속도 조정)
-    /// </summary>
+    // 물리 기반 이동을 처리합니다. (피격 시 이동 속도 조정)
     protected override void HandlePhysicsMovement(Vector2 movement, bool isRunning)
     {
         if (rb == null) return;
@@ -685,57 +524,19 @@ public class PlayerController : CharacterBase
         float currentSpeed = moveSpeed;
         
         // 피격 중일 때는 이동 속도를 제한 (완전히 막지 않음)
-        if (isInvincible)
-        {
+        if (IsInvincible())
             currentSpeed *= damageMovementSpeedMultiplier;
-        }
         
         if (isRunning)
-        {
             currentSpeed *= runSpeedMultiplier;
-        }
-        
-        // Rigidbody를 사용해 이동
+  
         rb.linearVelocity = movement.normalized * currentSpeed;
         
-        // 캐릭터 방향 전환 처리
-        if (movement.x != 0)
-        {
+        // 캐릭터 방향 전환 처리 (공격 중이 아닐 때만)
+        if (movement.x != 0 && !isAttacking)
             FlipCharacter(movement.x);
-        }
     }
 
     #endregion
-
-    /*
-    #region Debug Methods
-
-    /// <summary>
-    /// 디버그 정보를 출력합니다.
-    /// </summary>
-    private void OnGUI()
-    {
-        if (Application.isEditor)
-        {
-            GUILayout.BeginArea(new Rect(10, 10, 300, 200));
-            GUILayout.Label("=== Player Controller Debug ===");
-            GUILayout.Label($"Position: {transform.position}");
-            GUILayout.Label($"Movement: {currentMovement}");
-            GUILayout.Label($"Is Running: {isCurrentlyRunning}");
-            GUILayout.Label($"Can Move: {CanMove()}");
-            GUILayout.Label($"Can Attack: {CanAttack()}");
-            GUILayout.Label($"Animation State: {GetCurrentAnimationState()}");
-            GUILayout.Label($"Move Speed: {moveSpeed}");
-            GUILayout.Label($"Run Multiplier: {runSpeedMultiplier}");
-            GUILayout.Label($"Last Attack: {Time.time - lastAttackTime:F1}s ago");
-            GUILayout.Label($"Is Invincible: {isInvincible}");
-            GUILayout.Label($"Invincibility Timer: {invincibilityTimer:F2}s");
-            GUILayout.Label($"Damage Speed Multiplier: {damageMovementSpeedMultiplier:F2}");
-            GUILayout.EndArea();
-        }
-    }
-
-    #endregion
-    */
 }
 

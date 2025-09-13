@@ -154,6 +154,28 @@ public class AnimationEventBridge : MonoBehaviour
     }
     
     /// <summary>
+    /// 애니메이션 이벤트에서 호출할 공격 애니메이션 종료 함수
+    /// 공격 애니메이션 종료 시 이동 허용을 위해 호출
+    /// CharacterBase를 상속받는 스크립트에서 찾아서 호출
+    /// </summary>
+    public void OnAttackAnimationEnd()
+    {
+        Debug.Log("[AnimationEventBridge] OnAttackAnimationEnd 호출됨");
+        
+        // CharacterBase를 상속받는 스크립트 찾기
+        var characterBase = GetTargetScript<CharacterBase>();
+        if (characterBase != null)
+        {
+            Debug.Log($"[AnimationEventBridge] CharacterBase 찾음: {characterBase.name}");
+            characterBase.OnAttackAnimationEnd();
+        }
+        else
+        {
+            Debug.LogWarning("AnimationEventBridge: CharacterBase를 상속받는 스크립트를 찾을 수 없습니다.");
+        }
+    }
+    
+    /// <summary>
     /// 범용 함수 호출 - 문자열로 함수명을 받아서 호출
     /// </summary>
     /// <param name="functionName">호출할 함수명</param>

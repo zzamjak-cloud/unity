@@ -599,26 +599,12 @@ public class EnemyController : CharacterBase
     /// 적의 AttackRange 콜리전을 활성화/비활성화합니다 (감지용).
     /// </summary>
     /// <param name="enabled">활성화 여부</param>
-    public void SetAttackRangeCollisionEnabled(bool enabled)
+    public override void SetAttackRangeCollisionEnabled(bool enabled)
     {
         SetCollisionTypeEnabled(CollisionType.AttackRange, enabled);
     }
 
-    /// <summary>
-    /// AttackRange 콜리전을 활성화합니다.
-    /// </summary>
-    public override void EnableAttackRangeCollision()
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, true);
-    }
 
-    /// <summary>
-    /// AttackRange 콜리전을 비활성화합니다.
-    /// </summary>
-    public override void DisableAttackRangeCollision()
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, false);
-    }
 
     /// <summary>
     /// 공격 가능 여부를 확인합니다.
@@ -656,19 +642,20 @@ public class EnemyController : CharacterBase
         // 공격 가능 여부 체크
         if (!CanAttack()) return;
         
-        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-        Collider2D nearestEnemy = GetNearestEnemy();
-        if (nearestEnemy != null)
-        {
-            Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
-            if (directionToTarget.x != 0)
-            {
-                FlipCharacter(directionToTarget.x);
-            }
-        }
-        
-        // 공격 쿨타임을 현재 시간으로 설정
+        StartAttackSequence();
+    }
+    
+    // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
+    protected override void StartAttackSequence()
+    {
+        // 공격 쿨다운 리셋
         lastAttackTime = Time.time;
+        
+        // 공격 상태 먼저 설정 (방향 변경 방지)
+        isAttacking = true;
+        
+        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리 (강제)
+        FaceNearestEnemy(true);
         
         // 공격 애니메이션 종료 시간 설정
         attackAnimationEndTime = Time.time + GetAttackAnimationLength();
@@ -678,18 +665,28 @@ public class EnemyController : CharacterBase
         
         // IsAttacking 파라미터를 true로 설정
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
+        
+        // 공격 이펙트 재생
+        PlayAttackEffect();
     }
 
-    /// <summary>
-    /// 공격 애니메이션이 끝났을 때 호출됩니다.
-    /// 이제 AttackCollisionHandler가 자동으로 비활성화하므로 수동 호출이 필요하지 않습니다.
-    /// </summary>
+    // 공격 애니메이션이 끝났을 때 호출됩니다.
     public void EndAttack()
     {
-        // IsAttacking 파라미터를 false로 설정
+        // 공격 상태 해제
+        isAttacking = false;
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
-        OnAttackAnimationEnd();
+        // 공격 상태는 OnAttackAnimationEvent에서 이미 해제됨
+        // AttackRange는 상시 활성화되므로 별도 처리 불필요
+    }
+    
+    // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
+    public override void OnAttackAnimationEnd()
+    {
+        // 공격 상태 해제 (이제 이동 허용)
+        isAttacking = false;
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
     }
 
     #endregion
@@ -833,8 +830,8 @@ public class EnemyController : CharacterBase
         // Rigidbody를 사용해 이동
         rb.linearVelocity = movement.normalized * currentSpeed;
         
-        // 캐릭터 방향 전환 처리
-        if (movement.x != 0)
+        // 캐릭터 방향 전환 처리 (공격 중이 아닐 때만)
+        if (movement.x != 0 && !isAttacking)
         {
             FlipCharacter(movement.x);
         }
@@ -1225,12 +1222,16 @@ public class EnemyController : CharacterBase
     /// </summary>
     private void HandleAutoAttack()
     {
-        // AttackRange 내 가장 가까운 플레이어를 타겟으로 설정
-        Collider2D nearestPlayer = GetNearestEnemy();
-        if (nearestPlayer != null && nearestPlayer != currentTarget)
+        // 공격 중이 아닐 때만 타겟 변경 허용
+        if (!isAttacking)
         {
-            currentTarget = nearestPlayer;
-            firstDetectionTime = Time.time; // 새로운 타겟 감지 시간 기록
+            // AttackRange 내 가장 가까운 플레이어를 타겟으로 설정
+            Collider2D nearestPlayer = GetNearestEnemy();
+            if (nearestPlayer != null && nearestPlayer != currentTarget)
+            {
+                currentTarget = nearestPlayer;
+                firstDetectionTime = Time.time; // 새로운 타겟 감지 시간 기록
+            }
         }
         
         // 첫 감지 후 지연 시간 확인

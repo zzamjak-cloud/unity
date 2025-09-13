@@ -131,7 +131,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         cachedHealthValue = currentHealth;
         
         // AttackRange 콜리전 초기화
-        if (collisionManager != null) { EnableAttackRangeCollision(); }
+        if (collisionManager != null) { SetAttackRangeCollisionEnabled(true); }
     }
 
     protected virtual void Update()
@@ -328,20 +328,20 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             {
                 anim.SetBool(GameConstants.ANIM_IS_RUNNING, true);
                 anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
-                if (effectManager != null) effectManager.PlayMoveEffect(true);
+                effectManager?.PlayMoveEffect(true);
             }
             else // 걷기 상태일 때
             {
                 anim.SetBool(GameConstants.ANIM_IS_MOVING, true);
                 anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
-                if (effectManager != null) effectManager.PlayMoveEffect(true);
+                effectManager?.PlayMoveEffect(true);
             }
         }
         else // 멈출 때
         {
             anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
             anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
-            if (effectManager != null) effectManager.PlayMoveEffect(false);
+            effectManager?.PlayMoveEffect(false);
         }
     }
 
@@ -359,8 +359,8 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // Rigidbody를 사용해 이동
         rb.linearVelocity = movement.normalized * currentSpeed;
         
-        // 캐릭터 방향 전환 처리
-        if (movement.x != 0)
+        // 캐릭터 방향 전환 처리 (공격 중이 아닐 때만)
+        if (movement.x != 0 && !isAttacking)
         {
             FlipCharacter(movement.x);
         }
@@ -446,41 +446,25 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 이동시 먼지 이펙트를 재생하거나 정지합니다. (play : true면 재생, false면 정지)
     public virtual void PlayMoveEffect(bool play)
     {
-        if (effectManager != null)
-        {
-            effectManager.PlayMoveEffect(play);
-        }
+        effectManager?.PlayMoveEffect(play);
     }
 
     // 공격 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
     public virtual void PlayAttackEffect()
     {
-        if (effectManager != null)
-        {
-            effectManager.PlayAttackEffect();
-        }
-        else
-        {
-            Debug.LogWarning($"[PlayAttackEffect] effectManager가 null입니다! - {gameObject.name}");
-        }
+        effectManager?.PlayAttackEffect();
     }
 
     // Blank 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
     public virtual void PlayBlankEffect()
     {
-        if (effectManager != null)
-        {
-            effectManager.PlayBlankEffect();
-        }
+        effectManager?.PlayBlankEffect();
     }
 
     // 피격 이펙트를 재생합니다. (공격을 받았을 때 호출됩니다.)
     public virtual void PlayDamageEffect()
     {
-        if (effectManager != null)
-        {
-            effectManager.PlayDamageEffect();
-        }
+        effectManager?.PlayDamageEffect();
     }
 
     #endregion
@@ -534,13 +518,22 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
 
-    // AttackRange 콜리전을 활성화합니다.
+    // AttackRange 콜리전을 활성화/비활성화합니다.
+    public virtual void SetAttackRangeCollisionEnabled(bool enabled)
+    { 
+        if (collisionManager != null) 
+        { 
+            collisionManager.SetAttackRangeCollisionEnabled(enabled); 
+        }
+    }
+    
+    // AttackRange 콜리전을 활성화합니다. (편의 메서드)
     public virtual void EnableAttackRangeCollision()
-    { if (collisionManager != null) { collisionManager.SetAttackRangeCollisionEnabled(true); }}
+    { SetAttackRangeCollisionEnabled(true); }
 
-    // AttackRange 콜리전을 비활성화합니다.
+    // AttackRange 콜리전을 비활성화합니다. (편의 메서드)
     public virtual void DisableAttackRangeCollision()
-    { if (collisionManager != null) { collisionManager.SetAttackRangeCollisionEnabled(false); }}
+    { SetAttackRangeCollisionEnabled(false); }
 
     // AttackRange 콜리전이 활성화되어 있는지 확인합니다.
     public virtual bool IsAttackRangeCollisionEnabled()
@@ -549,18 +542,47 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         return collisionManager.IsAttackRangeColliderEnabled();
     }
 
-    // Attack 애니메이션이 끝났을 때 호출됩니다.
-    public virtual void OnAttackAnimationEnd()
-    {
-        // 공격 상태는 OnAttackAnimationEvent에서 이미 해제됨
-        // AttackRange는 상시 활성화되므로 별도 처리 불필요
-    }
     
     // AttackRange 내 가장 가까운 적을 반환합니다.
     public virtual Collider2D GetNearestEnemy()
     {
         if (collisionManager == null) return null;
         return collisionManager.GetNearestEnemy();
+    }
+    
+    /// <summary>
+    /// 공격 전 가장 가까운 적을 바라보도록 Flip 처리합니다.
+    /// 공격 중에는 타겟을 변경하지 않습니다.
+    /// </summary>
+    /// <param name="force">true이면 공격 중이어도 강제로 방향을 바꿉니다.</param>
+    protected virtual void FaceNearestEnemy(bool force = false)
+    {
+        // 공격 중이 아닐 때만 타겟 변경 허용 (force가 true이면 예외)
+        if (isAttacking && !force) return;
+        
+        Collider2D nearestEnemy = GetNearestEnemy();
+        if (nearestEnemy != null)
+        {
+            Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
+            if (directionToTarget.x != 0)
+            {
+                FlipCharacter(directionToTarget.x);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
+    /// 하위 클래스에서 구현해야 합니다.
+    /// 주의: 하위 클래스에서 isAttacking = true를 먼저 설정한 후 FaceNearestEnemy()를 호출해야 합니다.
+    /// </summary>
+    protected virtual void StartAttackSequence()
+    {
+        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
+        FaceNearestEnemy();
+        
+        // 공격 이펙트 재생
+        PlayAttackEffect();
     }
     
     // AttackRange 내 적이 있는지 확인합니다.
@@ -811,7 +833,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 체력 시스템 업데이트 (무적 시간 관리)
     protected virtual void UpdateHealthSystem()
     {
-        if (isInvincible && invincibilityTimer > 0)
+        if (IsInvincible() && invincibilityTimer > 0)
         {
             invincibilityTimer -= Time.deltaTime;
             if (invincibilityTimer <= 0)
@@ -824,7 +846,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 데미지를 받습니다. (damage : 받을 데미지) (attacker : 공격자)
     public virtual void TakeDamage(int damage, CharacterBase attacker = null)
     {
-        if (isDead || isInvincible) 
+        if (IsDead() || IsInvincible()) 
         {
             return;
         }
@@ -858,7 +880,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 체력을 회복합니다. (healAmount : 회복량)
     public virtual void Heal(int healAmount)
     {
-        if (isDead) return;
+        if (IsDead()) return;
         
         // 캐시된 변수 사용으로 메모리 할당 최적화
         cachedHealthValue = Mathf.Min(maxHealth, currentHealth + healAmount);
@@ -884,7 +906,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 사망 처리
     protected virtual void Die()
     {
-        if (isDead) return;
+        if (IsDead()) return;
         
         isDead = true;
         
@@ -951,6 +973,17 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     public virtual bool IsDead()
     {
         return isDead;
+    }
+    
+    // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
+    public virtual void OnAttackAnimationEnd()
+    {
+        // 기본 구현: 공격 상태 해제
+        isAttacking = false;
+        if (anim != null)
+        {
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+        }
     }
     
     // 무적 상태를 반환합니다.
