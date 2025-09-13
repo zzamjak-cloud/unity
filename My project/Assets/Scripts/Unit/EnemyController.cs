@@ -75,6 +75,14 @@ public class EnemyController : CharacterBase
         
         base.Start();
         
+        // Animator null 체크 및 초기화
+        if (anim == null)
+        {
+            Debug.LogError($"[EnemyController] {gameObject.name}: Animator가 없습니다! 애니메이션 기능이 비활성화됩니다.");
+            enabled = false; // 컴포넌트 비활성화
+            return;
+        }
+        
         // 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
         SetupEnemyRigidbody();
         
@@ -624,10 +632,7 @@ public class EnemyController : CharacterBase
         TriggerSpecialAnimation(CharacterAnimationState.Attack);
         
         // IsAttacking 파라미터를 true로 설정
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-        }
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
     }
 
     /// <summary>
@@ -637,10 +642,7 @@ public class EnemyController : CharacterBase
     public void EndAttack()
     {
         // IsAttacking 파라미터를 false로 설정
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        }
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
         OnAttackAnimationEnd();
     }
@@ -1254,10 +1256,7 @@ public class EnemyController : CharacterBase
         isAttacking = false;
         
         // IsAttacking 파라미터를 false로 설정
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        }
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
         if (collisionManager != null)
         {
@@ -1367,12 +1366,9 @@ public class EnemyController : CharacterBase
         transform.position = initialPosition;
         
         // 애니메이션 상태 초기화
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
-            anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
-            anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
-        }
+        anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+        anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+        anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
     }
     
     /// <summary>
@@ -1389,13 +1385,10 @@ public class EnemyController : CharacterBase
         detectedPlayers.Clear();
         
         // 애니메이션 상태 초기화
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
-            anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
-            anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
-        }
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+        anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+        anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+        anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
     }
 
     #endregion

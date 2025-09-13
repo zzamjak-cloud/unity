@@ -54,6 +54,14 @@ public class PlayerController : CharacterBase
         
         base.Start();
         
+        // Animator null 체크 및 초기화
+        if (anim == null)
+        {
+            Debug.LogError($"[PlayerController] {gameObject.name}: Animator가 없습니다! 애니메이션 기능이 비활성화됩니다.");
+            enabled = false; // 컴포넌트 비활성화
+            return;
+        }
+        
         invincibilityDuration = playerInvincibilityDuration;  // 플레이어 전용 무적 시간 설정
         InitializePlayerStatusUI();  // 플레이어 전용 체력 UI 초기화
     }
@@ -217,8 +225,7 @@ public class PlayerController : CharacterBase
                 isAttacking = false;
                 currentAnimationState = CharacterAnimationState.Idle; // 명시적으로 Idle로 설정
 
-                if (anim != null)
-                { anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false); }  // 공격 상태 해제
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);  // 공격 상태 해제
 
                 base.UpdateAnimationState();
             }
@@ -231,10 +238,7 @@ public class PlayerController : CharacterBase
                 // 피격 애니메이션이나 다른 애니메이션이 실행되려고 하면 강제로 공격 애니메이션으로 되돌림
                 if (!stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK))
                 {
-                    if (anim != null)
-                    {
-                        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-                    }
+                    anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
                 }
             }
             return;
@@ -249,10 +253,7 @@ public class PlayerController : CharacterBase
             isAttacking = true;
             
             // Animator 파라미터 설정
-            if (anim != null)
-            {
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-            }
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
             
             // Attack 애니메이션은 이미 위에서 트리거됨
             return;
@@ -362,8 +363,7 @@ public class PlayerController : CharacterBase
                 isAttacking = true;
                 
                 // Animator 파라미터 설정
-                if (anim != null)
-                { anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true); }
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
                 
                 // 공격 쿨타임을 현재 시간으로 설정
                 lastAttackTime = Time.time;
@@ -395,10 +395,7 @@ public class PlayerController : CharacterBase
                     isAttacking = true;
                     
                     // Animator 파라미터 설정
-                    if (anim != null)
-                    {
-                        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-                    }
+                    anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
                     
                     // 공격 쿨타임을 현재 시간으로 설정
                     lastAttackTime = Time.time;
@@ -711,10 +708,7 @@ public class PlayerController : CharacterBase
             isAttacking = true;
             
             // Animator 파라미터 설정
-            if (anim != null)
-            {
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-            }
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
             
             // 공격 애니메이션은 IsAttacking 파라미터로 관리됨
             Debug.Log($"[Player Damage] 공격 애니메이션으로 피격 애니메이션 덮어쓰기");
@@ -727,10 +721,7 @@ public class PlayerController : CharacterBase
             
             // 사망 시 공격 상태 즉시 해제
             isAttacking = false;
-            if (anim != null)
-            {
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-            }
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
             
             Die();
         }
@@ -747,12 +738,9 @@ public class PlayerController : CharacterBase
         Debug.Log("[Player] 플레이어가 사망했습니다. 모든 적들이 Idle 상태로 전환됩니다.");
         
         // Death 애니메이션 강제 실행 (공격 애니메이션 보호 로직 무시)
-        if (anim != null)
-        {
-            Debug.Log("[Player Death] Death 애니메이션 강제 실행");
-            currentAnimationState = CharacterAnimationState.Death;
-            anim.SetTrigger(GameConstants.ANIM_DEATH);
-        }
+        Debug.Log("[Player Death] Death 애니메이션 강제 실행");
+        currentAnimationState = CharacterAnimationState.Death;
+        anim.SetTrigger(GameConstants.ANIM_DEATH);
         
         // 기본 사망 처리는 하지 않음 (DisableAfterDeath 호출 방지)
         // 사망 애니메이션과 콜리전 비활성화는 CharacterBase.Die()에서 이미 처리됨
@@ -804,10 +792,7 @@ public class PlayerController : CharacterBase
         isAttacking = false;
         
         // Animator 파라미터 설정
-        if (anim != null)
-        {
-            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        }
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
         // 기본 공격 처리
         base.OnAttackAnimationEvent();
