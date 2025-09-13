@@ -11,26 +11,26 @@ public class EnemyController : CharacterBase
     [SerializeField] private bool isStaticEnemy = false;  // 정적 적 여부 (플레이어 추적을 위해 false로 변경)
     [SerializeField] private Vector3 spawnPosition;      // 스폰 위치
     [SerializeField] private float detectionRange = 5f;  // 플레이어 감지 범위
-    [SerializeField] private float chaseDelay = 1.5f;   // 플레이어 재추적 지연 시간
+    [SerializeField] private float chaseDelay = GameConstants.ENEMY_CHASE_DELAY;   // 플레이어 재추적 지연 시간
     [SerializeField] private float combatCooldown = 3f; // 전투 후 추적 재개까지의 시간
     
     [Header("Enemy Behavior")]
     [SerializeField] private float idleAnimationDelay = 2f;  // Idle 애니메이션 전환 지연 시간
     [SerializeField] private bool enableRandomAnimations = false;  // 랜덤 애니메이션 활성화 여부
-    [SerializeField] private float randomAnimationChance = 0.1f;  // 랜덤 애니메이션 확률 (프레임당)
+    [SerializeField] private float randomAnimationChance = GameConstants.RANDOM_ANIMATION_CHANCE;  // 랜덤 애니메이션 확률 (프레임당)
     
     [Header("Enemy Stats")]
     [SerializeField] private int enemyMaxHealth = 80;  // 적 최대 체력
     [SerializeField] private int enemyAttackPower = 15;  // 적 공격력
     
     [Header("Enemy Status UI")]
-    [SerializeField] private Vector3 enemyStatusBarOffset = new Vector3(0, 1.5f, 0);  // 적 상태바 오프셋
+    [SerializeField] private Vector3 enemyStatusBarOffset = new Vector3(0, GameConstants.ENEMY_STATUS_BAR_OFFSET_Y, 0);  // 적 상태바 오프셋
     [SerializeField] private GameObject enemyStatusBarObject;  // 적 상태바 GameObject (직접 연결)
     
     [Header("Auto Attack Settings")]
     [SerializeField] private bool enableAutoAttack = true;  // 자동 공격 활성화 여부
-    [SerializeField] private float autoAttackCooldown = 1.5f;  // 자동 공격 쿨다운 시간 (적은 조금 더 느리게)
-    [SerializeField] private float attackDelay = 0.1f;  // 플레이어 감지 후 공격 지연 시간
+    [SerializeField] private float autoAttackCooldown = GameConstants.ENEMY_AUTO_ATTACK_COOLDOWN;  // 자동 공격 쿨다운 시간 (적은 조금 더 느리게)
+    [SerializeField] private float attackDelay = GameConstants.ENEMY_ATTACK_DELAY;  // 플레이어 감지 후 공격 지연 시간
     
     // 적 전용 상태 변수들
     private Vector3 initialPosition;
@@ -71,7 +71,7 @@ public class EnemyController : CharacterBase
         attackPower = enemyAttackPower;
         
         // 적 전용 이동 속도 설정 (플레이어보다 느리게)
-        moveSpeed = 1.5f;
+        moveSpeed = GameConstants.ENEMY_MOVE_SPEED;
         
         base.Start();
         
@@ -272,7 +272,7 @@ public class EnemyController : CharacterBase
         {
             // 정적 적이므로 이동하지 않음
             // 위치가 변경되었다면 초기 위치로 복귀
-            if (Vector3.Distance(transform.position, initialPosition) > 0.1f)
+            if (Vector3.Distance(transform.position, initialPosition) > GameConstants.POSITION_THRESHOLD)
             {
                 ReturnToInitialPosition();
             }
@@ -465,15 +465,15 @@ public class EnemyController : CharacterBase
         // 랜덤하게 애니메이션 선택
         float randomValue = Random.Range(0f, 1f);
         
-        if (randomValue < 0.3f)
+        if (randomValue < GameConstants.RANDOM_ANIMATION_ATTACK_CHANCE)
         {
             TriggerSpecialAnimation(CharacterAnimationState.Attack);
         }
-        else if (randomValue < 0.6f)
+        else if (randomValue < GameConstants.RANDOM_ANIMATION_BLANK_CHANCE)
         {
             TriggerSpecialAnimation(CharacterAnimationState.Blank);
         }
-        else if (randomValue < 0.8f)
+        else if (randomValue < GameConstants.RANDOM_ANIMATION_CEREMONY_CHANCE)
         {
             TriggerSpecialAnimation(CharacterAnimationState.Ceremony);
         }
@@ -626,7 +626,7 @@ public class EnemyController : CharacterBase
         // IsAttacking 파라미터를 true로 설정
         if (anim != null)
         {
-            anim.SetBool("IsAttacking", true);
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
         }
     }
 
@@ -639,7 +639,7 @@ public class EnemyController : CharacterBase
         // IsAttacking 파라미터를 false로 설정
         if (anim != null)
         {
-            anim.SetBool("IsAttacking", false);
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         }
         
         OnAttackAnimationEnd();
@@ -710,7 +710,7 @@ public class EnemyController : CharacterBase
     /// </summary>
     private void FindPlayer()
     {
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        GameObject player = GameObject.FindGameObjectWithTag(GameConstants.TAG_PLAYER);
         if (player != null)
         {
             playerTransform = player.transform;
@@ -744,7 +744,7 @@ public class EnemyController : CharacterBase
             movement = direction;
             isRunning = true;
         }
-        else if (Vector3.Distance(transform.position, initialPosition) > 0.1f)
+        else if (Vector3.Distance(transform.position, initialPosition) > GameConstants.POSITION_THRESHOLD)
         {
             // 초기 위치로 복귀 (방향만 계산, 속도는 HandlePhysicsMovement에서 처리)
             Vector2 direction = (initialPosition - transform.position).normalized;
@@ -774,9 +774,9 @@ public class EnemyController : CharacterBase
         float currentSpeed = moveSpeed;
         
         // 복귀 중일 때는 더 느리게 이동
-        if (!isChasingPlayer && Vector3.Distance(transform.position, initialPosition) > 0.1f)
+        if (!isChasingPlayer && Vector3.Distance(transform.position, initialPosition) > GameConstants.POSITION_THRESHOLD)
         {
-            currentSpeed *= 0.3f; // 복귀 시에는 매우 느리게
+            currentSpeed *= GameConstants.RETURN_SPEED_MULTIPLIER; // 복귀 시에는 매우 느리게
         }
         else if (isRunning)
         {
@@ -960,7 +960,7 @@ public class EnemyController : CharacterBase
         if (!enableCollisionSystem) return;
         
         // 플레이어 감지 시 목록에 추가
-        if (other.CompareTag("Player"))
+        if (other.CompareTag(GameConstants.TAG_PLAYER))
         {
             AddDetectedPlayer(other);
         }
@@ -978,7 +978,7 @@ public class EnemyController : CharacterBase
         if (!enableCollisionSystem) return;
         
         // 플레이어가 공격 범위를 벗어났을 때
-        if (other.CompareTag("Player"))
+        if (other.CompareTag(GameConstants.TAG_PLAYER))
         {
             // 현재 타겟이 이 플레이어면 즉시 공격 중단
             if (currentTarget == other)
@@ -1256,7 +1256,7 @@ public class EnemyController : CharacterBase
         // IsAttacking 파라미터를 false로 설정
         if (anim != null)
         {
-            anim.SetBool("IsAttacking", false);
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         }
         
         if (collisionManager != null)
@@ -1369,9 +1369,9 @@ public class EnemyController : CharacterBase
         // 애니메이션 상태 초기화
         if (anim != null)
         {
-            anim.SetBool("IsMoving", false);
-            anim.SetBool("IsRunning", false);
-            anim.Play("Idle", 0, 0f); // Idle 상태로 강제 전환
+            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+            anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+            anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
         }
     }
     
@@ -1391,10 +1391,10 @@ public class EnemyController : CharacterBase
         // 애니메이션 상태 초기화
         if (anim != null)
         {
-            anim.SetBool("IsAttacking", false);
-            anim.SetBool("IsMoving", false);
-            anim.SetBool("IsRunning", false);
-            anim.Play("Idle", 0, 0f); // Idle 상태로 강제 전환
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+            anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
+            anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
         }
     }
 

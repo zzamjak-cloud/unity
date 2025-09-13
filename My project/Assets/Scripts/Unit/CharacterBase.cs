@@ -93,55 +93,25 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     protected virtual void Start()
     {
-        rb = GetComponent<Rigidbody2D>();
+        rb = GetComponent<Rigidbody2D>();  // Rigidbody2D 컴포넌트 등록
         
-        // Animator 컴포넌트가 Inspector에 연결되지 않았을 경우, 자식 오브젝트에서 찾기
-        if (anim == null)
-        {
-            anim = GetComponentInChildren<Animator>();
-        }
+        // Animator 컴포넌트 자동 찾기
+        if (anim == null) { anim = GetComponentInChildren<Animator>(); }
         
         // Pivot Transform 자동 찾기
-        if (pivotTransform == null)
-        {
-            pivotTransform = transform.Find("Pivot");
-        }
-        if (rb == null)
-        {
-        }
-        if (anim == null)
-        {
-        }
+        if (pivotTransform == null) { pivotTransform = transform.Find("Pivot"); }
         
-        // SortingGroup 컴포넌트 찾기 또는 추가
+        // SortingGroup 컴포넌트 자동 찾기 또는 추가
         sortingGroup = GetComponent<SortingGroup>();
-        if (sortingGroup == null)
-        {
-            sortingGroup = gameObject.AddComponent<SortingGroup>();
-        }
+        if (sortingGroup == null) { sortingGroup = gameObject.AddComponent<SortingGroup>(); }
         
         // AttackRange 콜리전 GameObject 자동 찾기
-        if (attackRangeObject == null)
-        {
-            attackRangeObject = transform.Find("AttackRange")?.gameObject;
-            if (attackRangeObject == null)
-            {
-            }
-        }
+        if (attackRangeObject == null) { attackRangeObject = transform.Find("AttackRange")?.gameObject; }
         
         // CharacterCollisionManager 설정
-        if (collisionManager == null)
-        {
-            collisionManager = GetComponent<CharacterCollisionManager>();
-            if (collisionManager == null)
-            {
-                collisionManager = gameObject.AddComponent<CharacterCollisionManager>();
-            }
-        }
+        if (collisionManager == null) { collisionManager = GetComponent<CharacterCollisionManager>(); }
         
-        // 체력 시스템 초기화
-        InitializeHealthSystem();
-        
+        InitializeHealthSystem();  // 체력 시스템 초기화
         
         // 초기 정렬 순서 설정
         if (sortingGroup != null && enableSortingOrderAdjustment)
@@ -158,11 +128,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         cachedHealthValue = currentHealth;
         
         // AttackRange 콜리전 초기화
-        if (collisionManager != null)
-        {
-            // AttackRange 콜리전이 활성화 상태로 초기화되도록 보장
-            EnableAttackRangeCollision();
-        }
+        if (collisionManager != null) { EnableAttackRangeCollision(); }
     }
 
     protected virtual void Update()
@@ -170,7 +136,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 하위 클래스에서 구현할 추상 메서드들 호출
         UpdateMovement();  // 이동
         UpdateAnimation();  // 애니메이션
-        UpdateHealthSystem();  // 체력 시스템
+        UpdateHealthSystem();  // 체력시스템
     }
     
     protected virtual void LateUpdate()
@@ -218,7 +184,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             case CharacterAnimationState.Attack:
                 isAttacking = true; // 공격 시작
-                anim.SetTrigger(GameConstants.ANIM_ATTACK);
+                anim.SetTrigger(GameConstants.ANIM_IS_ATTACKING);
                 break;
             case CharacterAnimationState.Ceremony:
                 anim.SetTrigger(GameConstants.ANIM_CEREMONY);
@@ -575,24 +541,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     // AttackRange 콜리전을 활성화합니다.
     public virtual void EnableAttackRangeCollision()
-    {
-        if (collisionManager != null)
-        {
-            collisionManager.SetAttackRangeCollisionEnabled(true);
-        }
-        else
-        {
-        }
-    }
+    { if (collisionManager != null) { collisionManager.SetAttackRangeCollisionEnabled(true); }}
 
     // AttackRange 콜리전을 비활성화합니다.
     public virtual void DisableAttackRangeCollision()
-    {
-        if (collisionManager != null)
-        {
-            collisionManager.SetAttackRangeCollisionEnabled(false);
-        }
-    }
+    { if (collisionManager != null) { collisionManager.SetAttackRangeCollisionEnabled(false); }}
 
     // AttackRange 콜리전이 활성화되어 있는지 확인합니다.
     public virtual bool IsAttackRangeCollisionEnabled()
