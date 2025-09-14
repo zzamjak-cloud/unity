@@ -96,7 +96,7 @@ public class PlayerController : CharacterBase
         {
             if (rb != null) { rb.linearVelocity = Vector2.zero; }  // 이동 중단
 
-            EndAttack();  // 공격 중단
+            OnAttackAnimationEnd();  // 공격 중단
             
             if (collisionManager != null)  // 모든 콜리전 비활성화
             { collisionManager.SetAllCollisionsEnabled(false); }
@@ -110,7 +110,7 @@ public class PlayerController : CharacterBase
         base.Update();  // UpdateMovement, UpdateAnimation 실행 (부모 클래스의 Update 호출)
     }
 
-    #region ICharacterController Implementation
+    #region Core Gameplay Systems
 
     // 이동 처리
     public override void UpdateMovement()
@@ -161,7 +161,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Override Methods
+    #region Character State Management
 
     // 달리기 상태 확인
     public override bool IsRunning()  
@@ -273,7 +273,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Input Handling
+    #region Input System
 
     ///키보드 입력을 처리합니다. 이동, 달리기, 특수 애니메이션 입력을 처리합니다.
     private void HandleKeyboardInput()
@@ -362,7 +362,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Public Methods
+    #region Public Interface
 
     // 키보드 입력을 활성화/비활성화합니다.
     public void SetKeyboardInputEnabled(bool enable)
@@ -384,7 +384,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Collision Override (Detection용)
+    #region Collision Detection
 
     public override void OnAttackRangeEnter(Collider2D other)
     { base.OnAttackRangeEnter(other); }
@@ -397,7 +397,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Collision System Methods
+    #region Collision Handling
 
     // Body 콜리전 활성화/비활성화
     public void SetBodyCollisionEnabled(bool enabled)
@@ -414,14 +414,6 @@ public class PlayerController : CharacterBase
         StartAttackSequence();
     }
 
-    //공격 애니메이션이 끝났을 때 호출됩니다.
-    public void EndAttack()
-    {
-        // 공격 상태 해제 (이제 이동 허용)
-        isAttacking = false;
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-    }
-    
     // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
     public override void OnAttackAnimationEnd()
     {
@@ -432,7 +424,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Override Methods
+    #region Health & Damage System
 
     // 피격을 받았을 때 처리합니다. (사망 시 콜리전 비활성화)
     // 공격 중일 때는 피격 애니메이션이 우선순위를 가지지 않습니다.

@@ -210,7 +210,7 @@ public class EnemyController : CharacterBase
             // 공격 중단
             if (currentTarget != null)
             {
-                EndAttack();
+                OnAttackAnimationEnd();
                 currentTarget = null;
             }
             
@@ -239,7 +239,7 @@ public class EnemyController : CharacterBase
             // 공격 중단
             if (currentTarget != null)
             {
-                EndAttack();
+                OnAttackAnimationEnd();
                 currentTarget = null;
             }
             
@@ -268,7 +268,7 @@ public class EnemyController : CharacterBase
         // 현재 타겟 유효성 체크 - 타겟이 AttackRange 내에 없으면 즉시 공격 중단
         if (currentTarget != null && !IsPlayerInAttackRange(currentTarget))
         {
-            EndAttack(); // 진행 중인 공격 즉시 중단
+            OnAttackAnimationEnd(); // 진행 중인 공격 즉시 중단
             currentTarget = null;
         }
         
@@ -670,17 +670,6 @@ public class EnemyController : CharacterBase
         PlayAttackEffect();
     }
 
-    // 공격 애니메이션이 끝났을 때 호출됩니다.
-    public void EndAttack()
-    {
-        // 공격 상태 해제
-        isAttacking = false;
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        
-        // 공격 상태는 OnAttackAnimationEvent에서 이미 해제됨
-        // AttackRange는 상시 활성화되므로 별도 처리 불필요
-    }
-    
     // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
     public override void OnAttackAnimationEnd()
     {
@@ -907,7 +896,7 @@ public class EnemyController : CharacterBase
         // 공격 중단
         if (currentTarget != null)
         {
-            EndAttack();
+            OnAttackAnimationEnd();
             currentTarget = null;
         }
         
@@ -1023,7 +1012,7 @@ public class EnemyController : CharacterBase
             // 현재 타겟이 이 플레이어면 즉시 공격 중단
             if (currentTarget == other)
             {
-                EndAttack(); // 진행 중인 공격 즉시 중단
+                OnAttackAnimationEnd(); // 진행 중인 공격 즉시 중단
             }
             RemoveDetectedPlayer(other);
         }
