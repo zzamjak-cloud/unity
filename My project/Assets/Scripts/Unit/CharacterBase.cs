@@ -327,19 +327,19 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             if (isRunning) // 달리기 상태일 때
             {
                 anim.SetBool(GameConstants.ANIM_IS_RUNNING, true);
-                anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+                anim.SetBool(GameConstants.ANIM_IS_WALKING, false);
                 effectManager?.PlayMoveEffect(true);
             }
             else // 걷기 상태일 때
             {
-                anim.SetBool(GameConstants.ANIM_IS_MOVING, true);
+                anim.SetBool(GameConstants.ANIM_IS_WALKING, true);
                 anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
                 effectManager?.PlayMoveEffect(true);
             }
         }
         else // 멈출 때
         {
-            anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+            anim.SetBool(GameConstants.ANIM_IS_WALKING, false);
             anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
             effectManager?.PlayMoveEffect(false);
         }

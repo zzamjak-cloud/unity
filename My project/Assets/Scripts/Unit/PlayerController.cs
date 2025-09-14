@@ -167,7 +167,6 @@ public class PlayerController : CharacterBase
     public override bool IsRunning()  
     { return isShiftPressed; }
 
-
     public override bool CanMove()
     {
         // 무적 상태일 때는 공격 중이어도 이동 허용
@@ -241,34 +240,37 @@ public class PlayerController : CharacterBase
         // Blank 상태일 때는 공격 입력이 있으면 공격 애니메이션으로 덮어쓰기
         if (currentAnimationState == CharacterAnimationState.Blank && isAttackPressed)
         {
-            StartAttackAnimation();
+            StartAttackSequence();
             return;
         }
    
         base.UpdateAnimationState();
     }
     
-    // 공격 애니메이션을 시작하고 타이머를 설정합니다.
-    private void StartAttackAnimation()
-    {
-        currentAnimationState = CharacterAnimationState.Attack;
-        isAttacking = true;
-        
-        attackAnimationEndTime = Time.time + GetAttackAnimationLength();  // 공격 애니메이션 종료 시간 설정
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-    }
-    
     // 공격을 시작합니다. (공격 쿨다운 리셋, 애니메이션 시작, 이펙트 재생)
     protected override void StartAttackSequence()
     {
+        // 공격 가능 여부 확인
+        if (!CanAttack()) return;
+        
         // 공격 쿨다운 리셋
         lastAttackTime = Time.time;
         
-        // 공격 애니메이션 시작 (isAttacking 설정 포함)
-        StartAttackAnimation();
+        // 공격 애니메이션 시작
+        currentAnimationState = CharacterAnimationState.Attack;
+        isAttacking = true;
+        attackAnimationEndTime = Time.time + GetAttackAnimationLength();
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
         
         // 공격 이펙트 재생
         PlayAttackEffect();
+    }
+
+    // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
+    public override void OnAttackAnimationEnd()
+    {
+        isAttacking = false;
+        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
     }
 
     #endregion
@@ -384,7 +386,7 @@ public class PlayerController : CharacterBase
 
     #endregion
 
-    #region Collision Detection
+    #region Collision System
 
     public override void OnAttackRangeEnter(Collider2D other)
     { base.OnAttackRangeEnter(other); }
@@ -395,32 +397,11 @@ public class PlayerController : CharacterBase
     public override void OnBodyCollision(Collider2D other)
     { base.OnBodyCollision(other); }
 
-    #endregion
-
-    #region Collision Handling
-
-    // Body 콜리전 활성화/비활성화
     public void SetBodyCollisionEnabled(bool enabled)
     { SetCollisionTypeEnabled(CollisionType.Body, enabled); }
 
-    // AttackRange 콜리전 활성화/비활성화
     public override void SetAttackRangeCollisionEnabled(bool enabled)
     {  SetCollisionTypeEnabled(CollisionType.AttackRange, enabled); }
-
-    // 수동 공격 애니메이션을 시작합니다.
-    public void StartAttack()
-    {
-        if (!CanAttack()) return;
-        StartAttackSequence();
-    }
-
-    // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
-    public override void OnAttackAnimationEnd()
-    {
-        // 공격 상태 해제 (이제 이동 허용)
-        isAttacking = false;
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-    }
 
     #endregion
 

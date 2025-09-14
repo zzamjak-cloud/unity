@@ -634,20 +634,13 @@ public class EnemyController : CharacterBase
         return Time.time - lastAttackTime;
     }
     
-    /// <summary>
-    /// 공격 애니메이션을 시작합니다.
-    /// </summary>
-    public void StartAttack()
-    {
-        // 공격 가능 여부 체크
-        if (!CanAttack()) return;
-        
-        StartAttackSequence();
-    }
     
     // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
     protected override void StartAttackSequence()
     {
+        // 공격 가능 여부 확인
+        if (!CanAttack()) return;
+        
         // 공격 쿨다운 리셋
         lastAttackTime = Time.time;
         
@@ -1235,8 +1228,8 @@ public class EnemyController : CharacterBase
                     // 타겟이 여전히 AttackRange 내에 있는지 확인
                     if (IsPlayerInAttackRange(currentTarget))
                     {
-                        // 자동 공격 실행 (StartAttack에서 Flip 처리)
-                        StartAttack();
+                        // 자동 공격 실행 (StartAttackSequence에서 Flip 처리)
+                        StartAttackSequence();
                         lastAutoAttackTime = Time.time;
                     }
                     else
@@ -1395,7 +1388,7 @@ public class EnemyController : CharacterBase
         transform.position = initialPosition;
         
         // 애니메이션 상태 초기화
-        anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+        anim.SetBool(GameConstants.ANIM_IS_WALKING, false);
         anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
         anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
     }
@@ -1417,7 +1410,7 @@ public class EnemyController : CharacterBase
         
         // 애니메이션 상태 초기화
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        anim.SetBool(GameConstants.ANIM_IS_MOVING, false);
+        anim.SetBool(GameConstants.ANIM_IS_WALKING, false);
         anim.SetBool(GameConstants.ANIM_IS_RUNNING, false);
         anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
     }

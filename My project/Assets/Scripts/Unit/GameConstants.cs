@@ -6,7 +6,7 @@ using UnityEngine;
 public static class GameConstants
 {
     #region Animation Parameters
-    public static readonly string ANIM_IS_MOVING = "IsMoving";
+    public static readonly string ANIM_IS_WALKING = "IsWalking";
     public static readonly string ANIM_IS_RUNNING = "IsRunning";
     public static readonly string ANIM_IS_ATTACKING = "IsAttacking";
     public static readonly string ANIM_CEREMONY = "Ceremony";
