@@ -368,8 +368,12 @@ public class StatusBarUI : MonoBehaviour
     /// <param name="faceCamera">카메라 향하기</param>
     public void SetSettings(Vector3 offset, bool follow = true, bool faceCamera = true)
     {
-        this.offset = offset;
-        this.cachedOffset = offset; // 캐시된 오프셋도 업데이트
+        // 오프셋이 Vector3.zero가 아닌 경우에만 업데이트 (기본값 유지)
+        if (offset != Vector3.zero)
+        {
+            this.offset = offset;
+            this.cachedOffset = offset; // 캐시된 오프셋도 업데이트
+        }
         this.followCharacter = follow;
         this.alwaysFaceCamera = faceCamera;
     }
@@ -484,6 +488,30 @@ public class StatusBarUI : MonoBehaviour
         if (enableManaBar) count++;
         if (enableStaminaBar) count++;
         return count;
+    }
+    
+    /// <summary>
+    /// 오브젝트 풀링을 위한 이벤트 리스너 재등록
+    /// </summary>
+    /// <param name="character">타겟 캐릭터</param>
+    public void ReinitializeEventListeners(CharacterBase character)
+    {
+        if (character == null) return;
+        
+        // 기존 이벤트 리스너 제거
+        if (targetCharacter != null)
+        {
+            targetCharacter.RemoveHealthChangedListener(OnHealthChanged);
+        }
+        
+        // 새로운 타겟 캐릭터 설정
+        targetCharacter = character;
+        
+        // 이벤트 리스너 재등록
+        targetCharacter.AddHealthChangedListener(OnHealthChanged);
+        
+        // 초기화 상태 설정
+        isInitialized = true;
     }
     
     private void OnDestroy()

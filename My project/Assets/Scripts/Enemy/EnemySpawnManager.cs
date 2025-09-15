@@ -219,6 +219,14 @@ public class EnemySpawnManager : MonoBehaviour
             enemyController.SetSpawnManager(this);
         }
         
+        // CharacterBase 설정 (재사용되는 적들의 StatusBarUI 초기화)
+        CharacterBase characterBase = enemy.GetComponent<CharacterBase>();
+        if (characterBase != null)
+        {
+            // StatusBarUI 초기화 (재사용되는 적들을 위해)
+            characterBase.InitializeStatusBarUI();
+        }
+        
         // 활성 적 리스트에 추가
         activeEnemies.Add(enemy);
         
@@ -319,21 +327,25 @@ public class EnemySpawnManager : MonoBehaviour
     {
         if (enemy == null) return;
         
-        // EnemyController 컴포넌트 가져오기
+        // EnemyController 컴포넌트 가져오기 (체력 초기화를 먼저)
         EnemyController enemyController = enemy.GetComponent<EnemyController>();
         if (enemyController != null)
         {
-            // 체력 초기화
-            enemyController.ResetHealth();
-            
-            // 사망 상태 초기화
-            enemyController.ResetDeathState();
+            // 체력 초기화 (HP UI 초기화 전에 체력값을 먼저 설정)
+            enemyController.ResetHealthOnly();
             
             // 이동 상태 초기화
             enemyController.ResetMovementState();
             
             // 공격 상태 초기화
             enemyController.ResetAttackState();
+        }
+        
+        // CharacterBase의 풀링용 초기화 함수 호출 (체력 초기화 후 HP UI 초기화)
+        CharacterBase characterBase = enemy.GetComponent<CharacterBase>();
+        if (characterBase != null)
+        {
+            characterBase.ResetForPooling();
         }
         
         // Rigidbody2D 초기화

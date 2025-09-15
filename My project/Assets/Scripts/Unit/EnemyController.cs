@@ -80,71 +80,37 @@ public class EnemyController : CharacterBase
         
         base.Start();
         
-        // Animator null 체크 및 초기화
-        if (anim == null)
-        {
-            Debug.LogError($"[EnemyController] {gameObject.name}: Animator가 없습니다! 애니메이션 기능이 비활성화됩니다.");
-            enabled = false; // 컴포넌트 비활성화
-            return;
-        }
+        invincibilityDuration = GameConstants.ENEMY_INVINCIBILITY_DURATION;  // 무적 시간 설정
+        SetupEnemyRigidbody();  // Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
+        InitializeEnemyStatusUI();  // 적 전용 상태 UI 초기화
+        InitializeEnemy();  // 적 전용 초기화
         
-        // 적 전용 무적 시간 설정 (CharacterBase의 기본값을 덮어쓰기)
-        invincibilityDuration = GameConstants.ENEMY_INVINCIBILITY_DURATION;
+        if (spawnManager == null) {spawnManager = FindFirstObjectByType<EnemySpawnManager>();}
         
-        // 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
-        SetupEnemyRigidbody();
-        
-        // 적 전용 체력바 설정
-        InitializeEnemyStatusUI();
-        
-        // 적 전용 초기화
-        InitializeEnemy();
-        
-        // 스폰 매니저 찾기
-        if (spawnManager == null)
-        {
-            spawnManager = FindFirstObjectByType<EnemySpawnManager>();
-        }
-        
-        // 플레이어 사망 이벤트 구독
-        PlayerController.OnPlayerDeath += OnPlayerDeath;
+        PlayerController.OnPlayerDeath += OnPlayerDeath;  // 플레이어 사망 이벤트 구독
     }
     
     protected override void OnDestroy()
     {
-        // 플레이어 사망 이벤트 구독 해제
-        PlayerController.OnPlayerDeath -= OnPlayerDeath;
-        
-        // 부모 클래스의 OnDestroy 호출
+        PlayerController.OnPlayerDeath -= OnPlayerDeath;  // 플레이어 사망 이벤트 구독 해제
         base.OnDestroy();
     }
     
-    /// <summary>
-    /// 적 전용 Rigidbody2D 설정 (적들 간 물리적 상호작용 방지)
-    /// </summary>
+    // Rigidbody2D 설정 (적들 간 물리적 충돌 방지)
     private void SetupEnemyRigidbody()
     {
-        if (rb != null)
-        {
-            // 적들 간의 물리적 상호작용을 방지하기 위한 설정
-            rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous; // 연속 충돌 감지
-            rb.sleepMode = RigidbodySleepMode2D.NeverSleep; // 절대 잠들지 않음
-            rb.freezeRotation = true; // 회전 고정
-            rb.gravityScale = 0f; // 중력 비활성화 (2D 탑다운 게임)
-            
-            // 적들 간의 물리적 충돌을 방지하기 위해 Physics2D.IgnoreCollision 사용
-            // 이는 런타임에 다른 적들과의 충돌을 무시하도록 설정
-            SetupEnemyCollisionIgnore();
-        }
+        // 적들 간의 물리적 충돌을 방지하기 위한 설정
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous; // 연속 충돌 감지
+        rb.sleepMode = RigidbodySleepMode2D.NeverSleep; // 절대 잠들지 않음
+        rb.freezeRotation = true; // 회전 고정
+        rb.gravityScale = 0f; // 중력 비활성화 (2D 탑다운 게임)
+        
+        SetupEnemyCollisionIgnore();  // 적들 간의 충돌을 무시하도록 설정
     }
     
-    /// <summary>
-    /// 적들 간의 충돌을 무시하도록 설정
-    /// </summary>
+    // 적들 간의 충돌을 무시하도록 설정
     private void SetupEnemyCollisionIgnore()
     {
-        if (collisionManager == null) return;
-        
         // 모든 적 오브젝트를 찾아서 이 적과의 충돌을 무시하도록 설정
         GameObject[] enemies = GameObject.FindGameObjectsWithTag(GameConstants.TAG_ENEMY);
         foreach (GameObject enemy in enemies)
@@ -156,29 +122,22 @@ public class EnemyController : CharacterBase
                 Collider2D otherBodyCollider = enemy.GetComponent<CharacterCollisionManager>()?.GetBodyCollider();
                 
                 if (thisBodyCollider != null && otherBodyCollider != null)
-                {
-                    Physics2D.IgnoreCollision(thisBodyCollider, otherBodyCollider, true);
-                }
+                    Physics2D.IgnoreCollision(thisBodyCollider, otherBodyCollider, true);  // Body 콜리전 간의 충돌 무시
             }
         }
     }
     
-    /// <summary>
-    /// 적 전용 상태 UI 초기화
-    /// </summary>
+    // 적 전용 상태 UI 초기화
     private void InitializeEnemyStatusUI()
     {
-        if (!enableStatusBar) return;
+        if (!enableStatusBar) return;  // 상태바 비활성화 시 초기화 중단
         
         // 직접 연결된 StatusBar GameObject가 있는지 확인
         if (enemyStatusBarObject != null)
         {
             statusBarUI = enemyStatusBarObject.GetComponent<StatusBarUI>();
             if (statusBarUI == null)
-            {
-                // StatusBarUI 컴포넌트가 없으면 자식에서 찾기
                 statusBarUI = enemyStatusBarObject.GetComponentInChildren<StatusBarUI>();
-            }
         }
         
         if (statusBarUI != null)
@@ -202,10 +161,7 @@ public class EnemyController : CharacterBase
             isInCombat = false;
             
             // 이동 중단
-            if (rb != null)
-            {
-                rb.linearVelocity = Vector2.zero;
-            }
+            rb.linearVelocity = Vector2.zero;
             
             // 공격 중단
             if (currentTarget != null)
@@ -216,14 +172,12 @@ public class EnemyController : CharacterBase
             
             // 모든 콜리전 비활성화
             if (collisionManager != null)
-            {
                 collisionManager.SetAllCollisionsEnabled(false);
-            }
             
-            return; // 사망 시 더 이상 처리하지 않음
+            return;
         }
         
-        // 플레이어가 사망했으면 모든 행동 중단하고 Idle 상태로 전환
+        // 플레이어가 사망시 모든 행동 중단하고 Idle 상태로 전환
         if (isPlayerDead)
         {
             // 추적 중단
@@ -231,10 +185,7 @@ public class EnemyController : CharacterBase
             isInCombat = false;
             
             // 이동 중단
-            if (rb != null)
-            {
-                rb.linearVelocity = Vector2.zero;
-            }
+            rb.linearVelocity = Vector2.zero;
             
             // 공격 중단
             if (currentTarget != null)
@@ -247,23 +198,16 @@ public class EnemyController : CharacterBase
             UpdateAnimationState();
             HandleAnimations(0f, false);
             
-            return; // 플레이어 사망 시 더 이상 처리하지 않음
+            return;
         }
         
-        // 전투 상태 업데이트
-        UpdateCombatState();
-        
-        // 플레이어 감지 및 추적 처리
-        HandlePlayerDetectionAndChasing();
-        
-        // AttackRange 내 플레이어 목록 정리 (사망한 플레이어 제거)
-        CleanupDetectedPlayers();
+        UpdateCombatState();  // 전투 상태 업데이트
+        HandlePlayerDetectionAndChasing();  // 플레이어 감지 및 추적 처리
+        CleanupDetectedPlayers();  // 감지된 플레이어 목록 정리 (사망한 플레이어 제거)
         
         // 자동 공격 처리 - AttackRange 내 가장 가까운 플레이어를 자동으로 공격
         if (enableAutoAttack && HasEnemiesInRange())
-        {
             HandleAutoAttack();
-        }
         
         // 현재 타겟 유효성 체크 - 타겟이 AttackRange 내에 없으면 즉시 공격 중단
         if (currentTarget != null && !IsPlayerInAttackRange(currentTarget))
@@ -272,102 +216,68 @@ public class EnemyController : CharacterBase
             currentTarget = null;
         }
         
-        // 부모 클래스의 Update 호출 (UpdateMovement, UpdateAnimation 실행)
         base.Update();
     }
 
+
+
     #region ICharacterController Implementation
 
-    /// <summary>
-    /// 적의 이동을 업데이트합니다.
-    /// 플레이어를 추적하거나 정적 적으로 동작합니다.
-    /// </summary>
+    // 적의 이동을 업데이트합니다.
+    // 플레이어를 추적하거나 정적 적으로 동작합니다.
     public override void UpdateMovement()
     {
-        if (isStaticEnemy)
+        if (isStaticEnemy)  // 정적 적이므로 이동하지 않음
         {
-            // 정적 적이므로 이동하지 않음
             // 위치가 변경되었다면 초기 위치로 복귀
             if (Vector3.Distance(transform.position, initialPosition) > GameConstants.POSITION_THRESHOLD)
-            {
                 ReturnToInitialPosition();
-            }
             
-            // 물리 이동 정지
-            HandlePhysicsMovement(Vector2.zero, false);
+            HandlePhysicsMovement(Vector2.zero, false);  // 물리 이동 정지
             
             // 현재 상태 저장
             currentMovement = Vector2.zero;
             isCurrentlyRunning = false;
         }
         else
-        {
-            // 동적 적 - 플레이어 추적 또는 복귀
-            HandleEnemyMovement();
-        }
+            HandleEnemyMovement();  // 동적 적 - 플레이어 추적 또는 복귀
     }
 
-    /// <summary>
-    /// 적의 애니메이션을 업데이트합니다.
-    /// Idle 상태와 랜덤 애니메이션을 처리합니다.
-    /// </summary>
+    // 적의 애니메이션을 업데이트합니다.
+    // Idle 상태와 랜덤 애니메이션을 처리합니다.
     public override void UpdateAnimation()
     {
-        // 애니메이션 상태 업데이트
         UpdateAnimationState();
         
         if (isStaticEnemy)
         {
-            // Idle 애니메이션 처리
-            HandleIdleAnimation();
+            HandleIdleAnimation();  // Idle 애니메이션 처리
             
             // 랜덤 애니메이션 처리
             if (enableRandomAnimations)
-            {
                 HandleRandomAnimations();
-            }
             
-            // 이동 애니메이션은 항상 Idle 상태
-            HandleAnimations(0f, false);
+            HandleAnimations(0f, false);  // 이동 애니메이션은 항상 Idle 상태
         }
         else
-        {
-            // 동적 적 - 이동 상태에 따른 애니메이션 처리
-            HandleAnimations(currentMovement.magnitude, isCurrentlyRunning);
-        }
+            HandleAnimations(currentMovement.magnitude, isCurrentlyRunning);  // 이동 상태에 따른 애니메이션 처리
     }
 
-    /// <summary>
-    /// 적의 이동 입력을 반환합니다.
-    /// </summary>
-    /// <returns>이동 벡터</returns>
+    // 적의 이동 입력을 반환합니다.
     public override Vector2 GetMovementInput()
     {
-        // 공격 중일 때는 이동 입력 무시
-        if (isAttacking)
-        {
-            return Vector2.zero;
-        }
-        
-        if (isStaticEnemy)
-        {
-            // 정적 적이므로 이동하지 않음
-            return Vector2.zero;
-        }
-        else
-        {
-            // 동적 적 - 현재 이동 상태 반환
-            return currentMovement;
-        }
+        if (isAttacking) return Vector2.zero;  // 공격 중일 때는 이동 입력 무시
+        if (isStaticEnemy) return Vector2.zero;  // 정적 적이므로 이동하지 않음
+        else return currentMovement;
     }
 
     #endregion
 
+
+
     #region Enemy Initialization
 
-    /// <summary>
-    /// 적 캐릭터를 초기화합니다.
-    /// </summary>
+    // 적 캐릭터를 초기화합니다.
     private void InitializeEnemy()
     {
         // 초기 위치 저장
@@ -385,50 +295,34 @@ public class EnemyController : CharacterBase
 
     #endregion
 
+
+
     #region Position Management
 
-    /// <summary>
-    /// 초기 위치로 복귀합니다.
-    /// </summary>
+    // 초기 위치로 복귀합니다.
     private void ReturnToInitialPosition()
     {
-        if (rb != null)
-        {
-            // Rigidbody 위치 설정
-            rb.position = initialPosition;
-            
-            // 이동 상태 초기화
-            currentMovement = Vector2.zero;
-            isCurrentlyRunning = false;
-            HandlePhysicsMovement(Vector2.zero, false);
-            
-        }
+        rb.position = initialPosition;
+        currentMovement = Vector2.zero;
+        isCurrentlyRunning = false;
+        HandlePhysicsMovement(Vector2.zero, false);
     }
 
-    /// <summary>
-    /// 새로운 스폰 위치를 설정합니다.
-    /// </summary>
-    /// <param name="newSpawnPosition">새로운 스폰 위치</param>
+    // 새로운 스폰 위치를 설정합니다.
     public void SetSpawnPosition(Vector3 newSpawnPosition)
     {
         spawnPosition = newSpawnPosition;
         initialPosition = newSpawnPosition;
-        
-        // 즉시 새 위치로 이동
-        if (rb != null)
-        {
-            rb.position = newSpawnPosition;
-        }
-        
+        rb.position = newSpawnPosition;
     }
 
     #endregion
 
+
+
     #region Animation Management
 
-    /// <summary>
-    /// Idle 애니메이션을 처리합니다.
-    /// </summary>
+    // Idle 애니메이션을 처리합니다.
     private void HandleIdleAnimation()
     {
         // Idle 상태일 때만 처리
@@ -437,29 +331,16 @@ public class EnemyController : CharacterBase
             idleTimer += Time.deltaTime;
             
             // 일정 시간 후 Idle 애니메이션 강제 실행
-            if (idleTimer >= idleAnimationDelay)
-            {
-                // Idle 애니메이션 상태 유지
-                idleTimer = 0f;
-            }
+            if (idleTimer >= idleAnimationDelay) idleTimer = 0f;
         }
-        else
-        {
-            // 다른 애니메이션 상태일 때 타이머 리셋
-            idleTimer = 0f;
-        }
+        else idleTimer = 0f;
     }
 
-    /// <summary>
-    /// 랜덤 애니메이션을 처리합니다.
-    /// </summary>
+    // 랜덤 애니메이션을 처리합니다.
     private void HandleRandomAnimations()
     {
         // 쿨다운 체크
-        if (Time.time - lastRandomAnimationTime < randomAnimationCooldown)
-        {
-            return;
-        }
+        if (Time.time - lastRandomAnimationTime < randomAnimationCooldown) return;
         
         // 랜덤 확률로 특수 애니메이션 실행
         if (Random.Range(0f, 1f) < randomAnimationChance)
@@ -473,9 +354,7 @@ public class EnemyController : CharacterBase
         }
     }
 
-    /// <summary>
-    /// 랜덤 애니메이션을 실행합니다.
-    /// </summary>
+    // 랜덤 애니메이션을 실행합니다.
     private void ExecuteRandomAnimation()
     {
         // 랜덤하게 애니메이션 선택
@@ -498,141 +377,76 @@ public class EnemyController : CharacterBase
 
     #endregion
 
+
+
     #region Public Methods
 
-    /// <summary>
-    /// 적을 특정 위치로 즉시 이동시킵니다.
-    /// </summary>
-    /// <param name="position">목표 위치</param>
+    // 적을 특정 위치로 즉시 이동시킵니다.
     public void TeleportTo(Vector3 position)
     {
-        if (rb != null)
-        {
-            // Rigidbody 위치 설정
-            rb.position = position;
-            
-            // 이동 상태 초기화
-            currentMovement = Vector2.zero;
-            isCurrentlyRunning = false;
-            HandlePhysicsMovement(Vector2.zero, false);
-            
-        }
+        rb.position = position;
+        currentMovement = Vector2.zero;
+        isCurrentlyRunning = false;
+        HandlePhysicsMovement(Vector2.zero, false);
     }
 
-    /// <summary>
-    /// 적을 초기 위치로 즉시 이동시킵니다.
-    /// </summary>
+    // 적을 초기 위치로 즉시 이동시킵니다.
     public void ReturnToSpawn()
-    {
-        ReturnToInitialPosition();
-    }
+    { ReturnToInitialPosition(); }
 
-    /// <summary>
-    /// 랜덤 애니메이션을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enable">활성화 여부</param>
+    // 랜덤 애니메이션을 활성화/비활성화합니다.
     public void SetRandomAnimationsEnabled(bool enable)
-    {
-        enableRandomAnimations = enable;
-    }
+    { enableRandomAnimations = enable; }
 
-    /// <summary>
-    /// 랜덤 애니메이션 확률을 설정합니다.
-    /// </summary>
-    /// <param name="chance">확률 (0.0 ~ 1.0)</param>
+    // 랜덤 애니메이션 확률을 설정합니다.
     public void SetRandomAnimationChance(float chance)
-    {
-        randomAnimationChance = Mathf.Clamp01(chance);
-    }
+    { randomAnimationChance = Mathf.Clamp01(chance); }
 
-    /// <summary>
-    /// 랜덤 애니메이션 쿨다운을 설정합니다.
-    /// </summary>
-    /// <param name="cooldown">쿨다운 시간 (초)</param>
+    // 랜덤 애니메이션 쿨다운을 설정합니다.
     public void SetRandomAnimationCooldown(float cooldown)
-    {
-        randomAnimationCooldown = Mathf.Max(0f, cooldown);
-    }
+    { randomAnimationCooldown = Mathf.Max(0f, cooldown); }
 
-    /// <summary>
-    /// Idle 애니메이션 전환 지연 시간을 설정합니다.
-    /// </summary>
-    /// <param name="delay">지연 시간 (초)</param>
+    // Idle 애니메이션 전환 지연 시간을 설정합니다.
     public void SetIdleAnimationDelay(float delay)
-    {
-        idleAnimationDelay = Mathf.Max(0f, delay);
-    }
+    { idleAnimationDelay = Mathf.Max(0f, delay); }
 
-    /// <summary>
-    /// 적이 정적 적인지 확인합니다.
-    /// </summary>
-    /// <returns>정적 적이면 true</returns>
+    // 적이 정적 적인지 확인합니다.
     public bool IsStaticEnemy()
-    {
-        return isStaticEnemy;
-    }
+    { return isStaticEnemy; }
 
-    /// <summary>
-    /// 적의 초기 위치를 반환합니다.
-    /// </summary>
-    /// <returns>초기 위치</returns>
+    // 적의 초기 위치를 반환합니다.
     public Vector3 GetInitialPosition()
-    {
-        return initialPosition;
-    }
+    { return initialPosition; }
 
     #endregion
 
+
+
     #region Collision System Methods
 
-    /// <summary>
-    /// 적의 Body 콜리전을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
+    // 적의 Body 콜리전을 활성화/비활성화합니다.
     public void SetBodyCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.Body, enabled);
-    }
+    { SetCollisionTypeEnabled(CollisionType.Body, enabled); }
 
 
-    /// <summary>
-    /// 적의 AttackRange 콜리전을 활성화/비활성화합니다 (감지용).
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
+    // 적의 AttackRange 콜리전을 활성화/비활성화합니다 (감지용).
     public override void SetAttackRangeCollisionEnabled(bool enabled)
-    {
-        SetCollisionTypeEnabled(CollisionType.AttackRange, enabled);
-    }
+    { SetCollisionTypeEnabled(CollisionType.AttackRange, enabled); }
 
-
-
-    /// <summary>
-    /// 공격 가능 여부를 확인합니다.
-    /// </summary>
-    /// <returns>공격 가능하면 true</returns>
+    // 공격 가능 여부를 확인합니다.
     public bool CanAttack()
     {
         if (IsDead()) return false;
         return GetTimeSinceLastAttack() >= GetAttackCooldownTime();
     }
     
-    /// <summary>
-    /// 공격 쿨다운 시간을 계산합니다.
-    /// </summary>
-    /// <returns>공격 쿨다운 시간 (초)</returns>
+    // 공격 쿨다운 시간을 계산합니다.
     private float GetAttackCooldownTime()
-    {
-        return GetAttackAnimationLength() + attackCooldown;
-    }
+    { return GetAttackAnimationLength() + attackCooldown; }
     
-    /// <summary>
-    /// 마지막 공격으로부터 경과된 시간을 반환합니다.
-    /// </summary>
-    /// <returns>경과된 시간 (초)</returns>
+    // 마지막 공격으로부터 경과된 시간을 반환합니다.
     private float GetTimeSinceLastAttack()
-    {
-        return Time.time - lastAttackTime;
-    }
+    { return Time.time - lastAttackTime; }
     
     
     // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
@@ -666,18 +480,17 @@ public class EnemyController : CharacterBase
     // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)
     public override void OnAttackAnimationEnd()
     {
-        // 공격 상태 해제 (이제 이동 허용)
         isAttacking = false;
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
     }
 
     #endregion
 
+
+
     #region Player Detection and Chasing
 
-    /// <summary>
-    /// 플레이어 감지 및 추적을 처리합니다.
-    /// </summary>
+    // 플레이어 감지 및 추적을 처리합니다.
     private void HandlePlayerDetectionAndChasing()
     {
         if (isStaticEnemy) return;
@@ -697,10 +510,7 @@ public class EnemyController : CharacterBase
         }
         
         // 플레이어 찾기
-        if (playerTransform == null)
-        {
-            FindPlayer();
-        }
+        if (playerTransform == null) FindPlayer();
         
         if (playerTransform != null)
         {
@@ -731,21 +541,15 @@ public class EnemyController : CharacterBase
         }
     }
     
-    /// <summary>
-    /// 플레이어를 찾습니다.
-    /// </summary>
+    // 플레이어를 찾습니다.
     private void FindPlayer()
     {
         GameObject player = GameObject.FindGameObjectWithTag(GameConstants.TAG_PLAYER);
-        if (player != null)
-        {
+        if (player != null) 
             playerTransform = player.transform;
-        }
     }
     
-    /// <summary>
-    /// 적의 이동을 처리합니다.
-    /// </summary>
+    // 적의 이동을 처리합니다.
     private void HandleEnemyMovement()
     {
         Vector2 movement = Vector2.zero;
@@ -788,15 +592,13 @@ public class EnemyController : CharacterBase
 
     #endregion
 
+
+
     #region Override Methods
 
-    /// <summary>
-    /// 적의 물리 이동을 처리합니다. (복귀 시 속도 조정)
-    /// </summary>
+    // 적의 물리 이동을 처리합니다. (복귀 시 속도 조정)
     protected override void HandlePhysicsMovement(Vector2 movement, bool isRunning)
     {
-        if (rb == null) return;
-        
         float currentSpeed = moveSpeed;
         
         // 복귀 중일 때는 더 느리게 이동
@@ -814,42 +616,30 @@ public class EnemyController : CharacterBase
         
         // 캐릭터 방향 전환 처리 (공격 중이 아닐 때만)
         if (movement.x != 0 && !isAttacking)
-        {
             FlipCharacter(movement.x);
-        }
     }
     
-    /// <summary>
-    /// 공격 성공 판정을 처리합니다. (전투 상태 설정)
-    /// </summary>
+    // 공격 성공 판정을 처리합니다. (전투 상태 설정)
     protected override void HandleAttackHit(Collider2D other)
     {
-        // 전투 상태 시작
-        StartCombat();
-        
-        // 기본 공격 처리
-        base.HandleAttackHit(other);
+        StartCombat();  // 전투 상태 시작
+        base.HandleAttackHit(other);  // 기본 공격 처리
     }
     
-    /// <summary>
-    /// 피격을 받았을 때 처리합니다. (전투 상태 설정)
-    /// </summary>
+    // 피격을 받았을 때 처리합니다. (전투 상태 설정)
     public override void TakeDamage(int damage, CharacterBase attacker = null)
     {
-        // 전투 상태 시작
-        StartCombat();
-        
-        // 기본 피격 처리
-        base.TakeDamage(damage, attacker);
+        StartCombat();  // 전투 상태 시작
+        base.TakeDamage(damage, attacker);  // 기본 피격 처리
     }
 
     #endregion
 
+
+
     #region Combat State Management
 
-    /// <summary>
-    /// 전투 상태를 시작합니다.
-    /// </summary>
+    // 전투 상태를 시작합니다.
     private void StartCombat()
     {
         isInCombat = true;
@@ -861,17 +651,11 @@ public class EnemyController : CharacterBase
         lastChaseTime = Time.time;
     }
     
-    /// <summary>
-    /// 전투 상태를 종료합니다.
-    /// </summary>
+    // 전투 상태를 종료합니다.
     private void EndCombat()
-    {
-        isInCombat = false;
-    }
+    { isInCombat = false; }
     
-    /// <summary>
-    /// 플레이어 사망 시 호출되는 메서드
-    /// </summary>
+    // 플레이어 사망 시 호출되는 메서드
     private void OnPlayerDeath()
     {
         isPlayerDead = true;
@@ -879,12 +663,7 @@ public class EnemyController : CharacterBase
         // 모든 행동 중단
         isChasingPlayer = false;
         isInCombat = false;
-        
-        // 이동 중단
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector2.zero;
-        }
+        rb.linearVelocity = Vector2.zero;
         
         // 공격 중단
         if (currentTarget != null)
@@ -896,42 +675,30 @@ public class EnemyController : CharacterBase
         Debug.Log($"[Enemy] {gameObject.name}: 플레이어 사망으로 인해 Idle 상태로 전환됩니다.");
     }
     
-    /// <summary>
-    /// 플레이어 사망 시에도 정렬 순서 업데이트를 계속합니다.
-    /// </summary>
+    // 플레이어 사망 시에도 정렬 순서 업데이트를 계속합니다.
     protected override void LateUpdate()
-    {
-        // 플레이어가 사망했어도 정렬 순서는 계속 업데이트
-        UpdateSortingOrder();
-    }
+    { UpdateSortingOrder(); }
     
-    /// <summary>
-    /// 전투 상태를 업데이트합니다.
-    /// </summary>
+    // 전투 상태를 업데이트합니다.
     private void UpdateCombatState()
     {
-        if (isInCombat && Time.time - lastCombatTime >= combatCooldown)
-        {
+        if (isInCombat && Time.time - lastCombatTime >= combatCooldown) 
             EndCombat();
-        }
     }
 
     #endregion
 
-    /// <summary>
-    /// 적의 스폰 위치를 반환합니다.
-    /// </summary>
-    /// <returns>스폰 위치</returns>
+    // 적의 스폰 위치를 반환합니다.
     public Vector3 GetSpawnPosition()
-    {
-        return spawnPosition;
-    }
+    { return spawnPosition; }
 
+
+
+
+    /*
     #region Debug Methods
 
-    /// <summary>
-    /// 디버그 정보를 출력합니다.
-    /// </summary>
+    // 디버그 정보를 출력합니다.
     private void OnGUI()
     {
         if (Application.isEditor)
@@ -951,12 +718,11 @@ public class EnemyController : CharacterBase
     }
 
     #endregion
+    
 
     #region Gizmos
 
-    /// <summary>
-    /// Scene 뷰에서 적의 정보를 표시합니다.
-    /// </summary>
+    // Scene 뷰에서 적의 정보를 표시합니다.
     private void OnDrawGizmosSelected()
     {
         // 초기 위치 표시
@@ -973,30 +739,22 @@ public class EnemyController : CharacterBase
     }
 
     #endregion
-
+    */
 
     #region AttackRange Collision Override (Detection용)
 
-    /// <summary>
-    /// AttackRange 콜리전 이벤트 처리 (플레이어 감지 시 자동 공격)
-    /// </summary>
-    /// <param name="other">감지된 오브젝트</param>
+    // AttackRange 콜리전 이벤트 처리 (플레이어 감지 시 자동 공격)
     public override void OnAttackRangeEnter(Collider2D other)
     {
         // 플레이어 감지 시 목록에 추가
         if (other.CompareTag(GameConstants.TAG_PLAYER))
-        {
             AddDetectedPlayer(other);
-        }
         
         // 기본 AttackRange 진입 처리도 수행
         base.OnAttackRangeEnter(other);
     }
     
-    /// <summary>
-    /// AttackRange 콜리전에서 나갔을 때 처리 (플레이어가 공격 범위를 벗어남)
-    /// </summary>
-    /// <param name="other">나간 오브젝트</param>
+    // AttackRange 콜리전에서 나갔을 때 처리 (플레이어가 공격 범위를 벗어남)
     public override void OnAttackRangeExit(Collider2D other)
     {
         // 플레이어가 공격 범위를 벗어났을 때
@@ -1004,9 +762,8 @@ public class EnemyController : CharacterBase
         {
             // 현재 타겟이 이 플레이어면 즉시 공격 중단
             if (currentTarget == other)
-            {
                 OnAttackAnimationEnd(); // 진행 중인 공격 즉시 중단
-            }
+
             RemoveDetectedPlayer(other);
         }
         
@@ -1016,13 +773,11 @@ public class EnemyController : CharacterBase
 
     #endregion
 
+
+
     #region Attack Range Check Methods
     
-    /// <summary>
-    /// 플레이어가 공격 범위 내에 있는지 확인합니다.
-    /// </summary>
-    /// <param name="playerCollider">확인할 플레이어의 콜라이더</param>
-    /// <returns>공격 범위 내에 있으면 true</returns>
+    // 플레이어가 공격 범위 내에 있는지 확인합니다.
     private bool IsPlayerInAttackRange(Collider2D playerCollider)
     {
         if (playerCollider == null || collisionManager == null) return false;
@@ -1041,26 +796,17 @@ public class EnemyController : CharacterBase
         return sqrDistance <= attackRange * attackRange;
     }
     
-    
     #endregion
 
-    #region Detection and Auto Attack Methods
 
+
+    #region Detection and Auto Attack Methods
     
-    /// <summary>
-    /// Body 콜리전 이벤트 처리
-    /// </summary>
-    /// <param name="other">충돌한 오브젝트</param>
+    // Body 콜리전 이벤트 처리
     public override void OnBodyCollision(Collider2D other)
-    {
-        // 기본 Body Collision 처리
-        base.OnBodyCollision(other);
-    }
+    { base.OnBodyCollision(other); }
     
-    /// <summary>
-    /// AttackRange에 진입한 플레이어를 목록에 추가합니다.
-    /// </summary>
-    /// <param name="player">감지된 플레이어</param>
+    // AttackRange에 진입한 플레이어를 목록에 추가합니다.
     private void AddDetectedPlayer(Collider2D player)
     {
         if (player == null) return;
@@ -1072,23 +818,15 @@ public class EnemyController : CharacterBase
             
             // 첫 번째 플레이어가 감지되면 감지 시간 기록
             if (detectedPlayers.Count == 1)
-            {
                 firstDetectionTime = Time.time;
-            }
             
             // 현재 타겟이 없거나 더 가까운 플레이어면 타겟 변경
             if (currentTarget == null || IsCloserThanCurrentTarget(player))
-            {
                 SetCurrentTarget(player);
-            }
-            
         }
     }
     
-    /// <summary>
-    /// AttackRange에서 나간 플레이어를 목록에서 제거합니다.
-    /// </summary>
-    /// <param name="player">제거할 플레이어</param>
+    // AttackRange에서 나간 플레이어를 목록에서 제거합니다.
     private void RemoveDetectedPlayer(Collider2D player)
     {
         if (player == null) return;
@@ -1099,55 +837,39 @@ public class EnemyController : CharacterBase
             
             // 모든 플레이어가 제거되면 감지 시간 리셋
             if (detectedPlayers.Count == 0)
-            {
                 firstDetectionTime = 0f;
-            }
             
             // 현재 타겟이 제거된 플레이어면 새로운 타겟 선택
             if (currentTarget == player)
-            {
                 SelectNewTarget();
-            }
             
         }
     }
     
-    /// <summary>
-    /// 감지된 플레이어 목록을 정리합니다 (사망한 플레이어 제거).
-    /// </summary>
+    // 감지된 플레이어 목록을 정리합니다 (사망한 플레이어 제거).
     private void CleanupDetectedPlayers()
     {
         for (int i = detectedPlayers.Count - 1; i >= 0; i--)
         {
             var player = detectedPlayers[i];
             if (player == null || IsPlayerDead(player))
-            {
                 RemoveDetectedPlayer(player);
-            }
         }
     }
     
-    /// <summary>
-    /// 플레이어가 사망했는지 확인합니다.
-    /// </summary>
-    /// <param name="player">확인할 플레이어</param>
-    /// <returns>사망했으면 true</returns>
+    // 플레이어가 사망했는지 확인합니다.
     private bool IsPlayerDead(Collider2D player)
     {
         if (player == null) return true;
         
         CharacterBase playerCharacter = player.GetComponent<CharacterBase>();
         if (playerCharacter == null)
-        {
             playerCharacter = player.GetComponentInParent<CharacterBase>();
-        }
         
         return playerCharacter != null && playerCharacter.IsDead();
     }
     
-    /// <summary>
-    /// 새로운 타겟을 선택합니다.
-    /// </summary>
+    // 새로운 타겟을 선택합니다.
     private void SelectNewTarget()
     {
         currentTarget = null;
@@ -1168,27 +890,14 @@ public class EnemyController : CharacterBase
                     }
                 }
             }
-            
-            if (currentTarget != null)
-            {
-            }
         }
     }
     
-    /// <summary>
-    /// 현재 타겟을 설정합니다.
-    /// </summary>
-    /// <param name="player">새로운 타겟</param>
+    // 현재 타겟을 설정합니다.
     private void SetCurrentTarget(Collider2D player)
-    {
-        currentTarget = player;
-    }
+    { currentTarget = player; }
     
-    /// <summary>
-    /// 주어진 플레이어가 현재 타겟보다 가까운지 확인합니다.
-    /// </summary>
-    /// <param name="player">확인할 플레이어</param>
-    /// <returns>더 가까우면 true</returns>
+    // 주어진 플레이어가 현재 타겟보다 가까운지 확인합니다.
     private bool IsCloserThanCurrentTarget(Collider2D player)
     {
         if (currentTarget == null) return true;
@@ -1199,9 +908,7 @@ public class EnemyController : CharacterBase
         return newSqrDistance < currentSqrDistance;
     }
     
-    /// <summary>
-    /// 자동 공격을 처리합니다.
-    /// </summary>
+    // 자동 공격을 처리합니다.
     private void HandleAutoAttack()
     {
         // 공격 중이 아닐 때만 타겟 변경 허용
@@ -1233,18 +940,13 @@ public class EnemyController : CharacterBase
                         lastAutoAttackTime = Time.time;
                     }
                     else
-                    {
-                        // 타겟이 AttackRange를 벗어났으면 타겟 초기화
-                        currentTarget = null;
-                    }
+                    { currentTarget = null; }  // 타겟이 AttackRange를 벗어났으면 타겟 초기화
                 }
             }
         }
     }
     
-    /// <summary>
-    /// 모든 감지된 플레이어를 제거합니다.
-    /// </summary>
+    // 모든 감지된 플레이어를 제거합니다.
     public void ClearAllDetectedPlayers()
     {
         detectedPlayers.Clear();
@@ -1252,26 +954,21 @@ public class EnemyController : CharacterBase
         firstDetectionTime = 0f;
     }
     
-    /// <summary>
-    /// 자동 공격을 활성화/비활성화합니다.
-    /// </summary>
-    /// <param name="enabled">활성화 여부</param>
+    // 자동 공격을 활성화/비활성화합니다.
     public void SetAutoAttackEnabled(bool enabled)
     {
         enableAutoAttack = enabled;
         if (!enabled)
-        {
             ClearAllDetectedPlayers();
-        }
     }
 
     #endregion
 
+
+
     #region Attack Animation Event Override
 
-    /// <summary>
-    /// 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드 (EnemyController 오버라이드)
-    /// </summary>
+    // 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드 (EnemyController 오버라이드)
     public override void OnAttackAnimationEvent()
     {
         // 공격 판정 시점에서 이동 허용 (Flip 처리 완료 후)
@@ -1281,46 +978,31 @@ public class EnemyController : CharacterBase
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
         
         if (collisionManager != null)
-        {
             collisionManager.OnAttackAnimationEvent();
-        }
     }
 
     #endregion
 
     #region Spawn System
 
-    /// <summary>
-    /// 감지 범위를 설정합니다. (스폰 시 호출)
-    /// </summary>
+    // 감지 범위를 설정합니다. (스폰 시 호출)
     public void SetDetectionRange(float range)
-    {
-        detectionRange = range;
-    }
+    { detectionRange = range; }
     
-    /// <summary>
-    /// 현재 감지 범위를 반환합니다.
-    /// </summary>
+    // 현재 감지 범위를 반환합니다.
     public float GetDetectionRange()
-    {
-        return detectionRange;
-    }
+    { return detectionRange; }
     
-    /// <summary>
-    /// 사망 시 풀로 복귀하도록 오버라이드
-    /// </summary>
+    // 사망 시 풀로 복귀하도록 오버라이드
     protected override void Die()
     {
-        // 기본 사망 처리 (Death 애니메이션 실행)
         base.Die();
         
         // Death 애니메이션 완료 후 풀로 복귀하도록 코루틴 시작
         StartCoroutine(WaitForDeathAnimationAndReturnToPool());
     }
     
-    /// <summary>
-    /// Death 애니메이션 완료를 기다린 후 풀로 복귀하는 코루틴
-    /// </summary>
+    // Death 애니메이션 완료를 기다린 후 풀로 복귀하는 코루틴
     private System.Collections.IEnumerator WaitForDeathAnimationAndReturnToPool()
     {
         // Death 애니메이션 완료까지 대기 (실제 애니메이션 길이 사용)
@@ -1329,27 +1011,16 @@ public class EnemyController : CharacterBase
         
         // 스폰 매니저에 풀로 복귀 요청
         if (spawnManager != null)
-        {
             spawnManager.ReturnEnemyToPool(gameObject);
-        }
         else
-        {
-            // 스폰 매니저가 없으면 파괴
-            Destroy(gameObject);
-        }
+            Destroy(gameObject);  // 스폰 매니저가 없으면 파괴
     }
     
-    /// <summary>
-    /// 스폰 매니저를 설정합니다.
-    /// </summary>
+    // 스폰 매니저를 설정합니다.
     public void SetSpawnManager(EnemySpawnManager manager)
-    {
-        spawnManager = manager;
-    }
+    { spawnManager = manager; }
     
-    /// <summary>
-    /// 체력을 초기화합니다.
-    /// </summary>
+    // 체력을 초기화합니다.
     public void ResetHealth()
     {
         currentHealth = maxHealth;
@@ -1364,17 +1035,20 @@ public class EnemyController : CharacterBase
         }
     }
     
-    /// <summary>
-    /// 사망 상태를 초기화합니다.
-    /// </summary>
-    public void ResetDeathState()
+    // 체력만 초기화합니다 (HP UI는 CharacterBase.ResetForPooling()에서 처리)
+    public void ResetHealthOnly()
     {
+        currentHealth = maxHealth;
         isDead = false;
+        isInvincible = false;
     }
     
-    /// <summary>
-    /// 이동 상태를 초기화합니다.
-    /// </summary>
+    // 사망 상태를 초기화합니다. (CharacterBase.ResetForPooling()에서 처리되므로 더 이상 필요하지 않음)
+    [System.Obsolete("CharacterBase.ResetForPooling()에서 처리됩니다.")]
+    public void ResetDeathState()
+    { isDead = false; }
+    
+    // 이동 상태를 초기화합니다.
     public void ResetMovementState()
     {
         isChasingPlayer = false;
@@ -1393,9 +1067,7 @@ public class EnemyController : CharacterBase
         anim.Play(GameConstants.ANIM_STATE_IDLE, 0, 0f); // Idle 상태로 강제 전환
     }
     
-    /// <summary>
-    /// 공격 상태를 초기화합니다.
-    /// </summary>
+    // 공격 상태를 초기화합니다.
     public void ResetAttackState()
     {
         isAttacking = false;

@@ -81,7 +81,7 @@ public static class GameConstants
     #endregion
 
     #region Enemy Settings
-    public const float ENEMY_MOVE_SPEED = 1.5f;  // 적 기본 이동 속도
+    public const float ENEMY_MOVE_SPEED = 1f;  // 적 기본 이동 속도
     public const float ENEMY_CHASE_DELAY = 1.5f;  // 적 추적 지연 시간
     public const float ENEMY_AUTO_ATTACK_COOLDOWN = 1.5f;  // 적 자동 공격 쿨다운
     public const float ENEMY_ATTACK_DELAY = 0.1f;  // 적 공격 지연 시간

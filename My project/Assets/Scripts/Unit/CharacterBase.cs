@@ -73,12 +73,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     protected virtual void Awake()
     {
-        if (effectManager == null) {Debug.LogError("EffectManager is not assigned");}
-        if (collisionManager == null) {Debug.LogError("CharacterCollisionManager is not assigned");}
-        if (anim == null) {Debug.LogError("Animator is not assigned");}
-        if (pivotTransform == null) {Debug.LogError("Pivot Transform is not assigned");}
-        if (sortingGroup == null) {sortingGroup = GetComponent<SortingGroup>();}
-        
         // 이벤트 리스너 리스트 초기화
         healthChangedListeners = new List<System.Action<int, int>>();
         deathListeners = new List<System.Action>();
@@ -87,6 +81,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     protected virtual void Start()
     {
         rb = GetComponent<Rigidbody2D>();
+        if (effectManager == null) {effectManager = GetComponent<EffectManager>();}
+        if (collisionManager == null) {collisionManager = GetComponent<CharacterCollisionManager>();}
+        if (anim == null) {anim = GetComponent<Animator>();}
+        if (pivotTransform == null) {pivotTransform = transform.Find("Pivot");}
+        if (sortingGroup == null) {sortingGroup = GetComponent<SortingGroup>();}
 
         InitializeCollisionSystem();  // 콜리전 시스템 초기화
         InitializeHealthSystem();  // 체력 시스템 초기화
@@ -713,14 +712,18 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         
         if (statusBarUI != null)
         {
-            // 상태바 설정 적용 (기본 오프셋 사용)
+            // 상태바 설정 적용 (기본 오프셋 유지)
             statusBarUI.SetSettings(Vector3.zero, true, true);
             
             // 초기 상태바 표시
             statusBarUI.SetVisible(true);
+            
+            // 이벤트 리스너 직접 등록 (Start() 함수가 호출되지 않을 수 있으므로)
+            statusBarUI.ReinitializeEventListeners(this);
         }
         else
         {
+            Debug.LogWarning($"CharacterBase: StatusBarUI not found for {gameObject.name}");
         }
     }
     
@@ -748,6 +751,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         // 캐시된 변수 사용으로 메모리 할당 최적화
         cachedHealthValue = Mathf.Max(0, currentHealth - damage);
         currentHealth = cachedHealthValue;
+        
         
         // 체력 변경 이벤트 호출 (최적화된 방식)
         if (healthChangedListeners != null)
@@ -936,12 +940,56 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
     
+    // StatusBarUI 초기화 (외부에서 호출 가능)
+    public virtual void InitializeStatusBarUI()
+    {
+        InitializeStatusUI();
+    }
+    
     #endregion
     
     #region Memory Management
     
     // 오브젝트가 파괴될 때 메모리 정리를 수행합니다.
     protected virtual void OnDestroy()
+    {
+        ClearAllReferences();
+    }
+    
+    // 오브젝트 풀링을 위한 상태 초기화 (Destroy 없이 재사용 시)
+    public virtual void ResetForPooling()
+    {
+        // 상태 초기화
+        isDead = false;
+        isAttacking = false;
+        currentAnimationState = CharacterAnimationState.Idle;
+        
+        // HP UI 초기화 및 이벤트 리스너 재등록 (풀링에서 재사용 시 중요!)
+        if (statusBarUI != null)
+        {
+            statusBarUI.SetVisible(true);
+            statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
+            
+            // StatusBarUI의 이벤트 리스너 재등록 (풀링에서 재사용 시 필요)
+            statusBarUI.ReinitializeEventListeners(this);
+        }
+        
+        // 이벤트 리스너만 정리 (이벤트 자체는 유지)
+        if (healthChangedListeners != null)
+        {
+            healthChangedListeners.Clear();
+        }
+        if (deathListeners != null)
+        {
+            deathListeners.Clear();
+        }
+        
+        // 컴포넌트 참조는 유지 (재사용 시 필요)
+        // rb, anim, sortingGroup, effectManager, collisionManager, statusBarUI는 그대로 유지
+    }
+    
+    // 모든 참조를 정리합니다 (Destroy 시에만 사용)
+    private void ClearAllReferences()
     {
         // 이벤트 정리
         onHealthChanged = null;
