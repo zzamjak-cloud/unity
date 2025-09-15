@@ -9,13 +9,13 @@ using System.Collections.Generic;
 public abstract class CharacterBase : MonoBehaviour, ICharacterController, ICharacterAttackEffect, ICharacterMoveEffect, ICharacterBlankEffect, ICharacterDamageEffect, ICollisionHandler
 {
     [Header("Movement Settings")]
-    [SerializeField] protected float moveSpeed = 5f;  // 이동 속도
-    [SerializeField] protected float runSpeedMultiplier = 1.5f;  // 달리기 속도 배수
+    [SerializeField] protected float moveSpeed = GameConstants.DEFAULT_MOVE_SPEED;  // 이동 속도
+    [SerializeField] protected float runSpeedMultiplier = GameConstants.DEFAULT_RUN_SPEED_MULTIPLIER;  // 달리기 속도 배수
     
     [Header("Sorting System")]
     [SerializeField] protected bool enableSortingOrderAdjustment = true; // Y축 기반 정렬 순서 조절 활성화 여부
-    [SerializeField] protected int baseSortingOrder = 0; // 기본 정렬 순서
-    [SerializeField] protected float sortingOrderMultiplier = -10f; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞) - 더 세밀한 정렬을 위해 10배 증가
+    [SerializeField] protected int baseSortingOrder = GameConstants.DEFAULT_BASE_SORTING_ORDER; // 기본 정렬 순서
+    [SerializeField] protected float sortingOrderMultiplier = GameConstants.DEFAULT_SORTING_ORDER_MULTIPLIER; // Y축에 곱할 배수 (음수: 위쪽이 앞, 양수: 아래쪽이 앞) - 더 세밀한 정렬을 위해 10배 증가
 
     [Header("Effects")]
     [SerializeField] protected EffectManager effectManager;  // 이펙트 관리자
@@ -24,15 +24,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     [SerializeField] protected CharacterCollisionManager collisionManager;  // 콜리전 관리자
     [SerializeField] protected bool enableCollisionSystem = true;  // 콜리전 시스템 활성화 여부
     
-    [Header("Attack Range Objects")]
-    [SerializeField] protected GameObject attackRangeObject;  // AttackRange 콜리전이 적용된 GameObject
-    
     [Header("Health System")]
     [SerializeField] protected int maxHealth = 100;  // 최대 체력
     [SerializeField] protected int currentHealth;  // 현재 체력
     [SerializeField] protected int attackPower = 20;  // 공격력
     [SerializeField] protected bool isDead = false;  // 사망 상태
-    [SerializeField] protected float invincibilityDuration = 0.5f;  // 무적 시간 (초)
+    [SerializeField] protected float invincibilityDuration = GameConstants.PLAYER_INVINCIBILITY_DURATION;  // 무적 시간 (초)
     [SerializeField] protected bool isInvincible = false;  // 무적 상태
     
     [Header("Status UI")]
@@ -76,13 +73,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     protected virtual void Awake()
     {
-        // EffectManager 자동 설정
-        if (effectManager == null)
-        {
-            effectManager = GetComponent<EffectManager>();
-            if (effectManager == null)
-            { effectManager = gameObject.AddComponent<EffectManager>(); }
-        }
+        if (effectManager == null) {Debug.LogError("EffectManager is not assigned");}
+        if (collisionManager == null) {Debug.LogError("CharacterCollisionManager is not assigned");}
+        if (anim == null) {Debug.LogError("Animator is not assigned");}
+        if (pivotTransform == null) {Debug.LogError("Pivot Transform is not assigned");}
+        if (sortingGroup == null) {sortingGroup = GetComponent<SortingGroup>();}
         
         // 이벤트 리스너 리스트 초기화
         healthChangedListeners = new List<System.Action<int, int>>();
@@ -91,27 +86,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     protected virtual void Start()
     {
-        rb = GetComponent<Rigidbody2D>();  // Rigidbody2D 컴포넌트 등록
-        
-        // Animator 컴포넌트 자동 찾기
-        if (anim == null) { anim = GetComponentInChildren<Animator>(); }
-        
-        // Pivot Transform 자동 찾기
-        if (pivotTransform == null) { pivotTransform = transform.Find("Pivot"); }
-        
-        // SortingGroup 컴포넌트 자동 찾기 또는 추가
-        sortingGroup = GetComponent<SortingGroup>();
-        if (sortingGroup == null) { sortingGroup = gameObject.AddComponent<SortingGroup>(); }
-        
-        // AttackRange 콜리전 GameObject 자동 찾기
-        if (attackRangeObject == null) { attackRangeObject = transform.Find("AttackRange")?.gameObject; }
-        
-        // CharacterCollisionManager 설정
-        if (collisionManager == null) { collisionManager = GetComponent<CharacterCollisionManager>(); }
-        
-        // 콜리전 시스템 초기화 (비활성화된 경우 이벤트 핸들러 등록하지 않음)
-        InitializeCollisionSystem();
-        
+        rb = GetComponent<Rigidbody2D>();
+
+        InitializeCollisionSystem();  // 콜리전 시스템 초기화
         InitializeHealthSystem();  // 체력 시스템 초기화
         
         // 초기 정렬 순서 설정
@@ -128,13 +105,11 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         cachedSortingOrder = 0f;
         cachedHealthValue = currentHealth;
         
-        // AttackRange 콜리전 초기화
-        if (collisionManager != null) { SetAttackRangeCollisionEnabled(true); }
+        SetAttackRangeCollisionEnabled(true);  // AttackRange 콜리전 초기화
     }
 
     protected virtual void Update()
     {
-        // 하위 클래스에서 구현할 추상 메서드들 호출
         UpdateMovement();  // 이동
         UpdateAnimation();  // 애니메이션
         UpdateHealthSystem();  // 체력시스템
@@ -145,7 +120,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         UpdateSortingOrder();  // 정렬 순서 업데이트
     }
     
-    // Y축 위치에 따라 SortingGroup의 Order 값을 조절합니다. Y축이 높을수록 앞에 표시되고, Y축이 낮을수록 뒤에 표시됩니다.
+    // Y축 위치에 따라 SortingGroup의 Order값 조절
     protected virtual void UpdateSortingOrder()
     {
         if (!enableSortingOrderAdjustment || sortingGroup == null) return;
@@ -163,6 +138,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
 
+
     #region ICharacterController Implementation
 
     public abstract void UpdateMovement();  // 이동
@@ -171,21 +147,16 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     public abstract Vector2 GetMovementInput();  // 이동 입력
 
-    public virtual bool IsRunning()  // 달리기 상태
-    {
-        return isCurrentlyRunning;
-    }
+    public virtual bool IsRunning() { return isCurrentlyRunning; }  // 달리기 상태
 
-    // 특수 애니메이션을 트리거합니다. (Attack, Ceremony, Blank, Death)
+    // 특수 애니메이션 트리거 (Attack, Ceremony, Blank, Death)
     public virtual void TriggerSpecialAnimation(CharacterAnimationState animationType)
     {
-        if (anim == null) return;
-        
         switch (animationType)
         {
             case CharacterAnimationState.Attack:
                 isAttacking = true; // 공격 시작
-                anim.SetTrigger(GameConstants.ANIM_IS_ATTACKING);
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
                 break;
             case CharacterAnimationState.Ceremony:
                 anim.SetTrigger(GameConstants.ANIM_CEREMONY);
@@ -216,49 +187,37 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     // 현재 애니메이션 상태를 반환합니다. return currentAnimationState;
     public virtual CharacterAnimationState GetCurrentAnimationState()
-    {
-        return currentAnimationState;
-    }
+    { return currentAnimationState; }
 
     // 특정 애니메이션 상태인지 확인합니다. return currentAnimationState == state;
     public virtual bool IsInAnimationState(CharacterAnimationState state)
-    {
-        return currentAnimationState == state;
-    }
+    { return currentAnimationState == state; }
 
     #endregion
+
+
 
     #region ICollisionHandler Implementation
 
     // Body 콜리전 이벤트 처리 (적/플레이어 충돌, 피격 판정)
     public virtual void OnBodyCollision(Collider2D other)
-    {
-        // 기본적인 피격 판정 처리
-        HandleBodyCollision(other);
-    }
+    { HandleBodyCollision(other); }
 
     // AttackRange 콜리전 이벤트 처리 (공격 범위 진입)
     public virtual void OnAttackRangeEnter(Collider2D other)
-    {
-        // 기본적인 공격 범위 진입 처리
-        HandleAttackRangeEnter(other);
-    }
+    { HandleAttackRangeEnter(other); }
 
     // AttackRange 콜리전에서 나갔을 때 처리 (공격 범위 벗어남)
     public virtual void OnAttackRangeExit(Collider2D other)
-    {
-        // 기본적인 공격 범위 벗어남 처리
-        HandleAttackRangeExit(other);
-    }
+    { HandleAttackRangeExit(other); }  // 기본적인 공격 범위 벗어남 처리
     
     // 애니메이션 이벤트에서 호출되는 공격 성공 판정
     public virtual void OnAttackHit(Collider2D other)
-    {
-        // 기본적인 공격 성공 처리
-        HandleAttackHit(other);
-    }
+    { HandleAttackHit(other); }  // 기본적인 공격 성공 처리
 
     #endregion
+
+
 
     #region Protected Helper Methods
 
@@ -313,8 +272,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 기본, 걷기, 달리기 애니메이션 상태를 처리합니다.
     protected virtual void HandleAnimations(float movementMagnitude, bool isRunning)
     {
-        if (anim == null) return;
-        
         // 이동 상태에 따른 애니메이션 트리거
         if (movementMagnitude > 0)
         {
@@ -342,25 +299,20 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // rigidbody를 사용해 물리 기반 이동을 처리합니다.
     protected virtual void HandlePhysicsMovement(Vector2 movement, bool isRunning)
     {
-        if (rb == null) return;
-        
         float currentSpeed = moveSpeed;
         if (isRunning)
-        {
             currentSpeed *= runSpeedMultiplier;
-        }
         
-        // Rigidbody를 사용해 이동
         rb.linearVelocity = movement.normalized * currentSpeed;
         
         // 캐릭터 방향 전환 처리 (공격 중이 아닐 때만)
         if (movement.x != 0 && !isAttacking)
-        {
             FlipCharacter(movement.x);
-        }
     }
 
     #endregion
+
+
 
     #region Collision Helper Methods
 
@@ -408,14 +360,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             // 타격받은 대상의 CharacterBase 컴포넌트 찾기
             CharacterBase targetCharacter = other.GetComponent<CharacterBase>();
+
             if (targetCharacter == null)
-            {
                 targetCharacter = other.GetComponentInParent<CharacterBase>();
-            }
             
             if (targetCharacter != null && !targetCharacter.IsDead())  // 타격받은 대상이 살아있을 때
             {
-                // 공격 이펙트 재생 (공격자)
                 PlayAttackEffect();
                 
                 // 데미지 적용
@@ -437,31 +387,25 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
 
     #region ICharacterAttackEffect, ICharacterMoveEffect, ICharacterBlankEffect, ICharacterDamageEffect Implementation
 
-    // 이동시 먼지 이펙트를 재생하거나 정지합니다. (play : true면 재생, false면 정지)
+    // 이동시 먼지 이펙트를 재생/정지
     public virtual void PlayMoveEffect(bool play)
-    {
-        effectManager?.PlayMoveEffect(play);
-    }
+    { effectManager?.PlayMoveEffect(play); }
 
     // 공격 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
     public virtual void PlayAttackEffect()
-    {
-        effectManager?.PlayAttackEffect();
-    }
+    { effectManager?.PlayAttackEffect(); }
 
     // Blank 이펙트를 재생합니다. (애니메이션 이벤트에서 호출되어야 합니다.)
     public virtual void PlayBlankEffect()
-    {
-        effectManager?.PlayBlankEffect();
-    }
+    { effectManager?.PlayBlankEffect(); }
 
     // 피격 이펙트를 재생합니다. (공격을 받았을 때 호출됩니다.)
     public virtual void PlayDamageEffect()
-    {
-        effectManager?.PlayDamageEffect();
-    }
+    { effectManager?.PlayDamageEffect(); }
 
     #endregion
+
+
 
     #region Attack Collision Control
 
@@ -470,25 +414,16 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     {
         if (target == null) return;
         
-        // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
+        // 타겟에서 CharacterBase 컴포넌트 찾기 (타겟과 타겟의 부모 검색)
         CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
         if (targetCharacter == null)
-        {
-            // 자식에서 찾지 못했으면 부모에서 찾기
             targetCharacter = target.GetComponentInParent<CharacterBase>();
-        }
         
         if (targetCharacter != null)
         {
             // 공격 중이 아닐 때만 Blank 애니메이션 실행
             if (!targetCharacter.isAttacking)
-            {
                 targetCharacter.TriggerSpecialAnimation(CharacterAnimationState.Blank);
-            }
-            else
-            {
-                Debug.Log($"[CharacterBase] 타겟이 공격 중이므로 Blank 애니메이션 무시 - Target: {targetCharacter.name}");
-            }
         }
     }
 
@@ -497,28 +432,19 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     {
         if (target == null) return;
         
-        // 타겟에서 CharacterBase 컴포넌트 찾기 (자신과 부모에서 검색)
         CharacterBase targetCharacter = target.GetComponent<CharacterBase>();
         if (targetCharacter == null)
-        {
-            // 자식에서 찾지 못했으면 부모에서 찾기
             targetCharacter = target.GetComponentInParent<CharacterBase>();
-        }
         
         if (targetCharacter != null)
-        {
-            // 타겟에게 피격 이펙트 재생
             targetCharacter.PlayDamageEffect();
-        }
     }
 
     // AttackRange 콜리전을 활성화/비활성화합니다.
     public virtual void SetAttackRangeCollisionEnabled(bool enabled)
     { 
         if (collisionManager != null) 
-        { 
-            collisionManager.SetAttackRangeCollisionEnabled(enabled); 
-        }
+            collisionManager.SetAttackRangeCollisionEnabled(enabled);
     }
     
     // AttackRange 콜리전을 활성화합니다. (편의 메서드)
@@ -535,20 +461,17 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         if (collisionManager == null) return false;
         return collisionManager.IsAttackRangeColliderEnabled();
     }
-
     
     // AttackRange 내 가장 가까운 적을 반환합니다.
     public virtual Collider2D GetNearestEnemy()
     {
-        if (collisionManager == null) return null;
+        if (collisionManager == null)
+            return null;
+
         return collisionManager.GetNearestEnemy();
     }
     
-    /// <summary>
-    /// 공격 전 가장 가까운 적을 바라보도록 Flip 처리합니다.
-    /// 공격 중에는 타겟을 변경하지 않습니다.
-    /// </summary>
-    /// <param name="force">true이면 공격 중이어도 강제로 방향을 바꿉니다.</param>
+    // 공격 전 가장 가까운 적을 바라보도록 Flip 처리합니다. (Enemy 전용) (Player 전용은 사용하지 않습니다.)
     protected virtual void FaceNearestEnemy(bool force = false)
     {
         // 공격 중이 아닐 때만 타겟 변경 허용 (force가 true이면 예외)
@@ -559,24 +482,17 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             Vector3 directionToTarget = (nearestEnemy.transform.position - transform.position).normalized;
             if (directionToTarget.x != 0)
-            {
                 FlipCharacter(directionToTarget.x);
-            }
         }
     }
     
-    /// <summary>
-    /// 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
-    /// 하위 클래스에서 구현해야 합니다.
-    /// 주의: 하위 클래스에서 isAttacking = true를 먼저 설정한 후 FaceNearestEnemy()를 호출해야 합니다.
-    /// </summary>
+    // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
+    // 하위 클래스에서 구현해야 합니다.
+    // 주의: 하위 클래스에서 isAttacking = true를 먼저 설정한 후 FaceNearestEnemy()를 호출해야 합니다.
     protected virtual void StartAttackSequence()
     {
-        // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-        FaceNearestEnemy();
-        
-        // 공격 이펙트 재생
-        PlayAttackEffect();
+        FaceNearestEnemy();  // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
+        PlayAttackEffect();  // 공격 이펙트 재생
     }
     
     // AttackRange 내 적이 있는지 확인합니다.
@@ -599,28 +515,20 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         collisionManager.OnAttackAnimationEvent();
     }
     
-    /// <summary>
-    /// Death 애니메이션의 길이를 반환합니다.
-    /// </summary>
+    // Death 애니메이션의 길이를 반환합니다.
     public virtual float GetDeathAnimationLength()
     {
-        if (anim == null) return 2.0f; // 기본값
-        
         // Death 애니메이션 클립의 길이를 가져옵니다
         AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
-        if (stateInfo.IsName("Death"))
-        {
+        if (stateInfo.IsName(GameConstants.ANIM_STATE_DEATH))
             return stateInfo.length;
-        }
         
         // Death 애니메이션이 현재 재생 중이 아닌 경우, 애니메이션 클립에서 직접 찾기
         AnimationClip[] clips = anim.runtimeAnimatorController.animationClips;
         foreach (AnimationClip clip in clips)
         {
-            if (clip.name.ToLower().Contains("death") || clip.name.ToLower().Contains("die"))
-            {
+            if (clip.name.Contains(GameConstants.ANIM_STATE_DEATH))
                 return clip.length;
-            }
         }
         
         return 2.0f; // 기본값 (2초)
@@ -782,9 +690,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         
         // 초기 체력 UI 업데이트 (이벤트 없이 직접)
         if (statusBarUI != null)
-        {
             statusBarUI.UpdateHealthDisplay(currentHealth, maxHealth);
-        }
     }
     
     // 상태 UI 초기화
@@ -894,10 +800,12 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 사망 처리
     protected virtual void Die()
     {
+        isAttacking = false;
         isDead = true;
         collisionManager.SetAllCollisionsEnabled(false);  // 모든 콜리전 비활성화
         statusBarUI.SetVisible(false);  // 체력바 숨기기
-        TriggerSpecialAnimation(CharacterAnimationState.Death);  // 사망 애니메이션 실행
+        currentAnimationState = CharacterAnimationState.Death;
+        TriggerSpecialAnimation(currentAnimationState);  // 사망 애니메이션 실행
         
         // 사망 이벤트 호출 (최적화된 방식)
         if (deathListeners != null)
@@ -1057,7 +965,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         sortingGroup = null;
         effectManager = null;
         collisionManager = null;
-        attackRangeObject = null;
         statusBarUI = null;
     }
     

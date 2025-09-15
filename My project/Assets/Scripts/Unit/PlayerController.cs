@@ -182,19 +182,21 @@ public class PlayerController : CharacterBase
     //플레이어의 애니메이션 상태를 업데이트합니다.
     protected override void UpdateAnimationState()
     {
+        // 사망 상태일 때는 Death 애니메이션 강제 유지
+        if (IsDead())
+        {
+            if (currentAnimationState != CharacterAnimationState.Death)
+            {
+                currentAnimationState = CharacterAnimationState.Death;
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+                anim.SetTrigger(GameConstants.ANIM_DEATH);
+            }
+            return; // 사망 상태일 때는 base.UpdateAnimationState() 호출하지 않음
+        }
+        
         // 공격 중일 경우 처리
         if (isAttacking)
         {
-            // 사망시 Death 애니메이션 강제 처리
-            if (IsDead())
-            {
-                isAttacking = false;
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-                currentAnimationState = CharacterAnimationState.Death;
-                anim.SetTrigger(GameConstants.ANIM_DEATH);
-                return;
-            }
-            
             // 공격 애니메이션 종료시 Idle 상태로 강제 전환
             if (Time.time >= attackAnimationEndTime)
             {

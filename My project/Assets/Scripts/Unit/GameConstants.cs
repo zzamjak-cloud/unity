@@ -42,7 +42,7 @@ public static class GameConstants
     #endregion
 
     #region Character Stats
-    public const float PLAYER_INVINCIBILITY_DURATION = 1.0f;  // 플레이어 무적 시간
+    public const float PLAYER_INVINCIBILITY_DURATION = 0.5f;  // 플레이어 무적 시간
     public const float ENEMY_INVINCIBILITY_DURATION = 0.5f;  // 적 무적 시간
     #endregion
 
