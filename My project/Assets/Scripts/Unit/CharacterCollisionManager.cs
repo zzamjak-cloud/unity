@@ -522,17 +522,7 @@ public class CharacterCollisionManager : MonoBehaviour
     public void OnAttackAnimationEvent()
     {
         if (nearestEnemy != null)
-        {
-            // 콜리전 핸들러에 공격 성공 이벤트 전달
-            if (collisionHandler != null)
-            {
-                collisionHandler.OnAttackHit(nearestEnemy);
-            }
-            else
-            {
-                Debug.LogWarning("[AttackAnimationEvent] collisionHandler가 null입니다!");
-            }
-        }
+            collisionHandler.OnAttackHit(nearestEnemy); // 콜리전 핸들러에 공격 성공 이벤트 전달
     }
     
     #endregion

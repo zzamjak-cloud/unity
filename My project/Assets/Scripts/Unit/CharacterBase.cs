@@ -81,9 +81,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             effectManager = GetComponent<EffectManager>();
             if (effectManager == null)
-            {
-                effectManager = gameObject.AddComponent<EffectManager>();
-            }
+            { effectManager = gameObject.AddComponent<EffectManager>(); }
         }
         
         // 이벤트 리스너 리스트 초기화
@@ -267,31 +265,29 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 현재 애니메이션 상태를 업데이트합니다.
     protected virtual void UpdateAnimationState()
     {
-        if (anim == null) return;
-        
         AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
         
-        if (stateInfo.IsName("Death"))
+        if (stateInfo.IsName(GameConstants.ANIM_STATE_DEATH))
         {
             currentAnimationState = CharacterAnimationState.Death;
         }
-        else if (stateInfo.IsName("Attack"))
+        else if (stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK))
         {
             currentAnimationState = CharacterAnimationState.Attack;
         }
-        else if (stateInfo.IsName("Blank"))
+        else if (stateInfo.IsName(GameConstants.ANIM_STATE_BLANK))
         {
             currentAnimationState = CharacterAnimationState.Blank;
         }
-        else if (stateInfo.IsName("Ceremony"))
+        else if (stateInfo.IsName(GameConstants.ANIM_STATE_CEREMONY))
         {
             currentAnimationState = CharacterAnimationState.Ceremony;
         }
-        else if (stateInfo.IsName("Run"))
+        else if (stateInfo.IsName(GameConstants.ANIM_STATE_RUN))
         {
             currentAnimationState = CharacterAnimationState.Run;
         }
-        else if (stateInfo.IsName("Walk"))
+        else if (stateInfo.IsName(GameConstants.ANIM_STATE_WALK))
         {
             currentAnimationState = CharacterAnimationState.Walk;
         }
@@ -304,15 +300,13 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 캐릭터의 방향을 Pivot Transform의 X축 스케일을 이용해 반전시킵니다.
     protected virtual void FlipCharacter(float moveX)
     {
-        if (pivotTransform == null) return;
-        
         if (moveX > 0)
         {
-            pivotTransform.localScale = new Vector3(1, 1, 1);  // 양의 방향으로 이동 (오른쪽) -> 기본 스케일
+            pivotTransform.localScale = new Vector3(1, 1, 1);
         }
         else if (moveX < 0)
         {   
-            pivotTransform.localScale = new Vector3(-1, 1, 1);  // 음의 방향으로 이동 (왼쪽) -> X 스케일 -1
+            pivotTransform.localScale = new Vector3(-1, 1, 1);
         }
     }
 
@@ -602,13 +596,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드
     public virtual void OnAttackAnimationEvent()
     {
-        // 공격 판정 시점에서 이동 허용 (Flip 처리 완료 후)
-        isAttacking = false;
-        
-        if (collisionManager != null)
-        {
-            collisionManager.OnAttackAnimationEvent();
-        }
+        collisionManager.OnAttackAnimationEvent();
     }
     
     /// <summary>
@@ -906,24 +894,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 사망 처리
     protected virtual void Die()
     {
-        if (IsDead()) return;
-        
         isDead = true;
-        
-        // 모든 콜리전 비활성화
-        if (collisionManager != null)
-        {
-            collisionManager.SetAllCollisionsEnabled(false);
-        }
-        
-        // 체력바 숨기기
-        if (statusBarUI != null)
-        {
-            statusBarUI.SetVisible(false);
-        }
-        
-        // 사망 애니메이션 실행
-        TriggerSpecialAnimation(CharacterAnimationState.Death);
+        collisionManager.SetAllCollisionsEnabled(false);  // 모든 콜리전 비활성화
+        statusBarUI.SetVisible(false);  // 체력바 숨기기
+        TriggerSpecialAnimation(CharacterAnimationState.Death);  // 사망 애니메이션 실행
         
         // 사망 이벤트 호출 (최적화된 방식)
         if (deathListeners != null)
@@ -933,7 +907,6 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
                 deathListeners[i]?.Invoke();
             }
         }
-        
         // 사망 처리 (하위 클래스에서 오버라이드)
         OnDeath();
     }

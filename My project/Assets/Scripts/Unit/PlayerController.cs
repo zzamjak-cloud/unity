@@ -9,7 +9,6 @@ public class PlayerController : CharacterBase
 {
     [Header("Player Input Settings")]
     [SerializeField] private bool enableKeyboardInput = true;  // 키보드 입력 활성화 여부
-    //[SerializeField] private bool enableMouseInput = false;    // 마우스 입력 활성화 여부 (향후 확장용)
     
     [Header("Player Stats")]
     [SerializeField] private int playerMaxHealth = 150;  // 플레이어 최대 체력
@@ -54,14 +53,6 @@ public class PlayerController : CharacterBase
         
         base.Start();
         
-        // Animator null 체크 및 초기화
-        if (anim == null)
-        {
-            Debug.LogError($"[PlayerController] {gameObject.name}: Animator가 없습니다! 애니메이션 기능이 비활성화됩니다.");
-            enabled = false; // 컴포넌트 비활성화
-            return;
-        }
-        
         // 플레이어 전용 무적 시간 설정 (CharacterBase의 기본값을 덮어쓰기)
         invincibilityDuration = GameConstants.PLAYER_INVINCIBILITY_DURATION;
         
@@ -94,13 +85,9 @@ public class PlayerController : CharacterBase
     {
         if (IsDead())  // 사망시 처리
         {
-            if (rb != null) { rb.linearVelocity = Vector2.zero; }  // 이동 중단
-
-            OnAttackAnimationEnd();  // 공격 중단
-            
-            if (collisionManager != null)  // 모든 콜리전 비활성화
-            { collisionManager.SetAllCollisionsEnabled(false); }
-            
+            rb.linearVelocity = Vector2.zero;   // 이동 중단
+            OnAttackAnimationEnd();             // 공격 중단
+            collisionManager.SetAllCollisionsEnabled(false);  // 모든 콜리전 비활성화
             return;
         }
         
@@ -122,7 +109,7 @@ public class PlayerController : CharacterBase
         }
         
         Vector2 movement = GetMovementInput();  // 현재 입력 값으로 이동 처리
-        bool isRunning = IsRunning();  // 달리기 상태 확인
+        bool isRunning = IsRunning();  // 달리기 상태 확인확인
         HandlePhysicsMovement(movement, isRunning);  // 물리 기반 이동 처리
         
         currentMovement = movement;  // 현재 이동 상태 저장
@@ -169,11 +156,10 @@ public class PlayerController : CharacterBase
 
     public override bool CanMove()
     {
-        // 무적 상태일 때는 공격 중이어도 이동 허용
-        if (IsInvincible())
-        {
-            return currentAnimationState != CharacterAnimationState.Death; // 사망 상태만 체크
-        }
+        if (IsDead()) return false;  // 사망 상태일 때는 이동 불가
+        if (isAttacking) return false;  // 공격 중일 때는 이동 불가
+        if (IsInvincible())  // 무적일 때는 사망 상태만 체크
+            return currentAnimationState != CharacterAnimationState.Death;
         
         return base.CanMove(); // 기본 이동 가능 여부 확인
     }
@@ -196,48 +182,35 @@ public class PlayerController : CharacterBase
     //플레이어의 애니메이션 상태를 업데이트합니다.
     protected override void UpdateAnimationState()
     {
-        // 사망시 Death 애니메이션 강제 처리 (즉시 처리)
-        if (IsDead())
-        {
-            if (currentAnimationState != CharacterAnimationState.Death)
-            {
-                isAttacking = false;
-                currentAnimationState = CharacterAnimationState.Death;
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-                anim.SetTrigger(GameConstants.ANIM_DEATH);
-            }
-            return;
-        }
-        
-        // 공격 중일 때만 체크 (타이머 기반)
+        // 공격 중일 경우 처리
         if (isAttacking)
         {
-            // 공격 애니메이션 종료 시간 체크 (매 프레임 체크 대신 타이머 사용)
+            // 사망시 Death 애니메이션 강제 처리
+            if (IsDead())
+            {
+                isAttacking = false;
+                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
+                currentAnimationState = CharacterAnimationState.Death;
+                anim.SetTrigger(GameConstants.ANIM_DEATH);
+                return;
+            }
+            
+            // 공격 애니메이션 종료시 Idle 상태로 강제 전환
             if (Time.time >= attackAnimationEndTime)
             {
-                // 공격 애니메이션 완료
                 isAttacking = false;
-                currentAnimationState = CharacterAnimationState.Idle;
                 anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-                
-                // 기본 상태 업데이트 수행
+                currentAnimationState = CharacterAnimationState.Idle;
                 base.UpdateAnimationState();
                 return;
             }
             
-            // 공격 애니메이션 중에는 상태 강제 유지 (다른 애니메이션 방해 방지)
             currentAnimationState = CharacterAnimationState.Attack;
-            
-            // 공격 애니메이션이 방해받지 않도록 강제 복원
-            AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
-            if (!stateInfo.IsName(GameConstants.ANIM_STATE_ATTACK))
-            {
-                anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
-            }
+            anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
             return;
         }
         
-        // Blank 상태일 때는 공격 입력이 있으면 공격 애니메이션으로 덮어쓰기
+        // Blank일 경우 공격 입력이 있으면 공격 애니메이션으로 덮어쓰기
         if (currentAnimationState == CharacterAnimationState.Blank && isAttackPressed)
         {
             StartAttackSequence();
@@ -248,6 +221,7 @@ public class PlayerController : CharacterBase
     }
     
     // 공격을 시작합니다. (공격 쿨다운 리셋, 애니메이션 시작, 이펙트 재생)
+    // 주의: PlayerController는 사용자가 직접 방향을 제어하므로 FaceNearestEnemy()를 호출하지 않습니다.
     protected override void StartAttackSequence()
     {
         // 공격 가능 여부 확인
@@ -411,8 +385,7 @@ public class PlayerController : CharacterBase
     // 공격 중일 때는 피격 애니메이션이 우선순위를 가지지 않습니다.
     public override void TakeDamage(int damage, CharacterBase attacker = null)
     {
-        if (IsDead() || IsInvincible()) 
-        { return; }
+        if (IsDead() || IsInvincible()) return;
         
         // 캐시된 변수 사용으로 메모리 할당 최적화
         cachedHealthValue = Mathf.Max(0, currentHealth - damage);
@@ -429,9 +402,6 @@ public class PlayerController : CharacterBase
         
         StartInvincibility();  // 무적 상태
         PlayDamageEffect();
-  
-        // 공격 중에는 애니메이션 상태를 강제로 유지할 필요 없음
-        // StartAttackAnimation()은 공격 시작 시에만 호출됨
         
         // 체력이 0 이하가 되면 사망 처리
         if (currentHealth <= 0)
@@ -444,14 +414,6 @@ public class PlayerController : CharacterBase
     // 플레이어 사망 처리 (Death 애니메이션 포함)
     protected override void Die()
     {
-        // 공격 상태 해제
-        isAttacking = false;
-        anim.SetBool(GameConstants.ANIM_IS_ATTACKING, false);
-        
-        // 애니메이션 상태 설정
-        currentAnimationState = CharacterAnimationState.Death;
-        
-        // 기본 사망 처리 (Death 애니메이션 실행 포함)
         base.Die();
     }
     
