@@ -15,7 +15,7 @@ namespace CAT.Utility
     [InitializeOnLoad]
     public static class PrefabMenuInHierarchy
     {
-        private const string PrefabFolderPath = "Assets/VFX/Presets"; // 프리팹이 저장된 폴더 경로
+        private const string PrefabFolderPath = "Assets/Presets"; // 프리팹이 저장된 폴더 경로
         private static readonly GUIContent buttonContent;
 
         static PrefabMenuInHierarchy()

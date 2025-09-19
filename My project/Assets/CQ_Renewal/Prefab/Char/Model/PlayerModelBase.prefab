@@ -164,7 +164,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4276119949078340908}
   m_Layer: 0
-  m_Name: Pivot
+  m_Name: Flip
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -317,7 +317,6 @@ MonoBehaviour:
   effectManager: {fileID: 2938303985943841417}
   collisionManager: {fileID: 6303384091237590385}
   enableCollisionSystem: 1
-  attackRangeObject: {fileID: 3525228730976875678}
   maxHealth: 100
   currentHealth: 0
   attackPower: 20
@@ -330,13 +329,10 @@ MonoBehaviour:
   enableKeyboardInput: 1
   playerMaxHealth: 150
   playerAttackPower: 25
-  playerInvincibilityDuration: 1
   damageMovementSpeedMultiplier: 0.7
   playerStatusBarOffset: {x: 0, y: 1.261, z: 0}
   playerStatusBarObject: {fileID: 6489921415781988296}
-  enableAutoAttack: 1
-  attackDelay: 0.01
-  attackCooldownMultiplier: 1.2
+  attackCooldown: 0.2
 --- !u!114 &6303384091237590385
 MonoBehaviour:
   m_ObjectHideFlags: 0
