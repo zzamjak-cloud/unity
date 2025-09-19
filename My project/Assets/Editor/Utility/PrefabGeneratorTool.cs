@@ -108,6 +108,9 @@ public class PrefabGeneratorTool : EditorWindow
             // 8. Head 하위 오브젝트들도 개별적으로 정렬
             SortHeadChildrenAlphabetically(basePivot);
 
+            // 9. 빈 Sprite Renderer 오브젝트와 부모 오브젝트 정리
+            CleanupEmptySpriteRenderers(baseModelInstance.transform);
+
             Debug.Log($"✅ 베리언트 '{variantName}' 설정이 완료되었습니다. 하이어라키에서 확인하세요.");
         }
 
@@ -1120,5 +1123,67 @@ public class PrefabGeneratorTool : EditorWindow
             current = current.parent;
         }
         return path;
+    }
+
+    private void CleanupEmptySpriteRenderers(Transform root)
+    {
+        Debug.Log("🧹 빈 Sprite Renderer 오브젝트 정리 시작");
+        
+        // 모든 Transform을 수집 (하위부터 상위로 정렬)
+        List<Transform> allTransforms = new List<Transform>();
+        CollectAllTransforms(root, allTransforms);
+        
+        // 하위부터 상위로 정렬하여 부모가 먼저 삭제되는 것을 방지
+        allTransforms.Sort((a, b) => b.GetSiblingIndex().CompareTo(a.GetSiblingIndex()));
+        
+        int removedCount = 0;
+        
+        foreach (Transform transform in allTransforms)
+        {
+            if (transform == null) continue; // 이미 삭제된 경우
+            
+            SpriteRenderer spriteRenderer = transform.GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null && spriteRenderer.sprite == null)
+            {
+                // Sprite Renderer가 있지만 이미지가 없는 경우
+                Debug.Log($"🗑️ 빈 Sprite Renderer 오브젝트 삭제: {GetHierarchyPath(transform)}");
+                
+                // 부모 오브젝트도 확인
+                Transform parent = transform.parent;
+                if (parent != null && parent != root)
+                {
+                    // 부모가 자식이 하나뿐이고, 그 자식이 현재 삭제할 오브젝트인 경우
+                    if (parent.childCount == 1)
+                    {
+                        Debug.Log($"🗑️ 빈 부모 오브젝트도 삭제: {GetHierarchyPath(parent)}");
+                        UnityEngine.Object.DestroyImmediate(parent.gameObject);
+                        removedCount++;
+                    }
+                    else
+                    {
+                        // 부모에 다른 자식이 있는 경우 현재 오브젝트만 삭제
+                        UnityEngine.Object.DestroyImmediate(transform.gameObject);
+                        removedCount++;
+                    }
+                }
+                else
+                {
+                    // 부모가 없거나 루트인 경우 현재 오브젝트만 삭제
+                    UnityEngine.Object.DestroyImmediate(transform.gameObject);
+                    removedCount++;
+                }
+            }
+        }
+        
+        Debug.Log($"✅ 빈 Sprite Renderer 정리 완료: {removedCount}개 오브젝트 삭제");
+    }
+    
+    private void CollectAllTransforms(Transform root, List<Transform> transforms)
+    {
+        transforms.Add(root);
+        foreach (Transform child in root)
+        {
+            CollectAllTransforms(child, transforms);
+        }
     }
 }
