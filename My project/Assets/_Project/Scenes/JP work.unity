@@ -393,7 +393,6 @@ GameObject:
   - component: {fileID: 330585545}
   - component: {fileID: 330585544}
   - component: {fileID: 330585547}
-  - component: {fileID: 330585548}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -520,18 +519,6 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
---- !u!114 &330585548
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 330585543}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2013b0a43ac8d9e4fa604c1cacc77568, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FollowCameraOptimized
 --- !u!1 &336770630
 GameObject:
   m_ObjectHideFlags: 0
@@ -281057,19 +281044,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 671927078899807426, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1786367090740590047, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchorMax.x
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1786367090740590047, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6049111660759869855, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_SizeDelta.y
-      value: 10
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7303779623817831262, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_LocalPosition.x
@@ -281113,19 +281100,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8220066722511351249, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8220066722511351249, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchorMin.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8220066722511351249, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 30
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8220066722511351249, guid: 144287844d796d44c8792f0f29f504bd, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: -5
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
