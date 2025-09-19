@@ -473,8 +473,7 @@ public class EnemyController : CharacterBase
         // IsAttacking 파라미터를 true로 설정
         anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
         
-        // 공격 이펙트 재생
-        PlayAttackEffect();
+        // 공격 이펙트는 OnAttackAnimationEvent()에서 재생됨
     }
 
     // 공격 애니메이션 종료 이벤트에서 호출되는 메서드 (애니메이션 이벤트용)

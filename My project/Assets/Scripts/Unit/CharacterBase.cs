@@ -155,7 +155,9 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         {
             case CharacterAnimationState.Attack:
                 isAttacking = true; // 공격 시작
+                FaceNearestEnemy();  // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
                 anim.SetBool(GameConstants.ANIM_IS_ATTACKING, true);
+                // AttackEffect는 OnAttackAnimationEvent()에서 실행되도록 함
                 break;
             case CharacterAnimationState.Ceremony:
                 anim.SetTrigger(GameConstants.ANIM_CEREMONY);
@@ -365,7 +367,7 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
             
             if (targetCharacter != null && !targetCharacter.IsDead())  // 타격받은 대상이 살아있을 때
             {
-                PlayAttackEffect();
+                // AttackEffect는 OnAttackAnimationEvent()에서 실행되므로 여기서는 제거
                 
                 // 데미지 적용
                 int damage = GetAttackPower();
@@ -485,13 +487,14 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
         }
     }
     
-    // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작, 이펙트 재생)
+    // 공격을 시작합니다. (공격 쿨다운 리셋, 적을 바라보기, 애니메이션 시작)
     // 하위 클래스에서 구현해야 합니다.
     // 주의: 하위 클래스에서 isAttacking = true를 먼저 설정한 후 FaceNearestEnemy()를 호출해야 합니다.
+    // AttackEffect는 OnAttackAnimationEvent()에서 실행됩니다.
     protected virtual void StartAttackSequence()
     {
         FaceNearestEnemy();  // 공격 전 가장 가까운 적을 바라보도록 Flip 처리
-        PlayAttackEffect();  // 공격 이펙트 재생
+        // AttackEffect는 OnAttackAnimationEvent()에서 실행되도록 함
     }
     
     // AttackRange 내 적이 있는지 확인합니다.
@@ -511,6 +514,10 @@ public abstract class CharacterBase : MonoBehaviour, ICharacterController, IChar
     // 애니메이션 이벤트에서 호출되는 공격 성공 판정 메서드
     public virtual void OnAttackAnimationEvent()
     {
+        // AttackEffect 재생 (애니메이션 이벤트 타이밍에 맞춰 실행)
+        PlayAttackEffect();
+        
+        // 공격 성공 판정
         collisionManager.OnAttackAnimationEvent();
     }
     
