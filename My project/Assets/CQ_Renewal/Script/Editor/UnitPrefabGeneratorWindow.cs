@@ -25,6 +25,13 @@ public class UnitPrefabGeneratorWindow : EditorWindow
 
     // 지원하는 이미지 확장자
     private static readonly string[] SUPPORTED_IMAGE_EXTENSIONS = { ".png", ".jpg" };
+
+    // Animator 이름들 (앞으로 추가될 수 있음)
+    private static readonly string[] ANIMATOR_NAMES = 
+    {
+        "Ar", "Hu", "Pa", "Pr", "Wa", "Wi"
+        // 새로운 Animator가 추가되면 여기에 추가하면 됩니다.
+    };
     
     #endregion
 
@@ -50,6 +57,16 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         return System.Array.Exists(SUPPORTED_IMAGE_EXTENSIONS, ext => filePath.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
     }
     
+    /// <summary>
+    /// 주어진 이름이 유효한 Animator 이름인지 확인합니다.
+    /// </summary>
+    /// <param name="name">확인할 Animator 이름</param>
+    /// <returns>유효한 Animator 이름이면 true, 아니면 false</returns>
+    private static bool IsValidAnimatorName(string name)
+    {
+        return System.Array.Exists(ANIMATOR_NAMES, animatorName => animatorName == name);
+    }
+    
     #endregion
 
     #region Fields
@@ -58,6 +75,7 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     private TextAsset referenceJSON;
     private DefaultAsset imageFolder;
     private DefaultAsset outputFolder;
+    private DefaultAsset animationFolder;
     
     #endregion
 
@@ -67,6 +85,164 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     public static void ShowWindow()
     {
         GetWindow<UnitPrefabGeneratorWindow>("Unit Prefab Generator");
+    }
+    
+    private void OnEnable()
+    {
+        LoadSettings();
+    }
+    
+    private void OnDisable()
+    {
+        SaveSettings();
+    }
+    
+    #endregion
+
+    #region Settings Management
+    
+    /// <summary>
+    /// PlayerPrefs에 설정을 저장합니다.
+    /// </summary>
+    private void SaveSettings()
+    {
+        // GameObject 참조 저장 (GUID 사용)
+        if (baseModelPrefab != null)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(baseModelPrefab));
+            EditorPrefs.SetString("UnitPrefabGenerator_BaseModelPrefab", guid);
+        }
+        else
+        {
+            EditorPrefs.DeleteKey("UnitPrefabGenerator_BaseModelPrefab");
+        }
+        
+        if (referenceJSON != null)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(referenceJSON));
+            EditorPrefs.SetString("UnitPrefabGenerator_ReferenceJSON", guid);
+        }
+        else
+        {
+            EditorPrefs.DeleteKey("UnitPrefabGenerator_ReferenceJSON");
+        }
+        
+        if (imageFolder != null)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(imageFolder));
+            EditorPrefs.SetString("UnitPrefabGenerator_ImageFolder", guid);
+        }
+        else
+        {
+            EditorPrefs.DeleteKey("UnitPrefabGenerator_ImageFolder");
+        }
+        
+        if (animationFolder != null)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(animationFolder));
+            EditorPrefs.SetString("UnitPrefabGenerator_AnimationFolder", guid);
+        }
+        else
+        {
+            EditorPrefs.DeleteKey("UnitPrefabGenerator_AnimationFolder");
+        }
+        
+        if (outputFolder != null)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(outputFolder));
+            EditorPrefs.SetString("UnitPrefabGenerator_OutputFolder", guid);
+        }
+        else
+        {
+            EditorPrefs.DeleteKey("UnitPrefabGenerator_OutputFolder");
+        }
+        
+        Debug.Log("💾 Unit Prefab Generator 설정이 저장되었습니다.");
+    }
+    
+    /// <summary>
+    /// PlayerPrefs에서 설정을 로드합니다.
+    /// </summary>
+    private void LoadSettings()
+    {
+        // Base Model Prefab 로드
+        string baseModelGuid = EditorPrefs.GetString("UnitPrefabGenerator_BaseModelPrefab", "");
+        if (!string.IsNullOrEmpty(baseModelGuid))
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(baseModelGuid);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                baseModelPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            }
+        }
+        
+        // Reference JSON 로드
+        string referenceJSONGuid = EditorPrefs.GetString("UnitPrefabGenerator_ReferenceJSON", "");
+        if (!string.IsNullOrEmpty(referenceJSONGuid))
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(referenceJSONGuid);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                referenceJSON = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
+            }
+        }
+        
+        // Image Folder 로드
+        string imageFolderGuid = EditorPrefs.GetString("UnitPrefabGenerator_ImageFolder", "");
+        if (!string.IsNullOrEmpty(imageFolderGuid))
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(imageFolderGuid);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                imageFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(assetPath);
+            }
+        }
+        
+        // Animation Folder 로드
+        string animationFolderGuid = EditorPrefs.GetString("UnitPrefabGenerator_AnimationFolder", "");
+        if (!string.IsNullOrEmpty(animationFolderGuid))
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(animationFolderGuid);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                animationFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(assetPath);
+            }
+        }
+        
+        // Output Folder 로드
+        string outputFolderGuid = EditorPrefs.GetString("UnitPrefabGenerator_OutputFolder", "");
+        if (!string.IsNullOrEmpty(outputFolderGuid))
+        {
+            string assetPath = AssetDatabase.GUIDToAssetPath(outputFolderGuid);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                outputFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(assetPath);
+            }
+        }
+        
+        Debug.Log("📂 Unit Prefab Generator 설정이 로드되었습니다.");
+    }
+    
+    /// <summary>
+    /// 모든 설정을 초기화합니다.
+    /// </summary>
+    private void ClearSettings()
+    {
+        // 필드 초기화
+        baseModelPrefab = null;
+        referenceJSON = null;
+        imageFolder = null;
+        animationFolder = null;
+        outputFolder = null;
+        
+        // EditorPrefs에서 키 삭제
+        EditorPrefs.DeleteKey("UnitPrefabGenerator_BaseModelPrefab");
+        EditorPrefs.DeleteKey("UnitPrefabGenerator_ReferenceJSON");
+        EditorPrefs.DeleteKey("UnitPrefabGenerator_ImageFolder");
+        EditorPrefs.DeleteKey("UnitPrefabGenerator_AnimationFolder");
+        EditorPrefs.DeleteKey("UnitPrefabGenerator_OutputFolder");
+        
+        Debug.Log("🗑️ Unit Prefab Generator 설정이 초기화되었습니다.");
     }
     
     #endregion
@@ -91,7 +267,27 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         baseModelPrefab = (GameObject)EditorGUILayout.ObjectField("Base Model Prefab", baseModelPrefab, typeof(GameObject), false);
         referenceJSON = (TextAsset)EditorGUILayout.ObjectField("Reference JSON", referenceJSON, typeof(TextAsset), false);
         imageFolder = (DefaultAsset)EditorGUILayout.ObjectField("Image Folder", imageFolder, typeof(DefaultAsset), false);
+        animationFolder = (DefaultAsset)EditorGUILayout.ObjectField("Animation Folder", animationFolder, typeof(DefaultAsset), false);
         outputFolder = (DefaultAsset)EditorGUILayout.ObjectField("Output Folder", outputFolder, typeof(DefaultAsset), false);
+        
+        EditorGUILayout.Space(10);
+        
+        // 설정 관리 버튼들
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("설정 초기화", GUILayout.Height(25)))
+        {
+            if (EditorUtility.DisplayDialog("설정 초기화", "모든 설정을 초기화하시겠습니까?", "예", "아니오"))
+            {
+                ClearSettings();
+            }
+        }
+        
+        if (GUILayout.Button("설정 저장", GUILayout.Height(25)))
+        {
+            SaveSettings();
+            EditorUtility.DisplayDialog("설정 저장", "설정이 저장되었습니다.", "확인");
+        }
+        EditorGUILayout.EndHorizontal();
     }
     
     private void DrawGenerateButton()
@@ -114,7 +310,7 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     /// <returns>모든 필드가 유효하면 true, 아니면 false</returns>
     private bool ValidateInputs()
     {
-        if (baseModelPrefab == null || referenceJSON == null || imageFolder == null || outputFolder == null)
+        if (baseModelPrefab == null || referenceJSON == null || imageFolder == null || animationFolder == null || outputFolder == null)
         {
             Debug.LogError("모든 필드를 지정해주세요.");
             return false;
@@ -171,7 +367,20 @@ public class UnitPrefabGeneratorWindow : EditorWindow
             // 2. 하이어라키에 로드한 프리팹 이름을 텍스처 이름 기반으로 변경
             baseModelInstance.name = variantName;
             
-            // 3. Pivot 오브젝트 찾기 (프리팹 상태 유지)
+            // 3. 베리언트 이름에서 Animator 이름 추출 및 변경
+            string[] variantParts = variantName.Split('_');
+            if (variantParts.Length > 0)
+            {
+                string animatorName = variantParts[0];
+                Debug.Log($"🎭 베리언트 '{variantName}'에서 Animator 이름 추출: '{animatorName}'");
+                ChangeAnimatorController(baseModelInstance, animatorName);
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ 베리언트 이름 '{variantName}'에서 Animator 이름을 추출할 수 없습니다.");
+            }
+            
+            // 4. Pivot 오브젝트 찾기 (프리팹 상태 유지)
             Transform basePivot = FindPivotTransform(baseModelInstance.transform);
 
             if (basePivot == null)
@@ -181,25 +390,25 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                 continue;
             }
             
-            // 4. JSON 데이터를 기반으로 게임오브젝트 생성
+            // 5. JSON 데이터를 기반으로 게임오브젝트 생성
             CreateGameObjectsFromJSON(basePivot, hierarchyData);
 
-            // 5. 이미지 리소스에 맞춰 오브젝트 구조 동적 생성
+            // 6. 이미지 리소스에 맞춰 오브젝트 구조 동적 생성
             CreateDynamicObjectsFromSprites(baseModelInstance.transform, spritesForVariant, variantName);
 
-            // 6. 이미지 교체
+            // 7. 이미지 교체
             ReplaceSprites(baseModelInstance.transform, spritesForVariant, variantName);
 
-            // 7. Pivot 하위 오브젝트들을 알파벳 순서로 정렬
+            // 8. Pivot 하위 오브젝트들을 알파벳 순서로 정렬
             SortPivotChildrenAlphabetically(basePivot);
             
-            // 8. Head 하위 오브젝트들도 개별적으로 정렬
+            // 9. Head 하위 오브젝트들도 개별적으로 정렬
             SortHeadChildrenAlphabetically(basePivot);
 
-            // 9. 빈 Sprite Renderer 오브젝트와 부모 오브젝트 정리
+            // 10. 빈 Sprite Renderer 오브젝트와 부모 오브젝트 정리
             CleanupEmptySpriteRenderers(baseModelInstance.transform);
 
-            // 10. 베리언트 프리팹으로 저장
+            // 11. 베리언트 프리팹으로 저장
             SaveAsVariantPrefab(baseModelInstance, variantName);
 
             Debug.Log($"✅ 베리언트 '{variantName}' 설정이 완료되었습니다.");
@@ -234,6 +443,14 @@ public class UnitPrefabGeneratorWindow : EditorWindow
 
         // 베리언트 프리팹 파일 경로 생성
         string prefabPath = Path.Combine(outputPath, variantName + ".prefab").Replace("\\", "/");
+        
+        // 동일한 이름의 프리팹이 이미 존재하는지 확인
+        if (File.Exists(prefabPath))
+        {
+            Debug.LogWarning($"⚠️ 저장 폴더에 동일한 이름의 프리팹이 존재합니다: {variantName}.prefab");
+            EditorUtility.DisplayDialog("프리팹 중복", "저장 폴더에 동일한 이름의 프리팹이 존재합니다.", "확인");
+            return;
+        }
         
         Debug.Log($"💾 베리언트 프리팹 저장 시작: {prefabPath}");
 
@@ -400,7 +617,138 @@ public class UnitPrefabGeneratorWindow : EditorWindow
 
         return null;
     }
+    
+    /// <summary>
+    /// Animator 오브젝트를 찾습니다.
+    /// </summary>
+    /// <param name="root">검색할 루트 Transform</param>
+    /// <returns>찾은 Animator Transform, 없으면 null</returns>
+    private Transform FindAnimatorTransform(Transform root)
+    {
+        // 현재 Transform이 "Animator"인지 확인
+        if (root.name == "Animator")
+        {
+            return root;
+        }
 
+        // 자식들에서 재귀적으로 검색
+        foreach (Transform child in root)
+        {
+            Transform found = FindAnimatorTransform(child);
+            if (found != null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+    
+    /// <summary>
+    /// Animator 컨트롤러를 변경합니다.
+    /// </summary>
+    /// <param name="gameObject">대상 게임오브젝트</param>
+    /// <param name="animatorName">변경할 Animator 이름 (Ar, Hu, Pa, Pr, Wa, Wi)</param>
+    private void ChangeAnimatorController(GameObject gameObject, string animatorName)
+    {
+        Debug.Log($"🎭 ChangeAnimatorController 호출: animatorName='{animatorName}'");
+        
+        if (!IsValidAnimatorName(animatorName))
+        {
+            Debug.LogWarning($"⚠️ 유효하지 않은 Animator 이름입니다: '{animatorName}'. 유효한 이름: {string.Join(", ", ANIMATOR_NAMES)}");
+            return;
+        }
+
+        if (animationFolder == null)
+        {
+            Debug.LogError("Animation 폴더가 지정되지 않았습니다.");
+            return;
+        }
+
+        // Animator 오브젝트 찾기
+        Transform animatorTransform = FindAnimatorTransform(gameObject.transform);
+        if (animatorTransform == null)
+        {
+            Debug.LogWarning($"⚠️ Animator 오브젝트를 찾을 수 없습니다.");
+            return;
+        }
+
+        // Animator 컴포넌트 가져오기
+        Animator animator = animatorTransform.GetComponent<Animator>();
+        if (animator == null)
+        {
+            Debug.LogWarning($"⚠️ Animator 컴포넌트를 찾을 수 없습니다.");
+            return;
+        }
+
+        // Animation 폴더 경로 가져오기
+        string animationFolderPath = AssetDatabase.GetAssetPath(animationFolder);
+        if (string.IsNullOrEmpty(animationFolderPath))
+        {
+            Debug.LogError("Animation 폴더 경로를 가져올 수 없습니다.");
+            return;
+        }
+
+        Debug.Log($"🔍 Animation 폴더 경로: {animationFolderPath}");
+
+        // Animator Controller 찾기 (하위 폴더 포함)
+        RuntimeAnimatorController controller = FindAnimatorController(animationFolderPath, animatorName);
+        if (controller == null)
+        {
+            Debug.LogWarning($"⚠️ Animator Controller를 찾을 수 없습니다: '{animatorName}.controller' 또는 '{animatorName}.overrideController'");
+            Debug.LogWarning($"💡 Animation 폴더 및 하위 폴더에 '{animatorName}.controller' 또는 '{animatorName}.overrideController' 파일이 있는지 확인해주세요.");
+            return;
+        }
+
+        // Animator Controller 변경
+        animator.runtimeAnimatorController = controller;
+        Debug.Log($"🎭 Animator Controller를 '{animatorName}'로 변경했습니다.");
+    }
+
+    /// <summary>
+    /// Animation 폴더에서 Animator Controller를 찾습니다 (하위 폴더 포함).
+    /// </summary>
+    /// <param name="folderPath">검색할 폴더 경로</param>
+    /// <param name="animatorName">찾을 Animator 이름</param>
+    /// <returns>찾은 Animator Controller, 없으면 null</returns>
+    private RuntimeAnimatorController FindAnimatorController(string folderPath, string animatorName)
+    {
+        // .controller와 .overrideController 둘 다 검색
+        string[] possibleExtensions = { ".controller", ".overrideController" };
+        
+        foreach (string extension in possibleExtensions)
+        {
+            string controllerFileName = $"{animatorName}{extension}";
+            
+            // 현재 폴더에서 직접 검색
+            string directPath = Path.Combine(folderPath, controllerFileName).Replace("\\", "/");
+            Debug.Log($"🔍 직접 경로 검색: {directPath}");
+            
+            RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(directPath);
+            if (controller != null)
+            {
+                Debug.Log($"✅ Animator Controller를 직접 경로에서 찾았습니다: {directPath}");
+                return controller;
+            }
+        }
+
+        // 하위 폴더들을 재귀적으로 검색
+        string[] subDirectories = Directory.GetDirectories(folderPath);
+        foreach (string subDir in subDirectories)
+        {
+            string subDirPath = subDir.Replace("\\", "/");
+            Debug.Log($"🔍 하위 폴더 검색: {subDirPath}");
+            
+            RuntimeAnimatorController controller = FindAnimatorController(subDirPath, animatorName);
+            if (controller != null)
+            {
+                return controller;
+            }
+        }
+
+        Debug.LogWarning($"❌ '{animatorName}.controller' 또는 '{animatorName}.overrideController' 파일을 찾을 수 없습니다. (폴더: {folderPath})");
+        return null;
+    }
 
     private void CreateGameObjectsFromJSON(Transform basePivot, HierarchyData hierarchyData)
     {
