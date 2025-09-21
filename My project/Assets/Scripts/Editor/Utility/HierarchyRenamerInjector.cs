@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.UIElements;
@@ -68,6 +71,7 @@ namespace CAT.Utility
             EditorGUILayout.Space(2);
 
             EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Arr", GUILayout.Height(20))) { RenameObjects(RenameAction.Sort); }
             if (GUILayout.Button("Rn", GUILayout.Height(20))) { RenameObjects(RenameAction.Rename); }
             if (GUILayout.Button("Rp", GUILayout.Height(20))) { RenameObjects(RenameAction.Replace); }
             if (GUILayout.Button("T_", GUILayout.Height(20))) { RenameObjects(RenameAction.Prefix); }
@@ -77,7 +81,7 @@ namespace CAT.Utility
             EditorGUILayout.EndHorizontal();
         }
 
-        private enum RenameAction { Rename, Replace, Prefix, Suffix, Number }
+        private enum RenameAction { Sort, Rename, Replace, Prefix, Suffix, Number }
 
         private static void RenameObjects(RenameAction action)
         {
@@ -89,7 +93,7 @@ namespace CAT.Utility
                 return;
             }
 
-            if (action != RenameAction.Number && string.IsNullOrEmpty(inputText))
+            if (action != RenameAction.Number && action != RenameAction.Sort && string.IsNullOrEmpty(inputText))
             {
                 Debug.LogWarning("[Renamer] 입력 필드가 비어있습니다.");
                 return;
@@ -102,6 +106,9 @@ namespace CAT.Utility
             {
                 switch (action)
                 {
+                    case RenameAction.Sort:
+                        // 정렬은 별도로 처리하므로 여기서는 아무것도 하지 않음
+                        break;
                     case RenameAction.Rename:
                         obj.name = inputText;
                         break;
@@ -128,6 +135,109 @@ namespace CAT.Utility
                         break;
                 }
                 counter++;
+            }
+
+            // 정렬 액션의 경우 별도로 처리
+            if (action == RenameAction.Sort)
+            {
+                SortSelectedObjects(selectedObjects);
+            }
+        }
+
+        /// <summary>
+        /// 선택된 오브젝트들을 "_" 기준으로 분리하여 다단계 정렬합니다.
+        /// 부모가 선택된 경우 해당 부모의 직계 자식들을 정렬합니다.
+        /// </summary>
+        private static void SortSelectedObjects(GameObject[] objects)
+        {
+            var objectsToSort = new List<GameObject>();
+            
+            foreach (var obj in objects)
+            {
+                // 선택된 오브젝트가 부모인지 확인 (자식이 있는지 체크)
+                if (obj.transform.childCount > 0)
+                {
+                    // 부모의 직계 자식들을 추가
+                    for (int i = 0; i < obj.transform.childCount; i++)
+                    {
+                        objectsToSort.Add(obj.transform.GetChild(i).gameObject);
+                    }
+                }
+                else
+                {
+                    // 자식이 없는 경우 해당 오브젝트 자체를 정렬 대상에 추가
+                    objectsToSort.Add(obj);
+                }
+            }
+            
+            if (objectsToSort.Count == 0)
+            {
+                Debug.LogWarning("[Renamer] 정렬할 오브젝트가 없습니다.");
+                return;
+            }
+            
+            // 부모별로 그룹화하여 정렬
+            var parentGroups = objectsToSort.GroupBy(obj => obj.transform.parent).ToArray();
+            
+            foreach (var parentGroup in parentGroups)
+            {
+                var parent = parentGroup.Key;
+                var children = parentGroup.ToArray();
+                
+                // 같은 부모를 가진 오브젝트들만 정렬
+                var sortedChildren = children.OrderBy(obj => obj.name, new HierarchicalNameComparer()).ToArray();
+                
+                // 정렬된 순서대로 하이어라키에서의 위치를 변경
+                // 역순으로 설정하여 인덱스 충돌을 방지
+                for (int i = sortedChildren.Length - 1; i >= 0; i--)
+                {
+                    sortedChildren[i].transform.SetSiblingIndex(i);
+                }
+            }
+            
+            Debug.Log($"[Renamer] {objectsToSort.Count}개의 오브젝트를 정렬했습니다.");
+        }
+
+        /// <summary>
+        /// "_" 기준으로 분리하여 다단계 정렬을 위한 비교자
+        /// </summary>
+        private class HierarchicalNameComparer : IComparer<string>
+        {
+            public int Compare(string x, string y)
+            {
+                if (x == null && y == null) return 0;
+                if (x == null) return -1;
+                if (y == null) return 1;
+
+                var partsX = x.Split('_');
+                var partsY = y.Split('_');
+
+                int maxLength = Math.Max(partsX.Length, partsY.Length);
+
+                for (int i = 0; i < maxLength; i++)
+                {
+                    string partX = i < partsX.Length ? partsX[i] : "";
+                    string partY = i < partsY.Length ? partsY[i] : "";
+
+                    // 숫자와 문자열을 구분하여 비교
+                    int comparison = CompareParts(partX, partY);
+                    if (comparison != 0)
+                        return comparison;
+                }
+
+                return 0;
+            }
+
+            private int CompareParts(string partX, string partY)
+            {
+                // 둘 다 숫자인지 확인
+                if (int.TryParse(partX, out int numX) && int.TryParse(partY, out int numY))
+                {
+                    return numX.CompareTo(numY);
+                }
+
+                // 둘 다 숫자가 아니면 문자열로 비교
+                return string.Compare(partX, partY, StringComparison.OrdinalIgnoreCase);
             }
         }
     }
