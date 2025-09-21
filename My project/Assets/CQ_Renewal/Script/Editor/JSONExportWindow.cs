@@ -33,34 +33,40 @@ public class HierarchyData
     public GameObjectData[] gameObjects;
 }
 
-public class HierarchyExporter : EditorWindow
+/// <summary>
+/// JSONExportWindow 클래스는 프리팹의 하이어라키를 추출하여 JSON 파일로 저장하는 툴입니다.
+/// 프리팹의 Pivot 오브젝트의 하위 오브젝트들의 정보를 추출하여 JSON 파일로 저장합니다.
+/// 저장된 JSON 파일은 프로젝트 내의 지정된 폴더에 저장됩니다.
+/// </summary>
+public class JSONExportWindow : EditorWindow
 {
     private GameObject selectedPrefab;
-    private string saveFolderPath = "Assets/ExportedHierarchies";
+    private string saveFolderPath = "Assets/CQ_Renewal/JSON";
 
-    [MenuItem("CAT/Utility/Export Hierarchy")]
+    [MenuItem("CAT/Utility/Export JSON")]
     public static void ShowWindow()
     {
-        GetWindow<HierarchyExporter>("Hierarchy Exporter");
+        GetWindow<JSONExportWindow>("JSON Exporter");
     }
 
     private void OnGUI()
     {
-        GUILayout.Label("Select a Prefab to Export Pivot Children", EditorStyles.boldLabel);
+        GUILayout.Space(10);
 
-        selectedPrefab = (GameObject)EditorGUILayout.ObjectField("Prefab", selectedPrefab, typeof(GameObject), false);
+        //GUILayout.Label("Select Unit Prefab", EditorStyles.boldLabel);
+        selectedPrefab = (GameObject)EditorGUILayout.ObjectField("Unit Prefab", selectedPrefab, typeof(GameObject), false);
 
         GUILayout.Space(10);
-        GUILayout.Label("Save Folder Path", EditorStyles.boldLabel);
+        //GUILayout.Label("Save Folder Path", EditorStyles.boldLabel);
         
         EditorGUILayout.BeginHorizontal();
-        saveFolderPath = EditorGUILayout.TextField("Folder Path", saveFolderPath);
+        saveFolderPath = EditorGUILayout.TextField("Save Folder", saveFolderPath);
         if (GUILayout.Button("Browse", GUILayout.Width(60)))
         {
             string selectedPath = EditorUtility.OpenFolderPanel("Select Save Folder", "Assets", "");
             if (!string.IsNullOrEmpty(selectedPath))
             {
-                // Convert absolute path to relative path if it's within the project
+                // 프로젝트 내에 있는 경우, 절대 경로를 상대 경로로 변환합니다.
                 if (selectedPath.StartsWith(Application.dataPath))
                 {
                     saveFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length);
@@ -75,7 +81,7 @@ public class HierarchyExporter : EditorWindow
 
         GUILayout.Space(10);
         
-        if (selectedPrefab != null && GUILayout.Button("Export Pivot Children to JSON"))
+        if (selectedPrefab != null && GUILayout.Button("Export JSON"))
         {
             ExportPrefabHierarchyToJSON();
         }
@@ -96,16 +102,16 @@ public class HierarchyExporter : EditorWindow
             return;
         }
 
-        // Find Pivot GameObject
+        // Pivot 오브젝트 찾기
         Transform pivotTransform = FindPivotTransform(selectedPrefab.transform);
         if (pivotTransform == null)
         {
-            Debug.LogError($"No GameObject named 'Pivot' found in prefab '{selectedPrefab.name}'.");
-            EditorUtility.DisplayDialog("Export Failed", $"No GameObject named 'Pivot' found in prefab '{selectedPrefab.name}'.", "OK");
+            Debug.LogError($"'{selectedPrefab.name}'프리팹에서 'Pivot'을 찾을 수 없습니다. 프리팹 구조를 확인해주세요.");
+            EditorUtility.DisplayDialog("Export Failed", $"'{selectedPrefab.name}'프리팹에서 'Pivot'을 찾을 수 없습니다.", "OK");
             return;
         }
 
-        // Create flat hierarchy data structure for Pivot's children only
+        // Pivot의 하위 오브젝트들의 정보를 추출하여 플랫한 계층 구조로 저장
         List<GameObjectData> gameObjectsList = new List<GameObjectData>();
         CollectGameObjectData(pivotTransform, "", gameObjectsList);
         
@@ -116,38 +122,38 @@ public class HierarchyExporter : EditorWindow
             gameObjects = gameObjectsList.ToArray()
         };
 
-        // Convert to JSON
+        // JSON으로 변환
         string jsonString = JsonUtility.ToJson(hierarchyData, true);
 
-        // Ensure save folder exists
+        // 저장 폴더가 존재하는지 확인
         if (!Directory.Exists(saveFolderPath))
         {
             Directory.CreateDirectory(saveFolderPath);
         }
 
-        // Generate filename with timestamp
+        // 타임스탬프를 포함한 파일 이름 생성
         string fileName = $"{selectedPrefab.name}_pivot_children_{DateTime.Now:yyyyMMdd_HHmmss}.json";
         string filePath = Path.Combine(saveFolderPath, fileName);
 
-        // Write to file
+        // 파일에 쓰기
         File.WriteAllText(filePath, jsonString);
 
-        Debug.Log($"Pivot children hierarchy exported to: {filePath}");
-        EditorUtility.DisplayDialog("Export Complete", $"Pivot children hierarchy exported successfully to:\n{filePath}", "OK");
+        Debug.Log($"Pivot 하위 오브젝트들의 정보를 추출하여 플랫한 계층 구조로 저장: {filePath}");
+        EditorUtility.DisplayDialog("Export Complete", $"Pivot 하위 오브젝트들의 정보를 추출하여 플랫한 계층 구조로 저장: {filePath}", "OK");
         
-        // Refresh asset database to show the new file
+        // 새로운 파일을 표시하기 위해 자산 데이터베이스 새로 고침
         AssetDatabase.Refresh();
     }
 
     private Transform FindPivotTransform(Transform root)
     {
-        // Check if current transform is named "Pivot"
+        // 현재 변환이 "Pivot"인지 확인
         if (root.name == "Pivot")
         {
             return root;
         }
 
-        // Search in children
+        // 자식들에서 검색
         foreach (Transform child in root)
         {
             Transform found = FindPivotTransform(child);
@@ -180,7 +186,7 @@ public class HierarchyExporter : EditorWindow
             scaleZ = transform.localScale.z
         };
 
-        // Collect component information
+        // 컴포넌트 정보 수집
         Component[] components = transform.GetComponents<Component>();
         List<ComponentInfo> componentList = new List<ComponentInfo>();
         foreach (Component component in components)
@@ -205,10 +211,10 @@ public class HierarchyExporter : EditorWindow
         }
         gameObjectData.components = componentList.ToArray();
 
-        // Add to flat list
+        // 플랫한 계층 구조로 저장
         gameObjectsList.Add(gameObjectData);
 
-        // Recursively process children
+        // 자식들에 대해 재귀적으로 처리
         foreach (Transform child in transform)
         {
             CollectGameObjectData(child, currentPath, gameObjectsList);
@@ -219,32 +225,32 @@ public class HierarchyExporter : EditorWindow
     {
         if (selectedPrefab == null)
         {
-            Debug.LogError("No prefab selected.");
+            Debug.LogError("프리팹이 선택되지 않았습니다.");
             return;
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.AppendLine("Prefab Hierarchy for: " + selectedPrefab.name);
+        sb.AppendLine("프리팹 계층 구조: " + selectedPrefab.name);
         sb.AppendLine("------------------------------------");
 
-        // Start the recursive traversal from the selected prefab's root
+        // 선택된 프리팹의 루트에서 시작하여 재귀적으로 순회
         TraverseHierarchy(selectedPrefab.transform, sb, 0);
 
         string hierarchyText = sb.ToString();
         Debug.Log(hierarchyText);
 
-        // Optional: Copy to clipboard for easy use
+        // 선택사항: 클립보드에 복사하여 쉽게 사용
         EditorGUIUtility.systemCopyBuffer = hierarchyText;
         Debug.Log("Hierarchy copied to clipboard!");
     }
 
     private void TraverseHierarchy(Transform currentTransform, StringBuilder sb, int depth)
     {
-        // Indentation for visual hierarchy
+        // 시각적 계층 구조를 위한 들여쓰기
         string indentation = new string(' ', depth * 4);
         sb.AppendLine(indentation + "- " + currentTransform.name);
 
-        // Recursively call for each child
+        // 자식들에 대해 재귀적으로 호출
         foreach (Transform child in currentTransform)
         {
             TraverseHierarchy(child, sb, depth + 1);
