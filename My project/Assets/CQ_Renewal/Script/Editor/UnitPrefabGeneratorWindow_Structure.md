@@ -295,7 +295,7 @@ private static readonly string[] SUPPORTED_IMAGE_EXTENSIONS =
 
 ## 주의사항
 
-1. **Animator Controller 파일**: `Assets/Animations/{AnimatorName}Controller.controller` 경로에 존재해야 함
+1. **Animator Controller 파일**: `Assets/Animations/{AnimatorName}.controller` 경로에 존재해야 함
 2. **이미지 파일명**: `{VariantName}_{ObjectName}` 형식이어야 함
 3. **JSON 구조**: 올바른 계층 구조 데이터가 포함되어야 함
 4. **프리팹 구조**: 기본 모델에 Pivot/Animator 구조가 있어야 함

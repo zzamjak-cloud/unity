@@ -7,9 +7,7 @@ using UnityEngine.UIElements;
 
 namespace CAT.Utility
 {
-    /// <summary>
-    /// 하이어라키 창 하단에 UI를 주입하여 선택된 오브젝트의 이름을 변경합니다.
-    /// </summary>
+    // 하이어라키 창 하단에 UI를 주입하여 선택된 오브젝트의 이름을 변경합니다.
     public static class HierarchyRenamerInjector
     {
         private static string inputText = "";
