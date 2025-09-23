@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
-using System.Reflection;
 
 namespace CAT.Utility
 {
@@ -110,15 +109,8 @@ namespace CAT.Utility
 
     public class FilteredSpriteFinderDrawer
     {
-        private const string FOLDERS_JSON_PATH = "ProjectSettings/FilteredSpriteFolders.json";
+        private const string FOLDERS_PREFS_KEY = "FilteredSpriteFinder_Folders";
         private const string FOLDOUT_STATE_KEY = "FilteredSpriteFinder_Foldout";
-
-        // 폴더 GUID 저장용 클래스
-        [Serializable]
-        private class FolderData
-        {
-            public List<string> folderGUIDs = new List<string>();
-        }
 
         private static List<DefaultAsset> searchFolders = new List<DefaultAsset>();
         private static bool isInitialized = false;
@@ -129,7 +121,7 @@ namespace CAT.Utility
         {
             if (!isInitialized)
             {
-                LoadFoldersFromJson();
+                LoadFoldersFromPrefs();
                 isFoldedOut = EditorPrefs.GetBool(FOLDOUT_STATE_KEY, true);
                 isInitialized = true;
             }
@@ -160,7 +152,7 @@ namespace CAT.Utility
                 // 등록된 폴더 목록 정리
                 if (searchFolders.RemoveAll(f => f == null) > 0)
                 {
-                    SaveFoldersToJson();
+                    SaveFoldersToPrefs();
                 }
 
                 // 등록된 폴더들 표시
@@ -178,7 +170,7 @@ namespace CAT.Utility
                     if (GUILayout.Button("X", GUILayout.Width(25)))
                     {
                         searchFolders.RemoveAt(i);
-                        SaveFoldersToJson();
+                        SaveFoldersToPrefs();
                         i--;
                     }
                     EditorGUILayout.EndHorizontal();
@@ -242,7 +234,7 @@ namespace CAT.Utility
 
                         if (addedAny)
                         {
-                            SaveFoldersToJson();
+                            SaveFoldersToPrefs();
                         }
 
                         DragAndDrop.AcceptDrag();
@@ -252,41 +244,43 @@ namespace CAT.Utility
             }
         }
 
-        // 폴더 목록을 JSON으로 저장
-        private void SaveFoldersToJson()
+        // 폴더 목록을 PlayerPrefs로 저장
+        private void SaveFoldersToPrefs()
         {
-            FolderData data = new FolderData();
-            data.folderGUIDs = searchFolders
+            var folderGUIDs = searchFolders
                 .Where(f => f != null)
                 .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
                 .ToList();
 
-            string json = JsonUtility.ToJson(data, true);
-            File.WriteAllText(FOLDERS_JSON_PATH, json);
-            AssetDatabase.Refresh();
+            // 폴더 개수 저장
+            EditorPrefs.SetInt(FOLDERS_PREFS_KEY + "_Count", folderGUIDs.Count);
+            
+            // 각 폴더 GUID 저장
+            for (int i = 0; i < folderGUIDs.Count; i++)
+            {
+                EditorPrefs.SetString(FOLDERS_PREFS_KEY + "_" + i, folderGUIDs[i]);
+            }
         }
 
-        // JSON에서 폴더 목록 로드
-        private void LoadFoldersFromJson()
+        // PlayerPrefs에서 폴더 목록 로드
+        private void LoadFoldersFromPrefs()
         {
             searchFolders.Clear();
-            if (File.Exists(FOLDERS_JSON_PATH))
+            
+            int folderCount = EditorPrefs.GetInt(FOLDERS_PREFS_KEY + "_Count", 0);
+            
+            for (int i = 0; i < folderCount; i++)
             {
-                string json = File.ReadAllText(FOLDERS_JSON_PATH);
-                FolderData data = JsonUtility.FromJson<FolderData>(json);
-
-                if (data != null)
+                string guid = EditorPrefs.GetString(FOLDERS_PREFS_KEY + "_" + i, "");
+                if (!string.IsNullOrEmpty(guid))
                 {
-                    foreach (var guid in data.folderGUIDs)
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (!string.IsNullOrEmpty(path))
                     {
-                        string path = AssetDatabase.GUIDToAssetPath(guid);
-                        if (!string.IsNullOrEmpty(path))
+                        DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
+                        if (folder != null)
                         {
-                            DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
-                            if (folder != null)
-                            {
-                                searchFolders.Add(folder);
-                            }
+                            searchFolders.Add(folder);
                         }
                     }
                 }
@@ -316,6 +310,8 @@ namespace CAT.Utility
         private string searchString = "";
         private List<Sprite> spritesInSelectedFolder = new List<Sprite>();
         private List<FolderNode> folderNodes = new List<FolderNode>();
+        private float gridSize = 1.0f; // 그리드 크기 조절 (0.0 ~ 1.0)
+        private bool showAsList = false; // 리스트 뷰 여부
 
         // 윈도우 표시 메서드
         public static void ShowWindow(string initialPath, Action<Sprite> onSpriteSelected)
@@ -468,6 +464,7 @@ namespace CAT.Utility
         {
             EditorGUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 
+            // 툴바 영역
             GUILayout.BeginHorizontal(EditorStyles.toolbar);
             searchString = GUILayout.TextField(searchString, EditorStyles.toolbarSearchField);
 
@@ -475,6 +472,16 @@ namespace CAT.Utility
             {
                 searchString = "";
                 GUI.FocusControl(null);
+            }
+            
+            // 그리드 크기 조절 슬라이더
+            GUILayout.Space(10);
+            GUILayout.Label("크기:", EditorStyles.miniLabel, GUILayout.Width(30));
+            float newGridSize = GUILayout.HorizontalSlider(gridSize, 0.0f, 1.0f, GUILayout.Width(100));
+            if (newGridSize != gridSize)
+            {
+                gridSize = newGridSize;
+                showAsList = gridSize < 0.1f; // 슬라이더가 매우 낮으면 리스트 뷰로 전환
             }
             GUILayout.EndHorizontal();
 
@@ -488,22 +495,102 @@ namespace CAT.Utility
             {
                 EditorGUILayout.HelpBox("이 폴더에 스프라이트가 없거나, 검색 결과가 없습니다.", MessageType.Info);
             }
+            else
+            {
+                if (showAsList)
+                {
+                    // 리스트 뷰
+                    DrawListView(filteredSprites);
+                }
+                else
+                {
+                    // 그리드 뷰
+                    DrawGridView(filteredSprites);
+                }
+            }
 
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+
+        // 리스트 뷰 그리기
+        private void DrawListView(List<Sprite> sprites)
+        {
+            // Unity의 기본 스타일을 사용하여 최적화
+            var listStyle = new GUIStyle(EditorStyles.miniButton);
+            listStyle.alignment = TextAnchor.MiddleLeft;
+            listStyle.fixedHeight = 20;
+            listStyle.imagePosition = ImagePosition.ImageLeft;
+            listStyle.padding = new RectOffset(5, 5, 2, 2);
+            listStyle.margin = new RectOffset(0, 0, 1, 1);
+            
+            // 모든 상태에서 배경을 명시적으로 설정
+            listStyle.normal.background = null; // 기본 상태는 완전 투명
+            listStyle.hover.background = EditorStyles.miniButton.hover.background; // 호버 시 배경
+            listStyle.active.background = EditorStyles.miniButton.active.background; // 클릭 시 배경
+            listStyle.focused.background = null; // 포커스 상태도 투명
+            listStyle.onNormal.background = null; // onNormal 상태도 투명
+            listStyle.onHover.background = EditorStyles.miniButton.hover.background; // onHover 상태
+            listStyle.onActive.background = EditorStyles.miniButton.active.background; // onActive 상태
+            listStyle.onFocused.background = null; // onFocused 상태도 투명
+
+            foreach (var sprite in sprites)
+            {
+                var content = new GUIContent(sprite.name, AssetPreview.GetAssetPreview(sprite));
+                
+                if (GUILayout.Button(content, listStyle))
+                {
+                    onSpriteSelectedCallback?.Invoke(sprite);
+                    Close();
+                }
+            }
+        }
+
+        // 그리드 뷰 그리기
+        private void DrawGridView(List<Sprite> sprites)
+        {
+            // 그리드 크기에 따른 버튼 크기 계산
+            float minSize = 60f;
+            float maxSize = 120f;
+            float buttonSize = Mathf.Lerp(minSize, maxSize, gridSize);
+
+            // Unity의 기본 스타일을 사용하여 최적화
             var buttonStyle = new GUIStyle(GUI.skin.button);
-            buttonStyle.fixedWidth = 120;
-            buttonStyle.fixedHeight = 120;
+            buttonStyle.fixedWidth = buttonSize;
+            buttonStyle.fixedHeight = buttonSize;
             buttonStyle.imagePosition = ImagePosition.ImageAbove;
+            buttonStyle.alignment = TextAnchor.LowerCenter;
+            buttonStyle.padding = new RectOffset(2, 2, 2, 2);
+            buttonStyle.clipping = TextClipping.Clip;
+            
+            // 모든 상태에서 배경을 명시적으로 설정
+            buttonStyle.normal.background = null; // 기본 상태는 완전 투명
+            buttonStyle.hover.background = GUI.skin.button.hover.background; // 호버 시 배경
+            buttonStyle.active.background = GUI.skin.button.active.background; // 클릭 시 배경
+            buttonStyle.focused.background = null; // 포커스 상태도 투명
+            buttonStyle.onNormal.background = null; // onNormal 상태도 투명
+            buttonStyle.onHover.background = GUI.skin.button.hover.background; // onHover 상태
+            buttonStyle.onActive.background = GUI.skin.button.active.background; // onActive 상태
+            buttonStyle.onFocused.background = null; // onFocused 상태도 투명
 
-            int columns = Mathf.FloorToInt((position.width - 180) / (buttonStyle.fixedWidth + 10));
+            // 그리드 열 개수 계산
+            int columns = Mathf.FloorToInt((position.width - 200) / (buttonSize + 10));
             columns = Mathf.Max(1, columns);
 
-            for (int i = 0; i < filteredSprites.Count; i++)
+            for (int i = 0; i < sprites.Count; i++)
             {
                 if (i % columns == 0) GUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
 
-                var sprite = filteredSprites[i];
-                var content = new GUIContent(sprite.name, AssetPreview.GetAssetPreview(sprite));
+                var sprite = sprites[i];
+                
+                // 텍스트 줄임표 처리
+                string displayName = sprite.name;
+                if (displayName.Length > 12) // 버튼 크기에 따라 조절 가능
+                {
+                    displayName = displayName.Substring(0, 12) + "...";
+                }
+                
+                var content = new GUIContent(displayName, AssetPreview.GetAssetPreview(sprite));
 
                 if (GUILayout.Button(content, buttonStyle))
                 {
@@ -511,15 +598,11 @@ namespace CAT.Utility
                     Close();
                 }
 
-                if (i % columns == columns - 1 || i == filteredSprites.Count - 1)
+                if (i % columns == columns - 1 || i == sprites.Count - 1)
                 {
-                    GUILayout.FlexibleSpace();
                     GUILayout.EndHorizontal();
                 }
             }
-
-            EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndVertical();
         }
 
         // 폴더 선택 메서드
