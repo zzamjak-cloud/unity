@@ -14,7 +14,7 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     // Face 표정 오브젝트 이름들 (앞으로 추가될 수 있음)
     private static readonly string[] FACE_EXPRESSION_NAMES = 
     {
-        "Normal", "Happy", "Attack", "Blank"
+        "Normal", "Happy", "Attack", "Blank", "Eye"
         // 새로운 표정이 추가되면 여기에 추가하면 됩니다.
         // 예: "Surprised", "Confused", "Excited", "Worried" 등
     };
@@ -315,13 +315,18 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         }
 
         string imagePath = AssetDatabase.GetAssetPath(imageFolder); // 이미지 폴더 경로 가져오기
+        Debug.Log($"🔍 이미지 폴더 경로: {imagePath}");
+        
         var variantSprites = GroupSpritesByVariantName(imagePath);  // 이미지 폴더에서 스프라이트 그룹화
+        Debug.Log($"🔍 GroupSpritesByVariantName 결과: {variantSprites.Count}개 베리언트 발견");
 
         if (variantSprites.Count == 0)
         {
             Debug.LogError("처리할 이미지가 없습니다. 이미지 폴더를 확인해주세요.");
             return;
         }
+        
+        Debug.Log($"✅ {variantSprites.Count} 베리언트 개수 확인");
 
         foreach (var entry in variantSprites)
         {
@@ -338,6 +343,8 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     /// </summary>
     private void ProcessVariant(string variantName, List<Sprite> spritesForVariant, HierarchyData hierarchyData)
     {
+        Debug.Log($"🚀 베리언트 처리 시작: {variantName} (스프라이트 {spritesForVariant.Count}개)");
+        
         // 1. 기본 모델을 하이어라키에 로드
         GameObject baseModelInstance = PrefabUtility.InstantiatePrefab(baseModelPrefab) as GameObject;
         if (baseModelInstance == null)
@@ -379,11 +386,11 @@ public class UnitPrefabGeneratorWindow : EditorWindow
             // 8. 빈 Sprite Renderer 오브젝트와 부모 오브젝트 정리
             CleanupEmptySpriteRenderers(baseModelInstance.transform);
             
-            // 9. 베리언트 프리팹으로 저장
-            SaveAsVariantPrefab(baseModelInstance, variantName);
+            // 9. 정렬 수행 (프리팹 저장 전에)
+            SortGameObjectHierarchy(baseModelInstance.transform);
             
-            // 10. 프리팹 편집 모드에서 정렬 수행
-            SortPrefabInEditMode(variantName);
+            // 10. 베리언트 프리팹으로 저장 (한 번만)
+            SaveAsVariantPrefab(baseModelInstance, variantName);
 
             Debug.Log($"✅ {variantName} 베리언트 처리 완료");
         }
@@ -428,9 +435,12 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         // 동일한 이름의 프리팹이 이미 존재하는지 확인
         if (File.Exists(prefabPath))
         {
-            EditorUtility.DisplayDialog("프리팹 중복", "저장 폴더에 동일한 이름의 프리팹이 존재합니다.", "확인");
+            Debug.LogWarning($"⚠️ 프리팹이 이미 존재합니다: {prefabPath}");
+            EditorUtility.DisplayDialog("프리팹 중복", $"저장 폴더에 동일한 이름의 프리팹이 존재합니다.\n경로: {prefabPath}", "확인");
             return;
         }
+        
+        Debug.Log($"💾 프리팹 저장 시도: {prefabPath}");
 
         try
         {
@@ -444,7 +454,11 @@ public class UnitPrefabGeneratorWindow : EditorWindow
             
             if (!success || variantPrefab == null)
             {
-                // Debug.LogError($"❌ 베리언트 프리팹 '{variantName}' 저장에 실패했습니다.");
+                Debug.LogError($"❌ 베리언트 프리팹 '{variantName}' 저장에 실패했습니다.");
+            }
+            else
+            {
+                Debug.Log($"✅ 베리언트 프리팹 '{variantName}' 저장 성공: {prefabPath}");
             }
         }
         catch (System.Exception e)
@@ -457,40 +471,16 @@ public class UnitPrefabGeneratorWindow : EditorWindow
 
     #region Sorting and Organization
     
-    // 프리팹 편집 모드에 진입하여 정렬을 수행합니다.
-    private void SortPrefabInEditMode(string variantName)
+    // 게임오브젝트 하이어라키를 정렬합니다 (프리팹 저장 전에 수행)
+    private void SortGameObjectHierarchy(Transform root)
     {
-        if (outputFolder == null) return;
-        
-        string outputPath = AssetDatabase.GetAssetPath(outputFolder);
-        if (string.IsNullOrEmpty(outputPath)) return;
-        
-        string prefabPath = Path.Combine(outputPath, variantName + ".prefab").Replace("\\", "/");
-        GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-        
-        if (prefabAsset == null) return;
-        
-        // 프리팹 편집 모드에 진입
-        PrefabStage prefabStage = PrefabStageUtility.OpenPrefab(prefabPath);
-        if (prefabStage == null) return;
-        
-        // 프리팹 루트 오브젝트 가져오기
-        GameObject prefabRoot = prefabStage.prefabContentsRoot;
-        if (prefabRoot == null) return;
-        
         // Pivot 오브젝트 찾기
-        Transform pivot = FindPivotTransform(prefabRoot.transform);
+        Transform pivot = FindPivotTransform(root);
         if (pivot == null) return;
         
         // 정렬 수행
         SortPivotChildrenAlphabetically(pivot);
         SortHeadChildrenAlphabetically(pivot);
-        
-        // 프리팹 변경사항 저장
-        PrefabUtility.SaveAsPrefabAsset(prefabRoot, prefabPath);
-        
-        // 프리팹 편집 모드 종료
-        StageUtility.GoToMainStage();
     }
     
     private void SortPivotChildrenAlphabetically(Transform pivot)
@@ -861,13 +851,32 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                     if (lastPart == "F" || lastPart == "B")
                     {
                         string parentName = string.Join("_", parts, 0, parts.Length - 1);
-                        if (!parentToSuffixes.ContainsKey(parentName))
+                        
+                        // Head_0_1_F, Head_0_2_B 등의 경우 Head variant로도 처리
+                        if (parentName.StartsWith("Head_"))
                         {
-                            parentToSuffixes[parentName] = new List<string>();
+                            // Head variant로 추가
+                            if (!parentToVariants.ContainsKey("Head"))
+                            {
+                                parentToVariants["Head"] = new List<string>();
+                            }
+                            if (!parentToVariants["Head"].Contains(parentName))
+                            {
+                                parentToVariants["Head"].Add(parentName);
+                                Debug.Log($"🔍 Head variant 추가: {parentName} (F/B suffix에서)");
+                            }
                         }
-                        if (!parentToSuffixes[parentName].Contains(lastPart))
+                        else
                         {
-                            parentToSuffixes[parentName].Add(lastPart);
+                            // 일반적인 F, B suffix 처리
+                            if (!parentToSuffixes.ContainsKey(parentName))
+                            {
+                                parentToSuffixes[parentName] = new List<string>();
+                            }
+                            if (!parentToSuffixes[parentName].Contains(lastPart))
+                            {
+                                parentToSuffixes[parentName].Add(lastPart);
+                            }
                         }
                     }
                     else
@@ -960,14 +969,17 @@ public class UnitPrefabGeneratorWindow : EditorWindow
             string parentName = entry.Key;
             List<string> variants = entry.Value;
             
+            Debug.Log($"🔍 Head variant 처리 시작: {parentName} (variants: {string.Join(", ", variants)})");
+            
             Transform parentTransform = FindTransformByName(parent, parentName);
             if (parentTransform != null)
             {
+                Debug.Log($"✅ Head 부모 오브젝트 '{parentName}' 찾음 - CreateHeadObjects 호출");
                 CreateHeadObjects(parentTransform, variants, variantName, parentName);
             }
             else
             {
-                // Debug.LogWarning($"❌ Head 부모 오브젝트 '{parentName}'를 찾을 수 없습니다.");
+                Debug.LogWarning($"❌ Head 부모 오브젝트 '{parentName}'를 찾을 수 없습니다.");
             }
         }
         
@@ -1040,7 +1052,17 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                         spriteRenderer.size = originalRenderer.size;
                     }
                     
+                    // F, B 오브젝트에 대한 Sorting Order 설정 (기존 값이 0인 경우에만)
+                    if (spriteRenderer.sortingOrder == 0)
+                    {
+                        SetSortingOrderForFBObject(spriteRenderer, suffix);
+                    }
+                    
                     Debug.Log($"🔧 '{parentName}'에 동적 오브젝트 '{suffix}' 생성");
+                }
+                else
+                {
+                    Debug.Log($"ℹ️ '{parentName}'에 '{suffix}' 오브젝트 이미 존재 - 중복 생성 방지");
                 }
             }
             
@@ -1095,10 +1117,18 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                             spriteRenderer.size = originalRenderer.size;
                         }
                     }
+                    
+                    // F, B 오브젝트에 대한 Sorting Order 설정 (기존 값이 0인 경우에만)
+                    if (spriteRenderer.sortingOrder == 0)
+                    {
+                        SetSortingOrderForFBObject(spriteRenderer, variant);
+                    }
+                    
+                    Debug.Log($"🔧 '{parentName}'에 변형 오브젝트 '{variant}' 생성");
                 }
                 else
                 {
-                    // Debug.Log($"ℹ️ '{parentName}'에 변형 오브젝트 '{variant}' 이미 존재");
+                    Debug.Log($"ℹ️ '{parentName}'에 변형 오브젝트 '{variant}' 이미 존재 - 중복 생성 방지");
                 }
             }
             
@@ -1128,13 +1158,17 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                 // SpriteRenderer 컴포넌트 추가
                 SpriteRenderer spriteRenderer = newObj.AddComponent<SpriteRenderer>();
                 
+                Debug.Log($"🔧 '{parentName}'에 Head 변형 오브젝트 '{variant}' 생성");
+                
                 // 이 Head 변형에 대해 F/B 이미지가 있는지 확인하고 자식 오브젝트 생성
                 CreateHeadImageObjects(newObj.transform, variantName, variant, variant);
             }
             else
             {
-                // 기존 오브젝트에 대해서도 F/B 이미지 확인
-                CreateHeadImageObjects(existingVariant, variantName, variant, variant);
+                Debug.Log($"ℹ️ '{parentName}'에 Head 변형 오브젝트 '{variant}' 이미 존재 (JSON에서 생성됨) - F/B 이미지 오브젝트만 확인");
+                
+                // 기존 오브젝트에 F/B 이미지 오브젝트가 있는지 확인하고, 없으면 생성
+                EnsureHeadImageObjects(existingVariant, variantName, variant, variant);
             }
         }
     }
@@ -1155,26 +1189,115 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         if (hasF && hasB)
         {
             // F, B 둘 다 있는 경우
-            CreateImageObject(headTransform, "F", headSpriteNameF);
-            CreateImageObject(headTransform, "B", headSpriteNameB);
+            CreateImageObjectIfNotExists(headTransform, "F", headSpriteNameF);
+            CreateImageObjectIfNotExists(headTransform, "B", headSpriteNameB);
         }
         else if (hasF || hasB)
         {
             // F 또는 B 중 하나만 있는 경우
             if (hasF)
             {
-                CreateImageObject(headTransform, "F", headSpriteNameF);
+                CreateImageObjectIfNotExists(headTransform, "F", headSpriteNameF);
             }
             if (hasB)
             {
-                CreateImageObject(headTransform, "B", headSpriteNameB);
+                CreateImageObjectIfNotExists(headTransform, "B", headSpriteNameB);
             }
         }
         else
         {
             // F, B 둘 다 없는 경우 기본 이미지로 F, B 오브젝트 생성
-            CreateImageObject(headTransform, "F", headSpriteName);
-            CreateImageObject(headTransform, "B", headSpriteName);
+            CreateImageObjectIfNotExists(headTransform, "F", headSpriteName);
+            CreateImageObjectIfNotExists(headTransform, "B", headSpriteName);
+        }
+    }
+    
+    private void EnsureHeadImageObjects(Transform headTransform, string variantName, string parentName, string variant)
+    {
+        // 이 Head 변형에 대한 F/B 이미지가 있는지 확인
+        string headSpriteName = variantName + "_" + parentName;
+        string headSpriteNameF = headSpriteName + "_F";
+        string headSpriteNameB = headSpriteName + "_B";
+        
+        // 이미지 폴더에서 F, B 이미지가 있는지 확인
+        bool hasF = HasSpriteInFolder(headSpriteNameF);
+        bool hasB = HasSpriteInFolder(headSpriteNameB);
+        bool hasBase = HasSpriteInFolder(headSpriteName);
+        
+        // F, B 오브젝트가 이미 존재하는지 확인
+        Transform existingF = headTransform.Find("F");
+        Transform existingB = headTransform.Find("B");
+        
+        Debug.Log($"🔍 '{headTransform.name}' F/B 오브젝트 확인 - F: {(existingF != null ? "존재" : "없음")}, B: {(existingB != null ? "존재" : "없음")}");
+        
+        if (hasF && hasB)
+        {
+            // F, B 둘 다 있는 경우 - 없으면 생성
+            if (existingF == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 F 오브젝트 생성 (이미지 있음)");
+                CreateImageObjectIfNotExists(headTransform, "F", headSpriteNameF);
+            }
+            else
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 F 오브젝트 이미 존재 - 중복 생성 방지");
+            }
+            
+            if (existingB == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 B 오브젝트 생성 (이미지 있음)");
+                CreateImageObjectIfNotExists(headTransform, "B", headSpriteNameB);
+            }
+            else
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 B 오브젝트 이미 존재 - 중복 생성 방지");
+            }
+        }
+        else if (hasF || hasB)
+        {
+            // F 또는 B 중 하나만 있는 경우
+            if (hasF && existingF == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 F 오브젝트 생성 (F 이미지만 있음)");
+                CreateImageObjectIfNotExists(headTransform, "F", headSpriteNameF);
+            }
+            else if (hasF)
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 F 오브젝트 이미 존재 - 중복 생성 방지");
+            }
+            
+            if (hasB && existingB == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 B 오브젝트 생성 (B 이미지만 있음)");
+                CreateImageObjectIfNotExists(headTransform, "B", headSpriteNameB);
+            }
+            else if (hasB)
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 B 오브젝트 이미 존재 - 중복 생성 방지");
+            }
+        }
+        else
+        {
+            // F, B 둘 다 없는 경우 기본 이미지로 F, B 오브젝트 생성 (없으면)
+            if (existingF == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 F 오브젝트 생성 (기본 이미지)");
+                CreateImageObjectIfNotExists(headTransform, "F", headSpriteName);
+            }
+            else
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 F 오브젝트 이미 존재 - 중복 생성 방지");
+            }
+            
+            if (existingB == null)
+            {
+                Debug.Log($"🔧 '{headTransform.name}'에 B 오브젝트 생성 (기본 이미지)");
+                CreateImageObjectIfNotExists(headTransform, "B", headSpriteName);
+            }
+            else
+            {
+                Debug.Log($"ℹ️ '{headTransform.name}'에 B 오브젝트 이미 존재 - 중복 생성 방지");
+            }
         }
     }
     
@@ -1193,6 +1316,45 @@ public class UnitPrefabGeneratorWindow : EditorWindow
         {
             Debug.Log($"ℹ️ '{parent.name}'에 '{objectName}' 오브젝트 이미 존재");
         }
+    }
+    
+    private void CreateImageObjectIfNotExists(Transform parent, string objectName, string spriteName)
+    {
+        Transform existingObject = parent.Find(objectName);
+        if (existingObject == null)
+        {
+            GameObject newObj = new GameObject(objectName);
+            newObj.transform.SetParent(parent, false);
+            
+            // SpriteRenderer 컴포넌트 추가
+            SpriteRenderer spriteRenderer = newObj.AddComponent<SpriteRenderer>();
+            
+            // F, B 오브젝트에 대한 Sorting Order 설정
+            SetSortingOrderForFBObject(spriteRenderer, objectName);
+            
+            Debug.Log($"🔧 '{parent.name}'에 '{objectName}' 오브젝트 생성 (Sorting Order: {spriteRenderer.sortingOrder})");
+        }
+        else
+        {
+            Debug.Log($"ℹ️ '{parent.name}'에 '{objectName}' 오브젝트 이미 존재 - 중복 생성 방지");
+        }
+    }
+    
+    /// <summary>
+    /// F, B 오브젝트에 대한 Sorting Order를 설정합니다.
+    /// F: 6, B: 1로 설정합니다.
+    /// </summary>
+    private void SetSortingOrderForFBObject(SpriteRenderer spriteRenderer, string objectName)
+    {
+        if (objectName == "F")
+        {
+            spriteRenderer.sortingOrder = 6;
+        }
+        else if (objectName == "B")
+        {
+            spriteRenderer.sortingOrder = 1;
+        }
+        // 다른 오브젝트들은 기본값(0) 유지
     }
     
     private bool HasSpriteInFolder(string spriteName)
@@ -1245,10 +1407,15 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                         
                         // SpriteRenderer 컴포넌트 추가
                         SpriteRenderer spriteRenderer = newObj.AddComponent<SpriteRenderer>();
+                        
+                        // F, B 오브젝트에 대한 Sorting Order 설정
+                        SetSortingOrderForFBObject(spriteRenderer, variant);
+                        
+                        Debug.Log($"🔧 '{baseParentName}'에 변형 오브젝트 '{variant}' 생성 (Sorting Order: {spriteRenderer.sortingOrder})");
                     }
                     else
                     {
-                        // Debug.Log($"ℹ️ '{baseParentName}'에 변형 오브젝트 '{variant}' 이미 존재");
+                        Debug.Log($"ℹ️ '{baseParentName}'에 변형 오브젝트 '{variant}' 이미 존재 - 중복 생성 방지");
                     }
                 }
             }
@@ -1275,10 +1442,15 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                         
                         // SpriteRenderer 컴포넌트 추가
                         SpriteRenderer spriteRenderer = newObj.AddComponent<SpriteRenderer>();
+                        
+                        // F, B 오브젝트에 대한 Sorting Order 설정
+                        SetSortingOrderForFBObject(spriteRenderer, variant);
+                        
+                        Debug.Log($"🔧 '{parentName}'에 변형 오브젝트 '{variant}' 생성 (Sorting Order: {spriteRenderer.sortingOrder})");
                     }
                     else
                     {
-                        // Debug.Log($"ℹ️ '{parentName}'에 변형 오브젝트 '{variant}' 이미 존재");
+                        Debug.Log($"ℹ️ '{parentName}'에 변형 오브젝트 '{variant}' 이미 존재 - 중복 생성 방지");
                     }
                 }
             }
@@ -1322,10 +1494,15 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                                 
                                 // SpriteRenderer 컴포넌트 추가
                                 SpriteRenderer spriteRenderer = newObj.AddComponent<SpriteRenderer>();
+                                
+                                // F, B 오브젝트에 대한 Sorting Order 설정
+                                SetSortingOrderForFBObject(spriteRenderer, variant);
+                                
+                                Debug.Log($"🔧 '{possibleName}'에 변형 오브젝트 '{variant}' 생성 (Sorting Order: {spriteRenderer.sortingOrder})");
                             }
                             else
                             {
-                                // Debug.Log($"ℹ️ '{possibleName}'에 변형 오브젝트 '{variant}' 이미 존재");
+                                Debug.Log($"ℹ️ '{possibleName}'에 변형 오브젝트 '{variant}' 이미 존재 - 중복 생성 방지");
                             }
                         }
                     }
@@ -1513,8 +1690,11 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     {
         Dictionary<string, List<Sprite>> variantSprites = new Dictionary<string, List<Sprite>>();
         
+        Debug.Log($"🔍 GroupSpritesByVariantName 시작 - 경로: {imagePath}");
+        
         // 하위 폴더까지 재귀적으로 모든 이미지 파일 검색
         string[] spritePaths = Directory.GetFiles(imagePath, "*.*", SearchOption.AllDirectories);
+        Debug.Log($"🔍 발견된 파일 개수: {spritePaths.Length}");
 
         if (spritePaths.Length == 0)
         {
@@ -1522,18 +1702,27 @@ public class UnitPrefabGeneratorWindow : EditorWindow
             return variantSprites;
         }
         
+        int processedCount = 0;
+        int supportedCount = 0;
+        int validFormatCount = 0;
+        
         foreach (string path in spritePaths)
         {
+            processedCount++;
             string assetPath = path.Replace("\\", "/").Replace(Application.dataPath, "Assets");
+            
             if (IsSupportedImageFile(assetPath))
             {
+                supportedCount++;
                 Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
                 if (sprite != null)
                 {
                     string fileName = Path.GetFileNameWithoutExtension(assetPath);
                     string[] parts = fileName.Split('_');  // 스프라이트 이름에서 부모 오브젝트 이름들을 추출
+                    
                     if (parts.Length >= 3)
                     {
+                        validFormatCount++;
                         // 첫 3개 부분을 베리언트 이름으로 사용 (예: "Wa_Leon_4")
                         string variantName = parts[0] + "_" + parts[1] + "_" + parts[2];
                         if (!variantSprites.ContainsKey(variantName))
@@ -1541,14 +1730,21 @@ public class UnitPrefabGeneratorWindow : EditorWindow
                             variantSprites[variantName] = new List<Sprite>();
                         }
                         variantSprites[variantName].Add(sprite);
+                        Debug.Log($"✅ 처리됨: {fileName} -> 베리언트: {variantName}");
                     }
                     else
                     {
-                        Debug.LogWarning($"⚠️ 파일명 '{fileName}'이 예상 형식과 다릅니다. (최소 3개의 '_' 구분자 필요)");
+                        Debug.LogWarning($"⚠️ 파일명 '{fileName}'이 예상 형식과 다릅니다. (최소 3개의 '_' 구분자 필요, 현재: {parts.Length}개)");
                     }
+                }
+                else
+                {
+                    Debug.LogWarning($"⚠️ 스프라이트를 로드할 수 없습니다: {assetPath}");
                 }
             }
         }
+        
+        Debug.Log($"🔍 파일 처리 결과 - 전체: {processedCount}, 지원형식: {supportedCount}, 유효형식: {validFormatCount}, 최종베리언트: {variantSprites.Count}");
         
         return variantSprites;
     }
