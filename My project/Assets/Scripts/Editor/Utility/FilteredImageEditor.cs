@@ -132,18 +132,23 @@ namespace CAT.Utility
         {
             EditorGUILayout.Space();
 
-            // 드래그 앤 드롭 영역을 감싸는 Rect
-            Rect dropRect = GUILayoutUtility.GetRect(0, 20, GUILayout.ExpandWidth(true));
-
-            bool newFoldoutState = EditorGUI.Foldout(dropRect, isFoldedOut, "Sprite Folder Filter", true, EditorStyles.foldoutHeader);
+            // 헤더 영역을 더 넓게 설정 (드래그 영역 확보)
+            Rect headerRect = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
+            
+            // 헤더 배경 그리기 (드래그 영역 시각화)
+            EditorGUI.DrawRect(headerRect, new Color(0.2f, 0.2f, 0.2f, 0.3f));
+            
+            // 폴드아웃 버튼 영역
+            Rect foldoutRect = new Rect(headerRect.x + 5, headerRect.y + 5, headerRect.width - 10, 20);
+            bool newFoldoutState = EditorGUI.Foldout(foldoutRect, isFoldedOut, "Sprite Folder Filter", true, EditorStyles.foldoutHeader);
             if (newFoldoutState != isFoldedOut)
             {
                 isFoldedOut = newFoldoutState;
                 EditorPrefs.SetBool(FOLDOUT_STATE_KEY, isFoldedOut);
             }
 
-            // 드래그 앤 드롭 처리
-            HandleDragAndDrop(dropRect);
+            // 전체 헤더 영역에서 드래그 앤 드롭 처리
+            HandleDragAndDrop(headerRect);
 
             if (isFoldedOut)
             {
@@ -184,6 +189,10 @@ namespace CAT.Utility
         {
             Event evt = Event.current;
 
+            // 드래그 앤 드롭이 활성화되어 있는지 확인
+            if (DragAndDrop.objectReferences == null || DragAndDrop.objectReferences.Length == 0)
+                return;
+
             switch (evt.type)
             {
                 case EventType.DragUpdated:
@@ -206,6 +215,8 @@ namespace CAT.Utility
                         if (canAcceptDrag)
                         {
                             DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                            // 드래그 중임을 시각적으로 표시
+                            EditorGUI.DrawRect(dropRect, new Color(0.0f, 0.5f, 1.0f, 0.2f));
                         }
                         else
                         {
@@ -219,6 +230,8 @@ namespace CAT.Utility
                     if (dropRect.Contains(evt.mousePosition))
                     {
                         bool addedAny = false;
+                        int addedCount = 0;
+                        
                         foreach (var draggedObject in DragAndDrop.objectReferences)
                         {
                             if (draggedObject is DefaultAsset folder)
@@ -228,6 +241,7 @@ namespace CAT.Utility
                                 {
                                     searchFolders.Add(folder);
                                     addedAny = true;
+                                    addedCount++;
                                 }
                             }
                         }
@@ -235,11 +249,25 @@ namespace CAT.Utility
                         if (addedAny)
                         {
                             SaveFoldersToPrefs();
+                            // 폴드아웃을 자동으로 열어서 추가된 폴더를 보여줌
+                            if (!isFoldedOut)
+                            {
+                                isFoldedOut = true;
+                                EditorPrefs.SetBool(FOLDOUT_STATE_KEY, isFoldedOut);
+                            }
+                            
+                            // 성공 메시지 표시
+                            Debug.Log($"폴더 {addedCount}개가 추가되었습니다.");
                         }
 
                         DragAndDrop.AcceptDrag();
                         evt.Use();
                     }
+                    break;
+
+                case EventType.DragExited:
+                    // 드래그가 끝났을 때 시각적 피드백 제거
+                    evt.Use();
                     break;
             }
         }

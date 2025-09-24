@@ -1,65 +1,408 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using TMPro;
 using System.Collections;
+using System.Collections.Generic;
+
+/// <summary>
+/// 버튼의 상태를 정의하는 열거형입니다.
+/// </summary>
+public enum ButtonState
+{
+    Normal,     // 일반 상태
+    Active,     // 활성 상태 (선택됨, 강조됨 등)
+    Disabled    // 비활성 상태
+}
+
+/// <summary>
+/// 상태별 컬러 정보를 저장하는 클래스입니다.
+/// </summary>
+[System.Serializable]
+public class StateColorInfo
+{
+    public ButtonState state;
+    public Color color = Color.white;
+}
+
+/// <summary>
+/// 상태별 GameObject 정보를 저장하는 클래스입니다.
+/// </summary>
+[System.Serializable]
+public class StateGameObjectInfo
+{
+    public ButtonState state;
+    public GameObject gameObject;
+}
+
+/// <summary>
+/// 이미지 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
+/// </summary>
+[System.Serializable]
+public class ImageColorInfo
+{
+    public Image targetImage;
+    
+    public List<StateColorInfo> stateColors = new List<StateColorInfo>();
+}
+
+/// <summary>
+/// 텍스트 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
+/// </summary>
+[System.Serializable]
+public class TextColorInfo
+{
+    public TextMeshProUGUI targetText;
+    
+    public List<StateColorInfo> stateColors = new List<StateColorInfo>();
+}
+
+/// <summary>
+/// 아이콘의 상태별 GameObject 정보를 저장하는 클래스입니다.
+/// </summary>
+[System.Serializable]
+public class IconGameObjectInfo
+{
+    [Header("State GameObjects")]
+    public List<StateGameObjectInfo> stateGameObjects = new List<StateGameObjectInfo>();
+}
 
 /// <summary>
 /// 모든 UI 버튼에 적용하여 클릭 및 릴리즈 시 스케일 애니메이션을 처리하는 컴포넌트입니다.
 /// 스프링 효과를 적용하여 부드러운 반응을 제공합니다.
+/// 버튼 상태 관리 및 컬러 그룹 시스템을 지원합니다.
 /// </summary>
 public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 {
-    [Header("Scale Settings")]
+    // [Header("Button State")]
+    [SerializeField] private ButtonState currentState = ButtonState.Normal;
+    [SerializeField] private bool isClickable = true;  // 클릭 가능 여부 (상태와 독립적)
+    
+    //[Header("Scale Settings")]
     public float targetScale = 0.9f;  // 버튼 클릭 시 최종적으로 도달할 스케일
 
-    [Header("Press Animation")]
-    public float pressDuration = 0.08f;  // 클릭 시 애니메이션 시간
-    public AnimationCurve pressCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);  // 클릭 시 커브
+    //[Header("Press Animation")]
+    public float pressDuration = 0.1f;  // 클릭 시 애니메이션 시간
+    public AnimationCurve pressCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);  // 클릭 시 커브 (0: original 스케일, 1: target 스케일, 1 초과시 오버슈트)
 
-    [Header("Release Animation")]
-    public float releaseDuration = 0.5f;  // 릴리즈 시 애니메이션 시간
-    public AnimationCurve releaseCurve = new AnimationCurve(
-        new Keyframe(0f, 0f, 0f, 0f),
-        new Keyframe(0.15f, 1.08f, 0f, 0f),
-        new Keyframe(0.3f, 0.96f, 0f, 0f),
-        new Keyframe(0.5f, 1.03f, 0f, 0f),
-        new Keyframe(0.7f, 0.99f, 0f, 0f),
-        new Keyframe(0.85f, 1.01f, 0f, 0f),
-        new Keyframe(1f, 1f, 0f, 0f)
-    );  // 릴리즈 시 커브
+    //[Header("Release Animation")]
+    public float releaseDuration = 0.3f;  // 릴리즈 시 애니메이션 시간
+    public AnimationCurve releaseCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);  // 릴리즈 시 커브 (0: target 스케일, 1: original 스케일, 1 초과시 오버슈트)
+    
+    //[Header("Image Color Settings")]
+    public List<ImageColorInfo> imageColorInfos = new List<ImageColorInfo>();
+    
+    //[Header("Text Color Settings")]
+    public List<TextColorInfo> textColorInfos = new List<TextColorInfo>();
+    
+    //[Header("Icon GameObject Settings")]
+    public List<IconGameObjectInfo> iconGameObjectInfos = new List<IconGameObjectInfo>();
 
     private RectTransform rectTransform;
     private Vector3 originalScale;
     private Coroutine scaleCoroutine;
 
-    // 애니메이션 상태 관리
-    private bool isPressed = false;
 
     private void Awake()
     {
-        // RectTransform을 가져오고 초기 스케일을 저장합니다.
         rectTransform = GetComponent<RectTransform>();
-        if (rectTransform == null)
-        {
-            Debug.LogError("RectTransform component not found on this GameObject. Please add a RectTransform.");
-            return;
-        }
+        if (rectTransform == null) return;
 
         originalScale = rectTransform.localScale;
+        
+        // 모든 상태를 자동으로 생성
+        EnsureAllStatesExist();
+        
+        // 초기 상태에 맞는 컬러 적용
+        ApplyStateColors();
+    }
+    
+    /// <summary>
+    /// 버튼의 현재 상태를 반환합니다.
+    /// </summary>
+    public ButtonState GetCurrentState()
+    {
+        return currentState;
+    }
+    
+    /// <summary>
+    /// 버튼의 상태를 설정합니다.
+    /// </summary>
+    /// <param name="newState">설정할 새로운 상태</param>
+    public void SetState(ButtonState newState)
+    {
+        if (currentState == newState) return;
+        
+        currentState = newState;
+        ApplyStateColors();
+    }
+    
+    /// <summary>
+    /// 에디터에서 상태를 직접 설정합니다. (런타임 로직 없이 시각적 변경만)
+    /// </summary>
+    /// <param name="newState">설정할 새로운 상태</param>
+    public void SetStateForEditor(ButtonState newState)
+    {
+        currentState = newState;
+        ApplyStateColors();
+    }
+    
+    /// <summary>
+    /// 버튼의 클릭 가능 여부를 반환합니다.
+    /// </summary>
+    public bool IsClickable()
+    {
+        return isClickable;
+    }
+    
+    /// <summary>
+    /// 버튼의 클릭 가능 여부를 설정합니다.
+    /// </summary>
+    /// <param name="clickable">클릭 가능 여부</param>
+    public void SetClickable(bool clickable)
+    {
+        isClickable = clickable;
+    }
+    
+    /// <summary>
+    /// 모든 이미지, 텍스트, 아이콘에 대해 Normal, Active, Disabled 상태를 자동으로 생성합니다.
+    /// </summary>
+    private void EnsureAllStatesExist()
+    {
+        // 이미지 컬러 상태 자동 생성
+        foreach (var imageInfo in imageColorInfos)
+        {
+            EnsureImageStatesExist(imageInfo);
+        }
+        
+        // 텍스트 컬러 상태 자동 생성
+        foreach (var textInfo in textColorInfos)
+        {
+            EnsureTextStatesExist(textInfo);
+        }
+        
+        // 아이콘 GameObject 상태 자동 생성
+        foreach (var iconInfo in iconGameObjectInfos)
+        {
+            EnsureIconStatesExist(iconInfo);
+        }
+    }
+    
+    /// <summary>
+    /// 이미지에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
+    /// </summary>
+    /// <param name="imageInfo">이미지 컬러 정보</param>
+    private void EnsureImageStatesExist(ImageColorInfo imageInfo)
+    {
+        if (imageInfo.targetImage == null) return;
+        
+        // 현재 이미지의 기본 컬러를 가져옴
+        Color defaultColor = imageInfo.targetImage.color;
+        
+        // Normal 상태 확인 및 생성
+        if (!imageInfo.stateColors.Exists(sc => sc.state == ButtonState.Normal))
+        {
+            imageInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Normal, color = defaultColor });
+        }
+        
+        // Active 상태 확인 및 생성 (기본적으로 약간 밝게)
+        if (!imageInfo.stateColors.Exists(sc => sc.state == ButtonState.Active))
+        {
+            Color activeColor = new Color(
+                Mathf.Min(1f, defaultColor.r * 1.2f),
+                Mathf.Min(1f, defaultColor.g * 1.2f),
+                Mathf.Min(1f, defaultColor.b * 1.2f),
+                defaultColor.a
+            );
+            imageInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Active, color = activeColor });
+        }
+        
+        // Disabled 상태 확인 및 생성 (기본적으로 어둡게)
+        if (!imageInfo.stateColors.Exists(sc => sc.state == ButtonState.Disabled))
+        {
+            Color disabledColor = new Color(
+                defaultColor.r * 0.5f,
+                defaultColor.g * 0.5f,
+                defaultColor.b * 0.5f,
+                defaultColor.a * 0.7f
+            );
+            imageInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Disabled, color = disabledColor });
+        }
+    }
+    
+    /// <summary>
+    /// 텍스트에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
+    /// </summary>
+    /// <param name="textInfo">텍스트 컬러 정보</param>
+    private void EnsureTextStatesExist(TextColorInfo textInfo)
+    {
+        if (textInfo.targetText == null) return;
+        
+        // 현재 텍스트의 기본 컬러를 가져옴
+        Color defaultColor = textInfo.targetText.color;
+        
+        // Normal 상태 확인 및 생성
+        if (!textInfo.stateColors.Exists(sc => sc.state == ButtonState.Normal))
+        {
+            textInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Normal, color = defaultColor });
+        }
+        
+        // Active 상태 확인 및 생성 (기본적으로 약간 밝게)
+        if (!textInfo.stateColors.Exists(sc => sc.state == ButtonState.Active))
+        {
+            Color activeColor = new Color(
+                Mathf.Min(1f, defaultColor.r * 1.2f),
+                Mathf.Min(1f, defaultColor.g * 1.2f),
+                Mathf.Min(1f, defaultColor.b * 1.2f),
+                defaultColor.a
+            );
+            textInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Active, color = activeColor });
+        }
+        
+        // Disabled 상태 확인 및 생성 (기본적으로 어둡게)
+        if (!textInfo.stateColors.Exists(sc => sc.state == ButtonState.Disabled))
+        {
+            Color disabledColor = new Color(
+                defaultColor.r * 0.5f,
+                defaultColor.g * 0.5f,
+                defaultColor.b * 0.5f,
+                defaultColor.a * 0.7f
+            );
+            textInfo.stateColors.Add(new StateColorInfo { state = ButtonState.Disabled, color = disabledColor });
+        }
+    }
+    
+    /// <summary>
+    /// 아이콘에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
+    /// </summary>
+    /// <param name="iconInfo">아이콘 GameObject 정보</param>
+    private void EnsureIconStatesExist(IconGameObjectInfo iconInfo)
+    {
+        // Normal 상태 확인 및 생성
+        if (!iconInfo.stateGameObjects.Exists(sg => sg.state == ButtonState.Normal))
+        {
+            iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = ButtonState.Normal, gameObject = null });
+        }
+        
+        // Active 상태 확인 및 생성
+        if (!iconInfo.stateGameObjects.Exists(sg => sg.state == ButtonState.Active))
+        {
+            iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = ButtonState.Active, gameObject = null });
+        }
+        
+        // Disabled 상태 확인 및 생성
+        if (!iconInfo.stateGameObjects.Exists(sg => sg.state == ButtonState.Disabled))
+        {
+            iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = ButtonState.Disabled, gameObject = null });
+        }
+    }
+    
+    /// <summary>
+    /// 현재 상태에 맞는 컬러와 스프라이트를 모든 컴포넌트에 적용합니다.
+    /// </summary>
+    private void ApplyStateColors()
+    {
+        // 이미지 컬러 적용
+        foreach (var imageInfo in imageColorInfos)
+        {
+            ApplyImageColors(imageInfo);
+        }
+        
+        // 텍스트 컬러 적용
+        foreach (var textInfo in textColorInfos)
+        {
+            ApplyTextColors(textInfo);
+        }
+        
+        // 아이콘 GameObject 활성화 적용
+        foreach (var iconInfo in iconGameObjectInfos)
+        {
+            ApplyIconGameObjects(iconInfo);
+        }
+    }
+    
+    /// <summary>
+    /// 특정 이미지에 현재 상태에 맞는 컬러를 적용합니다.
+    /// </summary>
+    /// <param name="imageInfo">이미지 컬러 정보</param>
+    private void ApplyImageColors(ImageColorInfo imageInfo)
+    {
+        if (imageInfo.targetImage == null) return;
+        
+        // 현재 상태에 맞는 컬러 찾기
+        Color targetColor = imageInfo.targetImage.color; // 기본값은 현재 컬러
+        foreach (var stateColor in imageInfo.stateColors)
+        {
+            if (stateColor.state == currentState)
+            {
+                targetColor = stateColor.color;
+                break;
+            }
+        }
+        
+        imageInfo.targetImage.color = targetColor;
+    }
+    
+    /// <summary>
+    /// 특정 텍스트에 현재 상태에 맞는 컬러를 적용합니다.
+    /// </summary>
+    /// <param name="textInfo">텍스트 컬러 정보</param>
+    private void ApplyTextColors(TextColorInfo textInfo)
+    {
+        if (textInfo.targetText == null) return;
+        
+        // 현재 상태에 맞는 컬러 찾기
+        Color targetColor = textInfo.targetText.color; // 기본값은 현재 컬러
+        foreach (var stateColor in textInfo.stateColors)
+        {
+            if (stateColor.state == currentState)
+            {
+                targetColor = stateColor.color;
+                break;
+            }
+        }
+        
+        textInfo.targetText.color = targetColor;
+    }
+    
+    /// <summary>
+    /// 특정 아이콘에 현재 상태에 맞는 GameObject 활성화를 적용합니다.
+    /// </summary>
+    /// <param name="iconInfo">아이콘 GameObject 정보</param>
+    private void ApplyIconGameObjects(IconGameObjectInfo iconInfo)
+    {
+        // 모든 상태의 GameObject를 비활성화
+        foreach (var stateGameObject in iconInfo.stateGameObjects)
+        {
+            if (stateGameObject.gameObject != null)
+            {
+                stateGameObject.gameObject.SetActive(false);
+            }
+        }
+        
+        // 현재 상태에 맞는 GameObject 활성화
+        foreach (var stateGameObject in iconInfo.stateGameObjects)
+        {
+            if (stateGameObject.state == currentState && stateGameObject.gameObject != null)
+            {
+                stateGameObject.gameObject.SetActive(true);
+                break;
+            }
+        }
     }
 
-    /// <summary>
-    /// 포인터(마우스, 터치)가 버튼을 눌렀을 때 호출됩니다.
-    /// </summary>
-    /// <param name="eventData">Pointer event data.</param>
+    // 포인터(마우스, 터치)가 버튼을 눌렀을 때 호출됩니다.
     public void OnPointerDown(PointerEventData eventData)
     {
+        // 클릭 가능하지 않으면 애니메이션만 실행하지 않음
+        if (!isClickable) return;
+        
         // 기존 애니메이션이 있다면 중단합니다.
         if (scaleCoroutine != null)
         {
             StopCoroutine(scaleCoroutine);
         }
 
-        isPressed = true;
         // 클릭 시 커브를 사용한 스케일 다운 애니메이션을 시작합니다.
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale * targetScale, pressDuration, pressCurve));
     }
@@ -70,23 +413,20 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     /// <param name="eventData">Pointer event data.</param>
     public void OnPointerUp(PointerEventData eventData)
     {
+        // 클릭 가능하지 않으면 애니메이션만 실행하지 않음
+        if (!isClickable) return;
+        
         // 기존 애니메이션이 있다면 중단합니다.
         if (scaleCoroutine != null)
         {
             StopCoroutine(scaleCoroutine);
         }
 
-        isPressed = false;
         // 릴리즈 시 커브를 사용한 원래 스케일로 돌아가는 애니메이션을 시작합니다.
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale, releaseDuration, releaseCurve));
     }
 
-    /// <summary>
-    /// 커브를 사용하여 스케일 애니메이션을 수행하는 코루틴입니다.
-    /// </summary>
-    /// <param name="targetScale">목표 스케일</param>
-    /// <param name="duration">애니메이션 시간</param>
-    /// <param name="curve">사용할 애니메이션 커브</param>
+    // 커브를 사용하여 스케일 애니메이션을 수행하는 코루틴입니다.
     private IEnumerator AnimateWithCurve(Vector3 targetScale, float duration, AnimationCurve curve)
     {
         // duration이 너무 작으면 즉시 설정
@@ -97,41 +437,29 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
         
         Vector3 startScale = rectTransform.localScale;
-        float elapsedTime = 0f;
+        float elapsedTime = 0f;  // 경과 시간
         
         while (elapsedTime < duration)
         {
             elapsedTime += Time.deltaTime;
             float t = Mathf.Clamp01(elapsedTime / duration);
             
-            // 커브에서 값을 가져옵니다
+            // 커브에서 백분율 값을 가져옵니다 (0~1)
             float curveValue = curve.Evaluate(t);
             
             // NaN 체크
             if (float.IsNaN(curveValue))
             {
-                Debug.LogWarning("NaN detected in animation curve, using target scale");
                 rectTransform.localScale = targetScale;
                 yield break;
             }
             
-            // 클릭 시와 릴리즈 시를 구분하여 처리
-            Vector3 newScale;
-            if (isPressed)
-            {
-                // 클릭 시: 시작 스케일에서 목표 스케일로 보간
-                newScale = Vector3.Lerp(startScale, targetScale, curveValue);
-            }
-            else
-            {
-                // 릴리즈 시: 커브 값을 직접 스케일로 사용 (1.0 기준)
-                newScale = Vector3.one * curveValue;
-            }
+            // 백분율 기반으로 시작점과 끝점 사이를 보간 (커브 값이 1을 넘으면 오버슈트 효과)
+            Vector3 newScale = Vector3.LerpUnclamped(startScale, targetScale, curveValue);
             
             // 최종 NaN 체크
             if (float.IsNaN(newScale.x) || float.IsNaN(newScale.y) || float.IsNaN(newScale.z))
             {
-                Debug.LogWarning("NaN detected in AnimateWithCurve, using target scale");
                 rectTransform.localScale = targetScale;
                 yield break;
             }
@@ -143,4 +471,178 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         // 최종적으로 정확한 목표 스케일로 설정
         rectTransform.localScale = targetScale;
     }
+    
+    #region 편의 메서드들
+    
+    /// <summary>
+    /// 버튼을 Normal 상태로 설정합니다.
+    /// </summary>
+    public void SetNormal()
+    {
+        SetState(ButtonState.Normal);
+    }
+    
+    /// <summary>
+    /// 버튼을 Active 상태로 설정합니다.
+    /// </summary>
+    public void SetActive()
+    {
+        SetState(ButtonState.Active);
+    }
+    
+    /// <summary>
+    /// 버튼을 Disabled 상태로 설정합니다.
+    /// </summary>
+    public void SetDisabled()
+    {
+        SetState(ButtonState.Disabled);
+    }
+    
+    /// <summary>
+    /// 버튼을 클릭 가능하게 설정합니다.
+    /// </summary>
+    public void EnableClick()
+    {
+        SetClickable(true);
+    }
+    
+    /// <summary>
+    /// 버튼을 클릭 불가능하게 설정합니다.
+    /// </summary>
+    public void DisableClick()
+    {
+        SetClickable(false);
+    }
+    
+    /// <summary>
+    /// 이미지에 새로운 상태별 컬러를 추가합니다.
+    /// </summary>
+    /// <param name="imageIndex">이미지 인덱스</param>
+    /// <param name="state">상태</param>
+    /// <param name="color">컬러</param>
+    public void AddImageStateColor(int imageIndex, ButtonState state, Color color)
+    {
+        if (imageIndex < 0 || imageIndex >= imageColorInfos.Count) return;
+        
+        var imageInfo = imageColorInfos[imageIndex];
+        var existingColor = imageInfo.stateColors.Find(sc => sc.state == state);
+        
+        if (existingColor != null)
+        {
+            existingColor.color = color;
+        }
+        else
+        {
+            imageInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
+        }
+        
+        // 현재 상태라면 즉시 적용
+        if (state == currentState)
+        {
+            ApplyImageColors(imageInfo);
+        }
+    }
+    
+    /// <summary>
+    /// 텍스트에 새로운 상태별 컬러를 추가합니다.
+    /// </summary>
+    /// <param name="textIndex">텍스트 인덱스</param>
+    /// <param name="state">상태</param>
+    /// <param name="color">컬러</param>
+    public void AddTextStateColor(int textIndex, ButtonState state, Color color)
+    {
+        if (textIndex < 0 || textIndex >= textColorInfos.Count) return;
+        
+        var textInfo = textColorInfos[textIndex];
+        var existingColor = textInfo.stateColors.Find(sc => sc.state == state);
+        
+        if (existingColor != null)
+        {
+            existingColor.color = color;
+        }
+        else
+        {
+            textInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
+        }
+        
+        // 현재 상태라면 즉시 적용
+        if (state == currentState)
+        {
+            ApplyTextColors(textInfo);
+        }
+    }
+    
+    /// <summary>
+    /// 아이콘에 새로운 상태별 GameObject를 추가합니다.
+    /// </summary>
+    /// <param name="iconIndex">아이콘 인덱스</param>
+    /// <param name="state">상태</param>
+    /// <param name="gameObject">GameObject</param>
+    public void AddIconStateGameObject(int iconIndex, ButtonState state, GameObject gameObject)
+    {
+        if (iconIndex < 0 || iconIndex >= iconGameObjectInfos.Count) return;
+        
+        var iconInfo = iconGameObjectInfos[iconIndex];
+        var existingStateGameObject = iconInfo.stateGameObjects.Find(sg => sg.state == state);
+        
+        if (existingStateGameObject != null)
+        {
+            existingStateGameObject.gameObject = gameObject;
+        }
+        else
+        {
+            iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = state, gameObject = gameObject });
+        }
+        
+        // 현재 상태라면 즉시 적용
+        if (state == currentState)
+        {
+            ApplyIconGameObjects(iconInfo);
+        }
+    }
+    
+    /// <summary>
+    /// 새로운 이미지 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
+    /// </summary>
+    /// <param name="image">타겟 이미지</param>
+    public void AddImageColorInfo(Image image)
+    {
+        if (image == null) return;
+        
+        var imageInfo = new ImageColorInfo { targetImage = image };
+        imageColorInfos.Add(imageInfo);
+        
+        // 모든 상태를 자동으로 생성
+        EnsureImageStatesExist(imageInfo);
+    }
+    
+    /// <summary>
+    /// 새로운 텍스트 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
+    /// </summary>
+    /// <param name="text">타겟 텍스트</param>
+    public void AddTextColorInfo(TextMeshProUGUI text)
+    {
+        if (text == null) return;
+        
+        var textInfo = new TextColorInfo { targetText = text };
+        textColorInfos.Add(textInfo);
+        
+        // 모든 상태를 자동으로 생성
+        EnsureTextStatesExist(textInfo);
+    }
+    
+    /// <summary>
+    /// 새로운 아이콘 GameObject 정보를 추가하고 모든 상태를 자동 생성합니다.
+    /// </summary>
+    public void AddIconGameObjectInfo()
+    {
+        var iconInfo = new IconGameObjectInfo();
+        iconGameObjectInfos.Add(iconInfo);
+        
+        // 모든 상태를 자동으로 생성
+        EnsureIconStatesExist(iconInfo);
+    }
+    
+    #endregion
 }
+
