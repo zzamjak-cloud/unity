@@ -4,6 +4,9 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.Events;
+
+#region Enums and Data Classes
 
 // 버튼의 상태를 정의하는 열거형입니다.
 public enum ButtonState
@@ -52,9 +55,13 @@ public class IconGameObjectInfo
     public List<StateGameObjectInfo> stateGameObjects = new List<StateGameObjectInfo>();
 }
 
+#endregion
+
 // 모든 UI 버튼에 적용하여 클릭 및 릴리즈 시 스케일 애니메이션을 처리하는 컴포넌트입니다.
 public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 {
+    #region Serialized Fields
+    
     [SerializeField] private ButtonState currentState = ButtonState.Normal;
     [SerializeField] private bool isClickable = true;  // 클릭 가능 여부 (상태와 독립적)
     
@@ -71,12 +78,25 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     public List<TextColorInfo> textColorInfos = new List<TextColorInfo>();
     
     public List<IconGameObjectInfo> iconGameObjectInfos = new List<IconGameObjectInfo>();
-
+    
+    [Header("Events")]
+    public UnityEvent OnButtonClicked;  // 버튼 클릭 시 호출되는 이벤트
+    
+    [Header("Button Identification")]
+    [SerializeField] private string buttonId = "";  // 버튼 고유 ID
+    
+    #endregion
+    
+    #region Private Fields
+    
     private RectTransform rectTransform;
     private Vector3 originalScale;
     private Coroutine scaleCoroutine;
-
-
+    
+    #endregion
+    
+    #region Unity Lifecycle
+    
     private void Awake()
     {
         rectTransform = GetComponent<RectTransform>();
@@ -89,7 +109,26 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         
         // 초기 상태에 맞는 컬러 적용
         ApplyStateColors();
+        
+        // 버튼 ID가 설정되어 있으면 이벤트 시스템에 등록
+        if (!string.IsNullOrEmpty(buttonId))
+        {
+            RegisterToEventSystem();
+        }
     }
+    
+    private void OnDestroy()
+    {
+        // 이벤트 시스템에서 등록 해제
+        if (!string.IsNullOrEmpty(buttonId))
+        {
+            UnregisterFromEventSystem();
+        }
+    }
+    
+    #endregion
+    
+    #region Public State Management
     
     // 버튼의 현재 상태를 반환합니다.
     public ButtonState GetCurrentState()
@@ -124,6 +163,10 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     {
         isClickable = clickable;
     }
+    
+    #endregion
+    
+    #region State Initialization
     
     // 모든 이미지, 텍스트, 아이콘에 대해 Normal, Active, Disabled 상태를 자동으로 생성합니다.
     private void EnsureAllStatesExist()
@@ -247,6 +290,10 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
+    #endregion
+    
+    #region State Application
+    
     // 현재 상태에 맞는 컬러와 스프라이트를 모든 컴포넌트에 적용합니다.
     private void ApplyStateColors()
     {
@@ -329,7 +376,11 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
             }
         }
     }
-
+    
+    #endregion
+    
+    #region Pointer Event Handlers
+    
     // 포인터(마우스, 터치)가 버튼을 눌렀을 때 호출됩니다.
     public void OnPointerDown(PointerEventData eventData)
     {
@@ -360,8 +411,15 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
 
         // 릴리즈 시 커브를 사용한 원래 스케일로 돌아가는 애니메이션을 시작합니다.
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale, releaseDuration, releaseCurve));
+        
+        // 클릭 이벤트 호출
+        OnButtonClicked?.Invoke();
     }
-
+    
+    #endregion
+    
+    #region Animation
+    
     // 커브를 사용하여 스케일 애니메이션을 수행하는 코루틴입니다.
     private IEnumerator AnimateWithCurve(Vector3 targetScale, float duration, AnimationCurve curve)
     {
@@ -408,7 +466,9 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         rectTransform.localScale = targetScale;
     }
     
-    #region 편의 메서드들
+    #endregion
+    
+    #region Convenience Methods
     
     // 버튼을 Normal 상태로 설정합니다.
     public void SetNormal()
@@ -439,6 +499,64 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     {
         SetClickable(false);
     }
+    
+    #endregion
+    
+    #region Button Identification
+    
+    /// <summary>
+    /// 버튼 ID를 반환합니다.
+    /// </summary>
+    public string GetButtonId()
+    {
+        return buttonId;
+    }
+    
+    /// <summary>
+    /// 버튼 ID를 설정합니다.
+    /// </summary>
+    public void SetButtonId(string newButtonId)
+    {
+        // 기존 등록 해제
+        if (!string.IsNullOrEmpty(buttonId))
+        {
+            UnregisterFromEventSystem();
+        }
+        
+        buttonId = newButtonId;
+        
+        // 새 ID로 등록
+        if (!string.IsNullOrEmpty(buttonId))
+        {
+            RegisterToEventSystem();
+        }
+    }
+    
+    /// <summary>
+    /// 이벤트 시스템에 버튼을 등록합니다.
+    /// </summary>
+    private void RegisterToEventSystem()
+    {
+        if (ButtonEventSystem.Instance != null)
+        {
+            ButtonEventSystem.Instance.RegisterButton(buttonId, OnButtonClicked);
+        }
+    }
+    
+    /// <summary>
+    /// 이벤트 시스템에서 버튼 등록을 해제합니다.
+    /// </summary>
+    private void UnregisterFromEventSystem()
+    {
+        if (ButtonEventSystem.Instance != null)
+        {
+            ButtonEventSystem.Instance.UnregisterButton(buttonId);
+        }
+    }
+    
+    #endregion
+    
+    #region Dynamic State Management
     
     // 이미지에 새로운 상태별 컬러를 추가합니다.
     public void AddImageStateColor(int imageIndex, ButtonState state, Color color)
