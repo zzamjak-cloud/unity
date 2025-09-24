@@ -5,9 +5,7 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
-/// <summary>
-/// 버튼의 상태를 정의하는 열거형입니다.
-/// </summary>
+// 버튼의 상태를 정의하는 열거형입니다.
 public enum ButtonState
 {
     Normal,     // 일반 상태
@@ -15,9 +13,7 @@ public enum ButtonState
     Disabled    // 비활성 상태
 }
 
-/// <summary>
-/// 상태별 컬러 정보를 저장하는 클래스입니다.
-/// </summary>
+// 상태별 컬러 정보를 저장하는 클래스입니다.
 [System.Serializable]
 public class StateColorInfo
 {
@@ -25,9 +21,7 @@ public class StateColorInfo
     public Color color = Color.white;
 }
 
-/// <summary>
-/// 상태별 GameObject 정보를 저장하는 클래스입니다.
-/// </summary>
+// 상태별 GameObject 정보를 저장하는 클래스입니다.
 [System.Serializable]
 public class StateGameObjectInfo
 {
@@ -35,67 +29,47 @@ public class StateGameObjectInfo
     public GameObject gameObject;
 }
 
-/// <summary>
-/// 이미지 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
-/// </summary>
+// 이미지 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
 [System.Serializable]
 public class ImageColorInfo
 {
     public Image targetImage;
-    
     public List<StateColorInfo> stateColors = new List<StateColorInfo>();
 }
 
-/// <summary>
-/// 텍스트 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
-/// </summary>
+// 텍스트 컴포넌트의 상태별 컬러 정보를 저장하는 클래스입니다.
 [System.Serializable]
 public class TextColorInfo
 {
     public TextMeshProUGUI targetText;
-    
     public List<StateColorInfo> stateColors = new List<StateColorInfo>();
 }
 
-/// <summary>
-/// 아이콘의 상태별 GameObject 정보를 저장하는 클래스입니다.
-/// </summary>
+// 아이콘의 상태별 GameObject 정보를 저장하는 클래스입니다.
 [System.Serializable]
 public class IconGameObjectInfo
 {
-    [Header("State GameObjects")]
     public List<StateGameObjectInfo> stateGameObjects = new List<StateGameObjectInfo>();
 }
 
-/// <summary>
-/// 모든 UI 버튼에 적용하여 클릭 및 릴리즈 시 스케일 애니메이션을 처리하는 컴포넌트입니다.
-/// 스프링 효과를 적용하여 부드러운 반응을 제공합니다.
-/// 버튼 상태 관리 및 컬러 그룹 시스템을 지원합니다.
-/// </summary>
+// 모든 UI 버튼에 적용하여 클릭 및 릴리즈 시 스케일 애니메이션을 처리하는 컴포넌트입니다.
 public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 {
-    // [Header("Button State")]
     [SerializeField] private ButtonState currentState = ButtonState.Normal;
     [SerializeField] private bool isClickable = true;  // 클릭 가능 여부 (상태와 독립적)
     
-    //[Header("Scale Settings")]
     public float targetScale = 0.9f;  // 버튼 클릭 시 최종적으로 도달할 스케일
 
-    //[Header("Press Animation")]
     public float pressDuration = 0.1f;  // 클릭 시 애니메이션 시간
     public AnimationCurve pressCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);  // 클릭 시 커브 (0: original 스케일, 1: target 스케일, 1 초과시 오버슈트)
 
-    //[Header("Release Animation")]
     public float releaseDuration = 0.3f;  // 릴리즈 시 애니메이션 시간
     public AnimationCurve releaseCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);  // 릴리즈 시 커브 (0: target 스케일, 1: original 스케일, 1 초과시 오버슈트)
     
-    //[Header("Image Color Settings")]
     public List<ImageColorInfo> imageColorInfos = new List<ImageColorInfo>();
     
-    //[Header("Text Color Settings")]
     public List<TextColorInfo> textColorInfos = new List<TextColorInfo>();
     
-    //[Header("Icon GameObject Settings")]
     public List<IconGameObjectInfo> iconGameObjectInfos = new List<IconGameObjectInfo>();
 
     private RectTransform rectTransform;
@@ -117,18 +91,13 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         ApplyStateColors();
     }
     
-    /// <summary>
-    /// 버튼의 현재 상태를 반환합니다.
-    /// </summary>
+    // 버튼의 현재 상태를 반환합니다.
     public ButtonState GetCurrentState()
     {
         return currentState;
     }
     
-    /// <summary>
-    /// 버튼의 상태를 설정합니다.
-    /// </summary>
-    /// <param name="newState">설정할 새로운 상태</param>
+    // 버튼의 상태를 설정합니다.
     public void SetState(ButtonState newState)
     {
         if (currentState == newState) return;
@@ -137,36 +106,26 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         ApplyStateColors();
     }
     
-    /// <summary>
-    /// 에디터에서 상태를 직접 설정합니다. (런타임 로직 없이 시각적 변경만)
-    /// </summary>
-    /// <param name="newState">설정할 새로운 상태</param>
+    // 에디터에서 상태를 직접 설정합니다. (런타임 로직 없이 시각적 변경만)
     public void SetStateForEditor(ButtonState newState)
     {
         currentState = newState;
         ApplyStateColors();
     }
     
-    /// <summary>
-    /// 버튼의 클릭 가능 여부를 반환합니다.
-    /// </summary>
+    // 버튼의 클릭 가능 여부를 반환합니다.
     public bool IsClickable()
     {
         return isClickable;
     }
     
-    /// <summary>
-    /// 버튼의 클릭 가능 여부를 설정합니다.
-    /// </summary>
-    /// <param name="clickable">클릭 가능 여부</param>
+    // 버튼의 클릭 가능 여부를 설정합니다.
     public void SetClickable(bool clickable)
     {
         isClickable = clickable;
     }
     
-    /// <summary>
-    /// 모든 이미지, 텍스트, 아이콘에 대해 Normal, Active, Disabled 상태를 자동으로 생성합니다.
-    /// </summary>
+    // 모든 이미지, 텍스트, 아이콘에 대해 Normal, Active, Disabled 상태를 자동으로 생성합니다.
     private void EnsureAllStatesExist()
     {
         // 이미지 컬러 상태 자동 생성
@@ -188,10 +147,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 이미지에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
-    /// </summary>
-    /// <param name="imageInfo">이미지 컬러 정보</param>
+    // 이미지에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
     private void EnsureImageStatesExist(ImageColorInfo imageInfo)
     {
         if (imageInfo.targetImage == null) return;
@@ -230,10 +186,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 텍스트에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
-    /// </summary>
-    /// <param name="textInfo">텍스트 컬러 정보</param>
+    // 텍스트에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
     private void EnsureTextStatesExist(TextColorInfo textInfo)
     {
         if (textInfo.targetText == null) return;
@@ -272,10 +225,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 아이콘에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
-    /// </summary>
-    /// <param name="iconInfo">아이콘 GameObject 정보</param>
+    // 아이콘에 모든 상태가 존재하는지 확인하고 없으면 자동 생성합니다.
     private void EnsureIconStatesExist(IconGameObjectInfo iconInfo)
     {
         // Normal 상태 확인 및 생성
@@ -297,9 +247,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 현재 상태에 맞는 컬러와 스프라이트를 모든 컴포넌트에 적용합니다.
-    /// </summary>
+    // 현재 상태에 맞는 컬러와 스프라이트를 모든 컴포넌트에 적용합니다.
     private void ApplyStateColors()
     {
         // 이미지 컬러 적용
@@ -321,10 +269,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 특정 이미지에 현재 상태에 맞는 컬러를 적용합니다.
-    /// </summary>
-    /// <param name="imageInfo">이미지 컬러 정보</param>
+    // 특정 이미지에 현재 상태에 맞는 컬러를 적용합니다.
     private void ApplyImageColors(ImageColorInfo imageInfo)
     {
         if (imageInfo.targetImage == null) return;
@@ -343,10 +288,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         imageInfo.targetImage.color = targetColor;
     }
     
-    /// <summary>
-    /// 특정 텍스트에 현재 상태에 맞는 컬러를 적용합니다.
-    /// </summary>
-    /// <param name="textInfo">텍스트 컬러 정보</param>
+    // 특정 텍스트에 현재 상태에 맞는 컬러를 적용합니다.
     private void ApplyTextColors(TextColorInfo textInfo)
     {
         if (textInfo.targetText == null) return;
@@ -365,10 +307,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         textInfo.targetText.color = targetColor;
     }
     
-    /// <summary>
-    /// 특정 아이콘에 현재 상태에 맞는 GameObject 활성화를 적용합니다.
-    /// </summary>
-    /// <param name="iconInfo">아이콘 GameObject 정보</param>
+    // 특정 아이콘에 현재 상태에 맞는 GameObject 활성화를 적용합니다.
     private void ApplyIconGameObjects(IconGameObjectInfo iconInfo)
     {
         // 모든 상태의 GameObject를 비활성화
@@ -407,10 +346,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale * targetScale, pressDuration, pressCurve));
     }
 
-    /// <summary>
-    /// 포인터(마우스, 터치)가 버튼에서 떨어졌을 때 호출됩니다.
-    /// </summary>
-    /// <param name="eventData">Pointer event data.</param>
+    // 포인터(마우스, 터치)가 버튼에서 떨어졌을 때 호출됩니다.
     public void OnPointerUp(PointerEventData eventData)
     {
         // 클릭 가능하지 않으면 애니메이션만 실행하지 않음
@@ -474,52 +410,37 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     
     #region 편의 메서드들
     
-    /// <summary>
-    /// 버튼을 Normal 상태로 설정합니다.
-    /// </summary>
+    // 버튼을 Normal 상태로 설정합니다.
     public void SetNormal()
     {
         SetState(ButtonState.Normal);
     }
     
-    /// <summary>
-    /// 버튼을 Active 상태로 설정합니다.
-    /// </summary>
+    // 버튼을 Active 상태로 설정합니다.
     public void SetActive()
     {
         SetState(ButtonState.Active);
     }
     
-    /// <summary>
-    /// 버튼을 Disabled 상태로 설정합니다.
-    /// </summary>
+    // 버튼을 Disabled 상태로 설정합니다.
     public void SetDisabled()
     {
         SetState(ButtonState.Disabled);
     }
     
-    /// <summary>
-    /// 버튼을 클릭 가능하게 설정합니다.
-    /// </summary>
+    // 버튼을 클릭 가능하게 설정합니다.
     public void EnableClick()
     {
         SetClickable(true);
     }
     
-    /// <summary>
-    /// 버튼을 클릭 불가능하게 설정합니다.
-    /// </summary>
+    // 버튼을 클릭 불가능하게 설정합니다.
     public void DisableClick()
     {
         SetClickable(false);
     }
     
-    /// <summary>
-    /// 이미지에 새로운 상태별 컬러를 추가합니다.
-    /// </summary>
-    /// <param name="imageIndex">이미지 인덱스</param>
-    /// <param name="state">상태</param>
-    /// <param name="color">컬러</param>
+    // 이미지에 새로운 상태별 컬러를 추가합니다.
     public void AddImageStateColor(int imageIndex, ButtonState state, Color color)
     {
         if (imageIndex < 0 || imageIndex >= imageColorInfos.Count) return;
@@ -543,12 +464,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 텍스트에 새로운 상태별 컬러를 추가합니다.
-    /// </summary>
-    /// <param name="textIndex">텍스트 인덱스</param>
-    /// <param name="state">상태</param>
-    /// <param name="color">컬러</param>
+    // 텍스트에 새로운 상태별 컬러를 추가합니다.
     public void AddTextStateColor(int textIndex, ButtonState state, Color color)
     {
         if (textIndex < 0 || textIndex >= textColorInfos.Count) return;
@@ -572,12 +488,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 아이콘에 새로운 상태별 GameObject를 추가합니다.
-    /// </summary>
-    /// <param name="iconIndex">아이콘 인덱스</param>
-    /// <param name="state">상태</param>
-    /// <param name="gameObject">GameObject</param>
+    // 아이콘에 새로운 상태별 GameObject를 추가합니다.
     public void AddIconStateGameObject(int iconIndex, ButtonState state, GameObject gameObject)
     {
         if (iconIndex < 0 || iconIndex >= iconGameObjectInfos.Count) return;
@@ -601,10 +512,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 새로운 이미지 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
-    /// </summary>
-    /// <param name="image">타겟 이미지</param>
+    // 새로운 이미지 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
     public void AddImageColorInfo(Image image)
     {
         if (image == null) return;
@@ -616,10 +524,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         EnsureImageStatesExist(imageInfo);
     }
     
-    /// <summary>
-    /// 새로운 텍스트 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
-    /// </summary>
-    /// <param name="text">타겟 텍스트</param>
+    // 새로운 텍스트 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.
     public void AddTextColorInfo(TextMeshProUGUI text)
     {
         if (text == null) return;
@@ -631,9 +536,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         EnsureTextStatesExist(textInfo);
     }
     
-    /// <summary>
-    /// 새로운 아이콘 GameObject 정보를 추가하고 모든 상태를 자동 생성합니다.
-    /// </summary>
+    // 새로운 아이콘 GameObject 정보를 추가하고 모든 상태를 자동 생성합니다.
     public void AddIconGameObjectInfo()
     {
         var iconInfo = new IconGameObjectInfo();

@@ -26,33 +26,24 @@ public class InteractiveButtonEditor : Editor
     {
         serializedObject.Update();
         
-        // 자동 상태 생성 체크
-        CheckAndGenerateStates();
+        CheckAndGenerateStates();           // 자동 상태 생성 체크
         
-        // 버튼 상태 섹션
-        DrawButtonStateSection();
+        DrawButtonStateSection();           // 버튼 상태 섹션
         
-        // 스케일 설정 섹션
-        DrawScaleSettingsSection();
+        DrawScaleSettingsSection();         // 스케일 설정 섹션 
         
-        // 애니메이션 설정 섹션
-        DrawAnimationSettingsSection();
+        DrawAnimationSettingsSection();     // 애니메이션 설정 섹션
         
-        // 이미지 컬러 설정 섹션
-        DrawImageColorSection();
+        DrawImageColorSection();            // 이미지 컬러 설정 섹션
         
-        // 텍스트 컬러 설정 섹션
-        DrawTextColorSection();
+        DrawTextColorSection();             // 텍스트 컬러 설정 섹션
         
-        // 아이콘 GameObject 설정 섹션
-        DrawIconGameObjectSection();
+        DrawIconGameObjectSection();        // 아이콘 GameObject 설정 섹션
         
         serializedObject.ApplyModifiedProperties();
     }
     
-    /// <summary>
-    /// Target이 변경되었는지 확인하고 자동으로 상태를 생성합니다.
-    /// </summary>
+    // Target이 변경되었는지 확인하고 자동으로 상태를 생성합니다.
     private void CheckAndGenerateStates()
     {
         bool needsUpdate = false;
@@ -108,15 +99,10 @@ public class InteractiveButtonEditor : Editor
         }
         
         // 자동 생성 실행
-        if (needsUpdate)
-        {
-            GenerateAllStates();
-        }
+        if (needsUpdate) GenerateAllStates();
     }
     
-    /// <summary>
-    /// 버튼 상태 섹션을 그립니다.
-    /// </summary>
+    // 버튼 상태 섹션을 그립니다.
     private void DrawButtonStateSection()
     {
         EditorGUILayout.Space();
@@ -151,9 +137,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUI.indentLevel--;
     }
     
-    /// <summary>
-    /// 스케일 설정 섹션을 그립니다.
-    /// </summary>
+    // 스케일 설정 섹션을 그립니다.
     private void DrawScaleSettingsSection()
     {
         EditorGUILayout.Space();
@@ -165,9 +149,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUI.indentLevel--;
     }
     
-    /// <summary>
-    /// 애니메이션 설정 섹션을 그립니다.
-    /// </summary>
+    // 애니메이션 설정 섹션을 그립니다.
     private void DrawAnimationSettingsSection()
     {
         EditorGUILayout.Space();
@@ -188,9 +170,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUI.indentLevel--;
     }
     
-    /// <summary>
-    /// 이미지 컬러 설정 섹션을 그립니다.
-    /// </summary>
+    // 이미지 컬러 설정 섹션을 그립니다.
     private void DrawImageColorSection()
     {
         EditorGUILayout.Space();
@@ -218,9 +198,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 개별 이미지 컬러 요소를 그립니다.
-    /// </summary>
+    // 개별 이미지 컬러 요소를 그립니다.
     private void DrawImageColorElement(SerializedProperty imageColorInfos, int index)
     {
         var imageInfo = imageColorInfos.GetArrayElementAtIndex(index);
@@ -284,9 +262,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUILayout.Space(5);
     }
     
-    /// <summary>
-    /// 텍스트 컬러 설정 섹션을 그립니다.
-    /// </summary>
+    // 텍스트 컬러 설정 섹션을 그립니다.
     private void DrawTextColorSection()
     {
         EditorGUILayout.Space();
@@ -303,20 +279,15 @@ public class InteractiveButtonEditor : Editor
         
         if (showTextColors)
         {
-            EditorGUI.indentLevel++;
-            
             // 각 텍스트 요소 표시
             for (int i = 0; i < textColorInfos.arraySize; i++)
             {
                 DrawTextColorElement(textColorInfos, i);
             }
-            EditorGUI.indentLevel--;
         }
     }
     
-    /// <summary>
-    /// 개별 텍스트 컬러 요소를 그립니다.
-    /// </summary>
+    // 개별 텍스트 컬러 요소를 그립니다.
     private void DrawTextColorElement(SerializedProperty textColorInfos, int index)
     {
         var textInfo = textColorInfos.GetArrayElementAtIndex(index);
@@ -381,9 +352,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUILayout.Space(5);
     }
     
-    /// <summary>
-    /// 아이콘 GameObject 설정 섹션을 그립니다.
-    /// </summary>
+    // 아이콘 GameObject 설정 섹션을 그립니다.
     private void DrawIconGameObjectSection()
     {
         EditorGUILayout.Space();
@@ -411,9 +380,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 개별 아이콘 GameObject 요소를 그립니다.
-    /// </summary>
+    // 개별 아이콘 GameObject 요소를 그립니다.
     private void DrawIconGameObjectElement(SerializedProperty iconGameObjectInfos, int index)
     {
         var iconInfo = iconGameObjectInfos.GetArrayElementAtIndex(index);
@@ -421,9 +388,6 @@ public class InteractiveButtonEditor : Editor
         
         EditorGUILayout.BeginVertical("box");
         EditorGUILayout.Space(5);
-        
-        // 상태별 GameObject 등록 필드들 표시
-        EditorGUILayout.LabelField("State GameObjects", EditorStyles.miniBoldLabel);
         
         EditorGUI.indentLevel++;
         
@@ -472,9 +436,7 @@ public class InteractiveButtonEditor : Editor
         EditorGUILayout.Space(5);
     }
     
-    /// <summary>
-    /// 모든 상태를 자동 생성합니다.
-    /// </summary>
+    // 모든 상태를 자동 생성합니다.
     private void GenerateAllStates()
     {
         Undo.RecordObject(interactiveButton, "Generate All States");
@@ -487,9 +449,7 @@ public class InteractiveButtonEditor : Editor
         Debug.Log("All states generated successfully!");
     }
     
-    /// <summary>
-    /// 개별 이미지 요소에 대한 상태를 생성합니다.
-    /// </summary>
+    // 개별 이미지 요소에 대한 상태를 생성합니다.
     private void GenerateImageStatesForElement(SerializedProperty imageInfo)
     {
         var targetImage = imageInfo.FindPropertyRelative("targetImage");
@@ -527,9 +487,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 개별 텍스트 요소에 대한 상태를 생성합니다.
-    /// </summary>
+    // 개별 텍스트 요소에 대한 상태를 생성합니다.
     private void GenerateTextStatesForElement(SerializedProperty textInfo)
     {
         var targetText = textInfo.FindPropertyRelative("targetText");
@@ -567,9 +525,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 개별 아이콘 요소에 대한 상태를 생성합니다.
-    /// </summary>
+    // 개별 아이콘 요소에 대한 상태를 생성합니다.
     private void GenerateIconStatesForElement(SerializedProperty iconInfo)
     {
         var stateGameObjects = iconInfo.FindPropertyRelative("stateGameObjects");
@@ -587,9 +543,7 @@ public class InteractiveButtonEditor : Editor
         AddStateGameObject(stateGameObjects, ButtonState.Disabled, null);
     }
     
-    /// <summary>
-    /// 이미지 상태들을 자동 생성합니다.
-    /// </summary>
+    // 이미지 상태들을 자동 생성합니다.
     private void GenerateImageStates()
     {
         var imageColorInfos = serializedObject.FindProperty("imageColorInfos");
@@ -633,9 +587,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 텍스트 상태들을 자동 생성합니다.
-    /// </summary>
+    // 텍스트 상태들을 자동 생성합니다.
     private void GenerateTextStates()
     {
         var textColorInfos = serializedObject.FindProperty("textColorInfos");
@@ -679,9 +631,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 아이콘 상태들을 자동 생성합니다.
-    /// </summary>
+    // 아이콘 상태들을 자동 생성합니다.
     private void GenerateIconStates()
     {
         var iconGameObjectInfos = serializedObject.FindProperty("iconGameObjectInfos");
@@ -693,9 +643,7 @@ public class InteractiveButtonEditor : Editor
         }
     }
     
-    /// <summary>
-    /// 상태별 컬러를 추가합니다.
-    /// </summary>
+    // 상태별 컬러를 추가합니다.
     private void AddStateColor(SerializedProperty stateColors, ButtonState state, Color color)
     {
         int index = stateColors.arraySize;
@@ -706,9 +654,7 @@ public class InteractiveButtonEditor : Editor
         newStateColor.FindPropertyRelative("color").colorValue = color;
     }
     
-    /// <summary>
-    /// 상태별 활성화 설정을 추가합니다.
-    /// </summary>
+    // 상태별 활성화 설정을 추가합니다.
     private void AddStateActivation(SerializedProperty stateActivations, ButtonState state, bool isActive)
     {
         int index = stateActivations.arraySize;
@@ -719,9 +665,7 @@ public class InteractiveButtonEditor : Editor
         newStateActivation.FindPropertyRelative("isActive").boolValue = isActive;
     }
     
-    /// <summary>
-    /// 상태별 GameObject 정보를 추가합니다.
-    /// </summary>
+    // 상태별 GameObject 정보를 추가합니다.
     private void AddStateGameObject(SerializedProperty stateGameObjects, ButtonState state, GameObject gameObject)
     {
         int index = stateGameObjects.arraySize;
