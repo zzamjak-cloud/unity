@@ -330,6 +330,12 @@ namespace CAT.Utility
             public bool isFoldedOut = true;
         }
 
+        // 설정 저장을 위한 키들
+        private const string SEARCH_STRING_KEY = "FilteredSpriteSelector_SearchString";
+        private const string GRID_SIZE_KEY = "FilteredSpriteSelector_GridSize";
+        private const string SHOW_AS_LIST_KEY = "FilteredSpriteSelector_ShowAsList";
+        private const string SELECTED_FOLDER_KEY = "FilteredSpriteSelector_SelectedFolder";
+
         private static Action<Sprite> onSpriteSelectedCallback;
         private Vector2 leftPaneScroll;
         private Vector2 rightPaneScroll;
@@ -347,16 +353,58 @@ namespace CAT.Utility
             onSpriteSelectedCallback = onSpriteSelected;
             var window = GetWindow<FilteredSpriteSelector>("스프라이트 선택기");
             window.rootFolderPath = initialPath; // 루트 폴더 경로 설정
-            window.selectedFolderPath = initialPath;
+            window.LoadSettings(); // 저장된 설정 로드
             window.BuildFolderTree();
-            window.LoadSpritesForFolder(initialPath);
+            window.LoadSpritesForFolder(window.selectedFolderPath);
             window.Show();
+        }
+
+        // 설정 저장 메서드
+        private void SaveSettings()
+        {
+            EditorPrefs.SetString(SEARCH_STRING_KEY, searchString);
+            EditorPrefs.SetFloat(GRID_SIZE_KEY, gridSize);
+            EditorPrefs.SetBool(SHOW_AS_LIST_KEY, showAsList);
+            EditorPrefs.SetString(SELECTED_FOLDER_KEY, selectedFolderPath);
+        }
+
+        // 설정 로드 메서드
+        private void LoadSettings()
+        {
+            searchString = EditorPrefs.GetString(SEARCH_STRING_KEY, "");
+            gridSize = EditorPrefs.GetFloat(GRID_SIZE_KEY, 1.0f);
+            showAsList = EditorPrefs.GetBool(SHOW_AS_LIST_KEY, false);
+            
+            // 저장된 폴더 경로가 유효한지 확인
+            string savedFolderPath = EditorPrefs.GetString(SELECTED_FOLDER_KEY, rootFolderPath);
+            if (string.IsNullOrEmpty(savedFolderPath) || !AssetDatabase.IsValidFolder(savedFolderPath))
+            {
+                selectedFolderPath = rootFolderPath;
+            }
+            else
+            {
+                // 저장된 폴더가 현재 루트 폴더의 하위인지 확인
+                if (savedFolderPath.StartsWith(rootFolderPath))
+                {
+                    selectedFolderPath = savedFolderPath;
+                }
+                else
+                {
+                    selectedFolderPath = rootFolderPath;
+                }
+            }
         }
 
         // GUI 메서드
         private void OnGUI()
         {
             DrawPanes();
+        }
+
+        // 윈도우가 닫힐 때 설정 저장
+        private void OnDestroy()
+        {
+            SaveSettings();
         }
 
         private void DrawPanes()
@@ -494,11 +542,17 @@ namespace CAT.Utility
 
             // 툴바 영역
             GUILayout.BeginHorizontal(EditorStyles.toolbar);
-            searchString = GUILayout.TextField(searchString, EditorStyles.toolbarSearchField);
+            string newSearchString = GUILayout.TextField(searchString, EditorStyles.toolbarSearchField);
+            if (newSearchString != searchString)
+            {
+                searchString = newSearchString;
+                SaveSettings(); // 검색 문자열 변경 시 저장
+            }
 
             if (GUILayout.Button("X", EditorStyles.toolbarButton, GUILayout.Width(22)))
             {
                 searchString = "";
+                SaveSettings(); // 검색 문자열 초기화 시 저장
                 GUI.FocusControl(null);
             }
             
@@ -510,6 +564,7 @@ namespace CAT.Utility
             {
                 gridSize = newGridSize;
                 showAsList = gridSize < 0.1f; // 슬라이더가 매우 낮으면 리스트 뷰로 전환
+                SaveSettings(); // 그리드 크기 변경 시 저장
             }
             GUILayout.EndHorizontal();
 
@@ -639,6 +694,7 @@ namespace CAT.Utility
             if (selectedFolderPath == path) return;
             selectedFolderPath = path;
             LoadSpritesForFolder(path);
+            SaveSettings(); // 폴더 선택 시 저장
             // 폴더 트리는 다시 빌드하지 않음 - 고정된 구조 유지
             Repaint();
         }
