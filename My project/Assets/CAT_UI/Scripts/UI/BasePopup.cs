@@ -19,7 +19,7 @@ public abstract class BasePopup : MonoBehaviour
     [SerializeField] protected AnimationCurve hideCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
     [SerializeField] protected PopupAnimationType animationType = PopupAnimationType.Scale;
     [SerializeField] protected bool useFadeAnimation = true;
-    [SerializeField] protected Vector3 targetScale = Vector3.one; // 목표 스케일 배율
+    [SerializeField] protected Vector3 startScale = Vector3.one; // 시작 스케일 배율
     [SerializeField] protected Vector2 startOffset = Vector2.zero; // 원본 위치에서의 상대 좌표
     
     // 원본 스케일 저장
@@ -219,8 +219,8 @@ public abstract class BasePopup : MonoBehaviour
                 switch (animationType)
                 {
                     case PopupAnimationType.Scale:
-                        // 원본 스케일에 목표 스케일 배율 적용 (시작 위치)
-                        contentRect.localScale = Vector3.Scale(originalScale, targetScale);
+                        // 원본 스케일에 시작 스케일 배율 적용 (시작 위치)
+                        contentRect.localScale = Vector3.Scale(originalScale, startScale);
                         break;
                         
                     case PopupAnimationType.Slide:
@@ -229,8 +229,8 @@ public abstract class BasePopup : MonoBehaviour
                         break;
                         
                     case PopupAnimationType.ScaleAndSlide:
-                        // 원본 스케일에 목표 스케일 배율 적용 (시작 위치)
-                        contentRect.localScale = Vector3.Scale(originalScale, targetScale);
+                        // 원본 스케일에 시작 스케일 배율 적용 (시작 위치)
+                        contentRect.localScale = Vector3.Scale(originalScale, startScale);
                         // 시작 위치로 설정 (원본 위치 + startOffset)
                         contentRect.anchoredPosition = targetPosition + startOffset;
                         break;
@@ -265,8 +265,8 @@ public abstract class BasePopup : MonoBehaviour
                         float scaleProgress = isShowing ? 
                             showCurve.Evaluate(progress) : 
                             hideCurve.Evaluate(1f - progress);
-                        // 원본 스케일과 목표 스케일 배율 사이에서 보간
-                        Vector3 startScaleValue = Vector3.Scale(originalScale, targetScale);
+                        // 원본 스케일과 시작 스케일 배율 사이에서 보간
+                        Vector3 startScaleValue = Vector3.Scale(originalScale, startScale);
                         Vector3 endScaleValue = originalScale;
                         contentRect.localScale = Vector3.Lerp(startScaleValue, endScaleValue, scaleProgress);
                         break;
@@ -285,8 +285,8 @@ public abstract class BasePopup : MonoBehaviour
                             showCurve.Evaluate(progress) : 
                             hideCurve.Evaluate(1f - progress);
                         
-                        // 스케일 애니메이션 (원본 스케일과 목표 스케일 배율 사이에서 보간)
-                        Vector3 combinedStartScale = Vector3.Scale(originalScale, targetScale);
+                        // 스케일 애니메이션 (원본 스케일과 시작 스케일 배율 사이에서 보간)
+                        Vector3 combinedStartScale = Vector3.Scale(originalScale, startScale);
                         Vector3 combinedEndScale = originalScale;
                         contentRect.localScale = Vector3.Lerp(combinedStartScale, combinedEndScale, combinedProgress);
                         

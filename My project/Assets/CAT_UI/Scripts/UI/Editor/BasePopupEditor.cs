@@ -15,7 +15,7 @@ public class BasePopupEditor : Editor
     private SerializedProperty hideCurveProp;
     private SerializedProperty animationTypeProp;
     private SerializedProperty useFadeAnimationProp;
-    private SerializedProperty targetScaleProp;
+    private SerializedProperty startScaleProp;
     private SerializedProperty startOffsetProp;
     private SerializedProperty buttonContainerProp;
     
@@ -30,7 +30,7 @@ public class BasePopupEditor : Editor
         hideCurveProp = serializedObject.FindProperty("hideCurve");
         animationTypeProp = serializedObject.FindProperty("animationType");
         useFadeAnimationProp = serializedObject.FindProperty("useFadeAnimation");
-        targetScaleProp = serializedObject.FindProperty("targetScale");
+        startScaleProp = serializedObject.FindProperty("startScale");
         startOffsetProp = serializedObject.FindProperty("startOffset");
         buttonContainerProp = serializedObject.FindProperty("buttonContainer");
     }
@@ -58,7 +58,7 @@ public class BasePopupEditor : Editor
             EditorGUILayout.PropertyField(hideCurveProp, new GUIContent("Hide Curve"));
             EditorGUILayout.PropertyField(animationTypeProp, new GUIContent("Animation Type"));
             EditorGUILayout.PropertyField(useFadeAnimationProp, new GUIContent("Use Fade Animation"));
-            EditorGUILayout.PropertyField(targetScaleProp, new GUIContent("Target Scale"));
+            EditorGUILayout.PropertyField(startScaleProp, new GUIContent("Start Scale"));
             EditorGUILayout.PropertyField(startOffsetProp, new GUIContent("Start Offset"));
             
             EditorGUI.indentLevel--;
@@ -75,7 +75,7 @@ public class BasePopupEditor : Editor
         DrawPropertiesExcluding(serializedObject, 
             "canvasGroup", "popupContentObject", "showDuration", "hideDuration", 
             "showCurve", "hideCurve", "animationType", "useFadeAnimation", 
-            "targetScale", "startOffset", "buttonContainer");
+            "startScale", "startOffset", "buttonContainer");
         
         // 변경사항 적용
         serializedObject.ApplyModifiedProperties();
