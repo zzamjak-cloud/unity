@@ -22,6 +22,18 @@ public abstract class BasePopup : MonoBehaviour
     [SerializeField] protected AnimationCurve hideCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
     [SerializeField] protected PopupAnimationType animationType = PopupAnimationType.Scale;
     [SerializeField] protected bool useFadeAnimation = true;
+    
+    [Header("Scale Animation")]
+    [SerializeField] protected Vector3 targetScale = Vector3.one; // 목표 스케일 배율
+    
+    // 원본 스케일 저장
+    private Vector3 originalScale;
+    
+    [Header("Slide Animation")]
+    [SerializeField] protected Vector2 startOffset = Vector2.zero; // 원본 위치에서의 상대 좌표
+    
+    // 슬라이드 애니메이션을 위한 도착 위치 저장
+    private Vector2 targetPosition;
 
     [Header("Content")]
     [SerializeField] protected Transform buttonContainer; // 동적 버튼들을 배치할 컨테이너
@@ -74,8 +86,16 @@ public abstract class BasePopup : MonoBehaviour
             popupContentObject = gameObject;
         }
         
-        // 초기 상태 설정 (플레이 모드 진입 시에도 올바른 상태 보장)
-        SetInitialAnimationState();
+        // targetPosition과 originalScale 초기화 (원본 값 저장)
+        if (popupContentObject != null)
+        {
+            RectTransform contentRect = popupContentObject.GetComponent<RectTransform>();
+            if (contentRect != null)
+            {
+                targetPosition = contentRect.anchoredPosition;
+                originalScale = contentRect.localScale;
+            }
+        }
         
         IsShowing = false;
         IsAnimating = false;
@@ -207,23 +227,20 @@ public abstract class BasePopup : MonoBehaviour
                 switch (animationType)
                 {
                     case PopupAnimationType.Scale:
-                        contentRect.localScale = Vector3.zero;
+                        // 원본 스케일에 목표 스케일 배율 적용 (시작 위치)
+                        contentRect.localScale = Vector3.Scale(originalScale, targetScale);
                         break;
                         
-                    case PopupAnimationType.SlideFromTop:
-                        contentRect.anchoredPosition = new Vector2(0, Screen.height);
+                    case PopupAnimationType.Slide:
+                        // 시작 위치로 설정 (원본 위치 + startOffset)
+                        contentRect.anchoredPosition = targetPosition + startOffset;
                         break;
                         
-                    case PopupAnimationType.SlideFromBottom:
-                        contentRect.anchoredPosition = new Vector2(0, -Screen.height);
-                        break;
-                        
-                    case PopupAnimationType.SlideFromLeft:
-                        contentRect.anchoredPosition = new Vector2(-Screen.width, 0);
-                        break;
-                        
-                    case PopupAnimationType.SlideFromRight:
-                        contentRect.anchoredPosition = new Vector2(Screen.width, 0);
+                    case PopupAnimationType.ScaleAndSlide:
+                        // 원본 스케일에 목표 스케일 배율 적용 (시작 위치)
+                        contentRect.localScale = Vector3.Scale(originalScale, targetScale);
+                        // 시작 위치로 설정 (원본 위치 + startOffset)
+                        contentRect.anchoredPosition = targetPosition + startOffset;
                         break;
                 }
                 
@@ -256,47 +273,34 @@ public abstract class BasePopup : MonoBehaviour
                         float scaleProgress = isShowing ? 
                             showCurve.Evaluate(progress) : 
                             hideCurve.Evaluate(1f - progress);
-                        contentRect.localScale = Vector3.one * scaleProgress;
+                        // 원본 스케일과 목표 스케일 배율 사이에서 보간
+                        Vector3 startScaleValue = Vector3.Scale(originalScale, targetScale);
+                        Vector3 endScaleValue = originalScale;
+                        contentRect.localScale = Vector3.Lerp(startScaleValue, endScaleValue, scaleProgress);
                         break;
                         
-                    case PopupAnimationType.SlideFromTop:
+                    case PopupAnimationType.Slide:
                         float slideProgress = isShowing ? 
                             showCurve.Evaluate(progress) : 
                             hideCurve.Evaluate(1f - progress);
-                        float yPos = isShowing ? 
-                            Mathf.Lerp(Screen.height, 0, slideProgress) : 
-                            Mathf.Lerp(0, Screen.height, 1f - slideProgress);
-                        contentRect.anchoredPosition = new Vector2(0, yPos);
+                        // 시작 위치(원본 위치 + startOffset)에서 도착 위치(targetPosition)까지 보간
+                        Vector2 startPosition = targetPosition + startOffset;
+                        contentRect.anchoredPosition = Vector2.Lerp(startPosition, targetPosition, slideProgress);
                         break;
                         
-                    case PopupAnimationType.SlideFromBottom:
-                        float slideProgress2 = isShowing ? 
+                    case PopupAnimationType.ScaleAndSlide:
+                        float combinedProgress = isShowing ? 
                             showCurve.Evaluate(progress) : 
                             hideCurve.Evaluate(1f - progress);
-                        float yPos2 = isShowing ? 
-                            Mathf.Lerp(-Screen.height, 0, slideProgress2) : 
-                            Mathf.Lerp(0, -Screen.height, 1f - slideProgress2);
-                        contentRect.anchoredPosition = new Vector2(0, yPos2);
-                        break;
                         
-                    case PopupAnimationType.SlideFromLeft:
-                        float slideProgress3 = isShowing ? 
-                            showCurve.Evaluate(progress) : 
-                            hideCurve.Evaluate(1f - progress);
-                        float xPos = isShowing ? 
-                            Mathf.Lerp(-Screen.width, 0, slideProgress3) : 
-                            Mathf.Lerp(0, -Screen.width, 1f - slideProgress3);
-                        contentRect.anchoredPosition = new Vector2(xPos, 0);
-                        break;
+                        // 스케일 애니메이션 (원본 스케일과 목표 스케일 배율 사이에서 보간)
+                        Vector3 combinedStartScale = Vector3.Scale(originalScale, targetScale);
+                        Vector3 combinedEndScale = originalScale;
+                        contentRect.localScale = Vector3.Lerp(combinedStartScale, combinedEndScale, combinedProgress);
                         
-                    case PopupAnimationType.SlideFromRight:
-                        float slideProgress4 = isShowing ? 
-                            showCurve.Evaluate(progress) : 
-                            hideCurve.Evaluate(1f - progress);
-                        float xPos2 = isShowing ? 
-                            Mathf.Lerp(Screen.width, 0, slideProgress4) : 
-                            Mathf.Lerp(0, Screen.width, 1f - slideProgress4);
-                        contentRect.anchoredPosition = new Vector2(xPos2, 0);
+                        // 슬라이드 애니메이션 (시작 위치에서 도착 위치까지)
+                        Vector2 startPos = targetPosition + startOffset;
+                        contentRect.anchoredPosition = Vector2.Lerp(startPos, targetPosition, combinedProgress);
                         break;
                 }
             }
@@ -509,8 +513,6 @@ public abstract class BasePopup : MonoBehaviour
 public enum PopupAnimationType
 {
     Scale,          // 스케일 애니메이션
-    SlideFromTop,   // 위에서 슬라이드
-    SlideFromBottom, // 아래에서 슬라이드
-    SlideFromLeft,  // 왼쪽에서 슬라이드
-    SlideFromRight  // 오른쪽에서 슬라이드
+    Slide,          // 슬라이드 애니메이션 (StartOffset 기반)
+    ScaleAndSlide   // 스케일 + 슬라이드 조합
 }
