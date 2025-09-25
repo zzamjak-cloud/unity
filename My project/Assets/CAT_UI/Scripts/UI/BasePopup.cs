@@ -11,10 +11,7 @@ using TMPro;
 /// </summary>
 public abstract class BasePopup : MonoBehaviour
 {
-    [Header("Popup Core")]
     [SerializeField] protected CanvasGroup canvasGroup;
-    
-    [Header("Animation Settings")]
     [SerializeField] protected GameObject popupContentObject; // 실제 팝업 콘텐츠 오브젝트
     [SerializeField] protected float showDuration = 0.3f;
     [SerializeField] protected float hideDuration = 0.2f;
@@ -22,20 +19,15 @@ public abstract class BasePopup : MonoBehaviour
     [SerializeField] protected AnimationCurve hideCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
     [SerializeField] protected PopupAnimationType animationType = PopupAnimationType.Scale;
     [SerializeField] protected bool useFadeAnimation = true;
-    
-    [Header("Scale Animation")]
     [SerializeField] protected Vector3 targetScale = Vector3.one; // 목표 스케일 배율
+    [SerializeField] protected Vector2 startOffset = Vector2.zero; // 원본 위치에서의 상대 좌표
     
     // 원본 스케일 저장
     private Vector3 originalScale;
     
-    [Header("Slide Animation")]
-    [SerializeField] protected Vector2 startOffset = Vector2.zero; // 원본 위치에서의 상대 좌표
-    
     // 슬라이드 애니메이션을 위한 도착 위치 저장
     private Vector2 targetPosition;
 
-    [Header("Content")]
     [SerializeField] protected Transform buttonContainer; // 동적 버튼들을 배치할 컨테이너
     
     // 동적 버튼 관리
