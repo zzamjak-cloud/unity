@@ -14,10 +14,6 @@ public abstract class BasePopup : MonoBehaviour
     [Header("Popup Core")]
     [SerializeField] protected CanvasGroup canvasGroup;
     
-    [Header("Content")]
-    [SerializeField] protected TextMeshProUGUI messageText;
-    [SerializeField] protected Transform buttonContainer; // 동적 버튼들을 배치할 컨테이너
-    
     [Header("Animation Settings")]
     [SerializeField] protected GameObject popupContentObject; // 실제 팝업 콘텐츠 오브젝트
     [SerializeField] protected float showDuration = 0.3f;
@@ -26,6 +22,9 @@ public abstract class BasePopup : MonoBehaviour
     [SerializeField] protected AnimationCurve hideCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
     [SerializeField] protected PopupAnimationType animationType = PopupAnimationType.Scale;
     [SerializeField] protected bool useFadeAnimation = true;
+
+    [Header("Content")]
+    [SerializeField] protected Transform buttonContainer; // 동적 버튼들을 배치할 컨테이너
     
     // 동적 버튼 관리
     protected List<InteractiveButton> dynamicButtons = new List<InteractiveButton>();
@@ -75,7 +74,8 @@ public abstract class BasePopup : MonoBehaviour
             popupContentObject = gameObject;
         }
         
-        
+        // 초기 상태 설정 (플레이 모드 진입 시에도 올바른 상태 보장)
+        SetInitialAnimationState();
         
         IsShowing = false;
         IsAnimating = false;
@@ -90,6 +90,14 @@ public abstract class BasePopup : MonoBehaviour
     }
     
     /// <summary>
+    /// 하위 클래스에서 오버라이드할 팝업 표시 메서드
+    /// </summary>
+    protected virtual void OnShowPopup(string message)
+    {
+        // 하위 클래스에서 메시지 처리 구현
+    }
+    
+    /// <summary>
     /// 팝업을 표시합니다.
     /// </summary>
     public virtual void ShowPopup(string message = "")
@@ -98,10 +106,11 @@ public abstract class BasePopup : MonoBehaviour
         
         gameObject.SetActive(true);
         
-        if (messageText != null && !string.IsNullOrEmpty(message))
-        {
-            messageText.text = message;
-        }
+        // 메시지 처리는 하위 클래스에서 구현
+        OnShowPopup(message);
+        
+        // 애니메이션 시작 전에 초기 상태를 강제로 설정
+        SetInitialAnimationState();
         
         StartCoroutine(ShowAnimation());
     }
@@ -194,6 +203,7 @@ public abstract class BasePopup : MonoBehaviour
             RectTransform contentRect = popupContentObject.GetComponent<RectTransform>();
             if (contentRect != null)
             {
+                // 강제로 즉시 적용 (플레이 모드 진입 시 씹힘 방지)
                 switch (animationType)
                 {
                     case PopupAnimationType.Scale:
@@ -216,6 +226,9 @@ public abstract class BasePopup : MonoBehaviour
                         contentRect.anchoredPosition = new Vector2(Screen.width, 0);
                         break;
                 }
+                
+                // 강제로 레이아웃 업데이트
+                Canvas.ForceUpdateCanvases();
             }
         }
     }
@@ -331,6 +344,14 @@ public abstract class BasePopup : MonoBehaviour
         buttonActions[buttonId] = onClickAction;
         
         return newButton;
+    }
+    
+    /// <summary>
+    /// Close 버튼을 추가합니다.
+    /// </summary>
+    public virtual InteractiveButton AddCloseButton(string buttonText = "닫기")
+    {
+        return AddButton("close", buttonText, OnCloseButtonClicked);
     }
     
     /// <summary>
@@ -450,15 +471,22 @@ public abstract class BasePopup : MonoBehaviour
         }
     }
     
+    
     /// <summary>
-    /// 팝업 메시지를 설정합니다.
+    /// 팝업을 닫습니다. (HidePopup과 동일)
     /// </summary>
-    public virtual void SetMessage(string message)
+    public virtual void ClosePopup()
     {
-        if (messageText != null)
-        {
-            messageText.text = message;
-        }
+        HidePopup();
+    }
+    
+    /// <summary>
+    /// Close 버튼 클릭 시 호출되는 메서드
+    /// </summary>
+    protected virtual void OnCloseButtonClicked()
+    {
+        Debug.Log("팝업 닫기 버튼 클릭");
+        ClosePopup();
     }
     
     /// <summary>

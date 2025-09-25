@@ -58,7 +58,7 @@ public class IconGameObjectInfo
 #endregion
 
 // 모든 UI 버튼에 적용하여 클릭 및 릴리즈 시 스케일 애니메이션을 처리하는 컴포넌트입니다.
-public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
+public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
 {
     #region Serialized Fields
     
@@ -81,6 +81,10 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     
     [Header("Events")]
     public UnityEvent OnButtonClicked;  // 버튼 클릭 시 호출되는 이벤트
+    public UnityEvent OnButtonPressed;  // 버튼을 누를 때 호출되는 이벤트
+    public UnityEvent OnButtonReleased; // 버튼을 놓을 때 호출되는 이벤트
+    public UnityEvent OnButtonEnter;    // 버튼에 마우스가 들어올 때 호출되는 이벤트
+    public UnityEvent OnButtonExit;     // 버튼에서 마우스가 나갈 때 호출되는 이벤트
     
     [Header("Button Identification")]
     [SerializeField] private string buttonId = "";  // 버튼 고유 ID
@@ -395,6 +399,9 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
 
         // 클릭 시 커브를 사용한 스케일 다운 애니메이션을 시작합니다.
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale * targetScale, pressDuration, pressCurve));
+        
+        // Press 이벤트 호출
+        OnButtonPressed?.Invoke();
     }
 
     // 포인터(마우스, 터치)가 버튼에서 떨어졌을 때 호출됩니다.
@@ -412,8 +419,35 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         // 릴리즈 시 커브를 사용한 원래 스케일로 돌아가는 애니메이션을 시작합니다.
         scaleCoroutine = StartCoroutine(AnimateWithCurve(originalScale, releaseDuration, releaseCurve));
         
-        // 클릭 이벤트 호출
+        // Release 이벤트 호출
+        OnButtonReleased?.Invoke();
+    }
+    
+    // 포인터가 버튼을 클릭했을 때 호출됩니다.
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (!isClickable) return;
+        
+        // Click 이벤트 호출
         OnButtonClicked?.Invoke();
+    }
+    
+    // 포인터가 버튼에 들어왔을 때 호출됩니다.
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (!isClickable) return;
+        
+        // Enter 이벤트 호출
+        OnButtonEnter?.Invoke();
+    }
+    
+    // 포인터가 버튼에서 나갔을 때 호출됩니다.
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        if (!isClickable) return;
+        
+        // Exit 이벤트 호출
+        OnButtonExit?.Invoke();
     }
     
     #endregion

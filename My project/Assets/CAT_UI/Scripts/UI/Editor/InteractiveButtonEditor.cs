@@ -12,14 +12,44 @@ public class InteractiveButtonEditor : Editor
 {
     private InteractiveButton interactiveButton;
     
-    // Foldout 상태 관리
-    private bool showImageColors = true;
-    private bool showTextColors = true;
-    private bool showIconGameObjects = true;
+    // Foldout 상태 관리 (기본값을 false로 변경)
+    private bool showAnimationSettings = false;
+    private bool showImageColors = false;
+    private bool showTextColors = false;
+    private bool showIconGameObjects = false;
+    private bool showEvents = false;
     
     private void OnEnable()
     {
         interactiveButton = (InteractiveButton)target;
+        LoadFoldoutStates();
+    }
+    
+    private void OnDisable()
+    {
+        SaveFoldoutStates();
+    }
+    
+    // Foldout 상태를 저장합니다.
+    private void SaveFoldoutStates()
+    {
+        string keyPrefix = "InteractiveButtonEditor_Foldout_";
+        EditorPrefs.SetBool(keyPrefix + "AnimationSettings", showAnimationSettings);
+        EditorPrefs.SetBool(keyPrefix + "ImageColors", showImageColors);
+        EditorPrefs.SetBool(keyPrefix + "TextColors", showTextColors);
+        EditorPrefs.SetBool(keyPrefix + "IconGameObjects", showIconGameObjects);
+        EditorPrefs.SetBool(keyPrefix + "Events", showEvents);
+    }
+    
+    // Foldout 상태를 불러옵니다.
+    private void LoadFoldoutStates()
+    {
+        string keyPrefix = "InteractiveButtonEditor_Foldout_";
+        showAnimationSettings = EditorPrefs.GetBool(keyPrefix + "AnimationSettings", false);
+        showImageColors = EditorPrefs.GetBool(keyPrefix + "ImageColors", false);
+        showTextColors = EditorPrefs.GetBool(keyPrefix + "TextColors", false);
+        showIconGameObjects = EditorPrefs.GetBool(keyPrefix + "IconGameObjects", false);
+        showEvents = EditorPrefs.GetBool(keyPrefix + "Events", false);
     }
     
     public override void OnInspectorGUI()
@@ -30,15 +60,17 @@ public class InteractiveButtonEditor : Editor
         
         DrawButtonStateSection();           // 버튼 상태 섹션
         
-        DrawScaleSettingsSection();         // 스케일 설정 섹션 
-        
-        DrawAnimationSettingsSection();     // 애니메이션 설정 섹션
+        DrawAnimationSettingsSection();     // 애니메이션 설정 섹션 (Target Scale 포함)
         
         DrawImageColorSection();            // 이미지 컬러 설정 섹션
         
         DrawTextColorSection();             // 텍스트 컬러 설정 섹션
         
         DrawIconGameObjectSection();        // 아이콘 GameObject 설정 섹션
+        
+        DrawEventsSection();                // 이벤트 설정 섹션
+        
+        DrawButtonIdentificationSection();  // 버튼 식별 섹션
         
         serializedObject.ApplyModifiedProperties();
     }
@@ -137,37 +169,39 @@ public class InteractiveButtonEditor : Editor
         EditorGUI.indentLevel--;
     }
     
-    // 스케일 설정 섹션을 그립니다.
-    private void DrawScaleSettingsSection()
-    {
-        EditorGUILayout.Space();
-        EditorGUILayout.LabelField("Scale Settings", EditorStyles.boldLabel);
-        
-        EditorGUI.indentLevel++;
-        var targetScale = serializedObject.FindProperty("targetScale");
-        EditorGUILayout.PropertyField(targetScale);
-        EditorGUI.indentLevel--;
-    }
-    
-    // 애니메이션 설정 섹션을 그립니다.
+    // 애니메이션 설정 섹션을 그립니다. (Target Scale 포함)
     private void DrawAnimationSettingsSection()
     {
         EditorGUILayout.Space();
-        EditorGUILayout.LabelField("Animation Settings", EditorStyles.boldLabel);
         
-        var pressDuration = serializedObject.FindProperty("pressDuration");
-        var pressCurve = serializedObject.FindProperty("pressCurve");
-        var releaseDuration = serializedObject.FindProperty("releaseDuration");
-        var releaseCurve = serializedObject.FindProperty("releaseCurve");
+        // Animation Settings Foldout
+        showAnimationSettings = EditorGUILayout.Foldout(showAnimationSettings, "Animation Settings", true);
         
-        EditorGUI.indentLevel++;
-        EditorGUILayout.PropertyField(pressDuration);
-        EditorGUILayout.PropertyField(pressCurve);
-        
-        EditorGUILayout.Space(5);
-        EditorGUILayout.PropertyField(releaseDuration);
-        EditorGUILayout.PropertyField(releaseCurve);
-        EditorGUI.indentLevel--;
+        if (showAnimationSettings)
+        {
+            EditorGUI.indentLevel++;
+            
+            // Target Scale (기존 Scale Settings에서 이동)
+            var targetScale = serializedObject.FindProperty("targetScale");
+            EditorGUILayout.PropertyField(targetScale);
+            
+            EditorGUILayout.Space(5);
+            
+            // 애니메이션 설정들
+            var pressDuration = serializedObject.FindProperty("pressDuration");
+            var pressCurve = serializedObject.FindProperty("pressCurve");
+            var releaseDuration = serializedObject.FindProperty("releaseDuration");
+            var releaseCurve = serializedObject.FindProperty("releaseCurve");
+            
+            EditorGUILayout.PropertyField(pressDuration);
+            EditorGUILayout.PropertyField(pressCurve);
+            
+            EditorGUILayout.Space(5);
+            EditorGUILayout.PropertyField(releaseDuration);
+            EditorGUILayout.PropertyField(releaseCurve);
+            
+            EditorGUI.indentLevel--;
+        }
     }
     
     // 이미지 컬러 설정 섹션을 그립니다.
@@ -674,5 +708,57 @@ public class InteractiveButtonEditor : Editor
         var newStateGameObject = stateGameObjects.GetArrayElementAtIndex(index);
         newStateGameObject.FindPropertyRelative("state").enumValueIndex = (int)state;
         newStateGameObject.FindPropertyRelative("gameObject").objectReferenceValue = gameObject;
+    }
+    
+    // 이벤트 섹션을 그립니다.
+    private void DrawEventsSection()
+    {
+        EditorGUILayout.Space();
+        
+        // Events Foldout
+        showEvents = EditorGUILayout.Foldout(showEvents, "Events", true);
+        
+        if (showEvents)
+        {
+            EditorGUI.indentLevel++;
+            
+            var onButtonClicked = serializedObject.FindProperty("OnButtonClicked");
+            var onButtonPressed = serializedObject.FindProperty("OnButtonPressed");
+            var onButtonReleased = serializedObject.FindProperty("OnButtonReleased");
+            var onButtonEnter = serializedObject.FindProperty("OnButtonEnter");
+            var onButtonExit = serializedObject.FindProperty("OnButtonExit");
+            
+            // 각 이벤트가 사용되는지 확인하여 표시
+            if (HasEventListeners(onButtonClicked) || HasEventListeners(onButtonPressed) || 
+                HasEventListeners(onButtonReleased) || HasEventListeners(onButtonEnter) || 
+                HasEventListeners(onButtonExit))
+            {
+                EditorGUILayout.HelpBox("이벤트가 연결되어 있습니다. 필요에 따라 수정하세요.", MessageType.Info);
+            }
+            
+            EditorGUILayout.PropertyField(onButtonClicked, new GUIContent("On Button Clicked"));
+            EditorGUILayout.PropertyField(onButtonPressed, new GUIContent("On Button Pressed"));
+            EditorGUILayout.PropertyField(onButtonReleased, new GUIContent("On Button Released"));
+            EditorGUILayout.PropertyField(onButtonEnter, new GUIContent("On Button Enter"));
+            EditorGUILayout.PropertyField(onButtonExit, new GUIContent("On Button Exit"));
+            
+            EditorGUI.indentLevel--;
+        }
+    }
+    
+    // 이벤트에 리스너가 있는지 확인합니다.
+    private bool HasEventListeners(SerializedProperty eventProperty)
+    {
+        return eventProperty.FindPropertyRelative("m_PersistentCalls.m_Calls").arraySize > 0;
+    }
+    
+    // 버튼 식별 섹션을 그립니다.
+    private void DrawButtonIdentificationSection()
+    {
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Button Identification", EditorStyles.boldLabel);
+        
+        var buttonId = serializedObject.FindProperty("buttonId");
+        EditorGUILayout.PropertyField(buttonId, new GUIContent("Button ID"));
     }
 }
