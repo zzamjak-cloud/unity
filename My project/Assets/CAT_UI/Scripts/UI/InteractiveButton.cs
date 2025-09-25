@@ -140,7 +140,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         return currentState;
     }
     
-    // 버튼의 상태를 설정합니다.
+    // 버튼의 상태를 설정하고 컬러를 적용합니다.
     public void SetState(ButtonState newState)
     {
         if (currentState == newState) return;
@@ -149,7 +149,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         ApplyStateColors();
     }
     
-    // 에디터에서 상태를 직접 설정합니다. (런타임 로직 없이 시각적 변경만)
+    // (에디터용) 상태를 직접 설정하고 컬러를 적용합니다. (런타임 로직 없이 시각적 변경만)
     public void SetStateForEditor(ButtonState newState)
     {
         currentState = newState;
@@ -502,7 +502,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     
     #endregion
     
-    #region Convenience Methods
+    #region Set Button State
     
     // 버튼을 Normal 상태로 설정합니다.
     public void SetNormal()
@@ -536,19 +536,15 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
     
     #endregion
     
-    #region Button Identification
+    #region Button ID
     
-    /// <summary>
-    /// 버튼 ID를 반환합니다.
-    /// </summary>
+    // 버튼 ID를 반환합니다.
     public string GetButtonId()
     {
         return buttonId;
     }
     
-    /// <summary>
-    /// 버튼 ID를 설정합니다.
-    /// </summary>
+    // 버튼 ID를 설정합니다.
     public void SetButtonId(string newButtonId)
     {
         // 기존 등록 해제
@@ -566,9 +562,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 이벤트 시스템에 버튼을 등록합니다.
-    /// </summary>
+    // 이벤트 시스템에 버튼을 등록합니다.
     private void RegisterToEventSystem()
     {
         if (ButtonEventSystem.Instance != null)
@@ -577,9 +571,7 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         }
     }
     
-    /// <summary>
-    /// 이벤트 시스템에서 버튼 등록을 해제합니다.
-    /// </summary>
+    // 이벤트 시스템에서 버튼 등록을 해제합니다.
     private void UnregisterFromEventSystem()
     {
         if (ButtonEventSystem.Instance != null)
@@ -600,20 +592,12 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         var imageInfo = imageColorInfos[imageIndex];
         var existingColor = imageInfo.stateColors.Find(sc => sc.state == state);
         
-        if (existingColor != null)
-        {
-            existingColor.color = color;
-        }
-        else
-        {
-            imageInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
-        }
+        if (existingColor != null) existingColor.color = color;
+        else imageInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
         
         // 현재 상태라면 즉시 적용
         if (state == currentState)
-        {
             ApplyImageColors(imageInfo);
-        }
     }
     
     // 텍스트에 새로운 상태별 컬러를 추가합니다.
@@ -624,20 +608,12 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         var textInfo = textColorInfos[textIndex];
         var existingColor = textInfo.stateColors.Find(sc => sc.state == state);
         
-        if (existingColor != null)
-        {
-            existingColor.color = color;
-        }
-        else
-        {
-            textInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
-        }
+        if (existingColor != null) existingColor.color = color;
+        else textInfo.stateColors.Add(new StateColorInfo { state = state, color = color });
         
         // 현재 상태라면 즉시 적용
         if (state == currentState)
-        {
             ApplyTextColors(textInfo);
-        }
     }
     
     // 아이콘에 새로운 상태별 GameObject를 추가합니다.
@@ -648,20 +624,12 @@ public class InteractiveButton : MonoBehaviour, IPointerDownHandler, IPointerUpH
         var iconInfo = iconGameObjectInfos[iconIndex];
         var existingStateGameObject = iconInfo.stateGameObjects.Find(sg => sg.state == state);
         
-        if (existingStateGameObject != null)
-        {
-            existingStateGameObject.gameObject = gameObject;
-        }
-        else
-        {
-            iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = state, gameObject = gameObject });
-        }
+        if (existingStateGameObject != null) existingStateGameObject.gameObject = gameObject;
+        else iconInfo.stateGameObjects.Add(new StateGameObjectInfo { state = state, gameObject = gameObject });
         
         // 현재 상태라면 즉시 적용
         if (state == currentState)
-        {
             ApplyIconGameObjects(iconInfo);
-        }
     }
     
     // 새로운 이미지 컬러 정보를 추가하고 모든 상태를 자동 생성합니다.

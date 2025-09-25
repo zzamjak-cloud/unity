@@ -10,6 +10,7 @@ using TMPro;
 [CustomEditor(typeof(InteractiveButton))]
 public class InteractiveButtonEditor : Editor
 {
+    #region Fields
     private InteractiveButton interactiveButton;
     
     // Foldout 상태 관리 (기본값을 false로 변경)
@@ -18,7 +19,9 @@ public class InteractiveButtonEditor : Editor
     private bool showTextColors = false;
     private bool showIconGameObjects = false;
     private bool showEvents = false;
+    #endregion
     
+    #region Unity Lifecycle
     private void OnEnable()
     {
         interactiveButton = (InteractiveButton)target;
@@ -29,7 +32,9 @@ public class InteractiveButtonEditor : Editor
     {
         SaveFoldoutStates();
     }
+    #endregion
     
+    #region Foldout State Management
     // Foldout 상태를 저장합니다.
     private void SaveFoldoutStates()
     {
@@ -51,7 +56,9 @@ public class InteractiveButtonEditor : Editor
         showIconGameObjects = EditorPrefs.GetBool(keyPrefix + "IconGameObjects", false);
         showEvents = EditorPrefs.GetBool(keyPrefix + "Events", false);
     }
+    #endregion
     
+    #region Main Inspector GUI
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
@@ -74,7 +81,9 @@ public class InteractiveButtonEditor : Editor
         
         serializedObject.ApplyModifiedProperties();
     }
+    #endregion
     
+    #region State Generation
     // Target이 변경되었는지 확인하고 자동으로 상태를 생성합니다.
     private void CheckAndGenerateStates()
     {
@@ -134,6 +143,7 @@ public class InteractiveButtonEditor : Editor
         if (needsUpdate) GenerateAllStates();
     }
     
+    #region Inspector Drawing Methods
     // 버튼 상태 섹션을 그립니다.
     private void DrawButtonStateSection()
     {
@@ -482,7 +492,9 @@ public class InteractiveButtonEditor : Editor
         EditorUtility.SetDirty(interactiveButton);
         Debug.Log("All states generated successfully!");
     }
+    #endregion
     
+    #region State Generation Methods
     // 개별 이미지 요소에 대한 상태를 생성합니다.
     private void GenerateImageStatesForElement(SerializedProperty imageInfo)
     {
@@ -709,6 +721,7 @@ public class InteractiveButtonEditor : Editor
         newStateGameObject.FindPropertyRelative("state").enumValueIndex = (int)state;
         newStateGameObject.FindPropertyRelative("gameObject").objectReferenceValue = gameObject;
     }
+    #endregion
     
     // 이벤트 섹션을 그립니다.
     private void DrawEventsSection()
@@ -761,4 +774,5 @@ public class InteractiveButtonEditor : Editor
         var buttonId = serializedObject.FindProperty("buttonId");
         EditorGUILayout.PropertyField(buttonId, new GUIContent("Button ID"));
     }
+    #endregion
 }
