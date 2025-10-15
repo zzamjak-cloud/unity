@@ -1,0 +1,539 @@
+{
+    "prefabName": "Mon_Goblin_Mace",
+    "exportDate": "2025-10-14 12:04:11",
+    "gameObjects": [
+        {
+            "name": "Pivot",
+            "path": "Pivot",
+            "parentPath": "",
+            "posX": 0.12600000202655793,
+            "posY": -1.1859999895095826,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteGroupTint",
+                    "componentType": "CAT.Effects.SpriteGroupTint",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Body",
+            "path": "Pivot/Body",
+            "parentPath": "Pivot",
+            "posX": 0.015000000596046448,
+            "posY": 0.13199996948242188,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Hand_R",
+            "path": "Pivot/Body/Hand_R",
+            "parentPath": "Pivot/Body",
+            "posX": -0.14100000262260438,
+            "posY": 0.11500000208616257,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Hand_R/Image",
+            "parentPath": "Pivot/Body/Hand_R",
+            "posX": 0.0,
+            "posY": 0.9390000104904175,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 10
+                }
+            ]
+        },
+        {
+            "name": "Hand_L",
+            "path": "Pivot/Body/Hand_L",
+            "parentPath": "Pivot/Body",
+            "posX": 0.16699999570846559,
+            "posY": 0.08799999952316284,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Hand_L/Image",
+            "parentPath": "Pivot/Body/Hand_L",
+            "posX": -0.30799999833106997,
+            "posY": 0.9660000205039978,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 2
+                }
+            ]
+        },
+        {
+            "name": "Weapon_0",
+            "path": "Pivot/Body/Hand_L/Weapon_0",
+            "parentPath": "Pivot/Body/Hand_L",
+            "posX": -0.03099999949336052,
+            "posY": -0.027000000700354577,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Hand_L/Weapon_0/Image",
+            "parentPath": "Pivot/Body/Hand_L/Weapon_0",
+            "posX": 0.42100000381469729,
+            "posY": -0.5730000138282776,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 2
+                }
+            ]
+        },
+        {
+            "name": "Body",
+            "path": "Pivot/Body/Body",
+            "parentPath": "Pivot/Body",
+            "posX": -0.14100000262260438,
+            "posY": 1.0540000200271607,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Body/Image",
+            "parentPath": "Pivot/Body/Body",
+            "posX": 0.0,
+            "posY": 0.0,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 5
+                }
+            ]
+        },
+        {
+            "name": "Head",
+            "path": "Pivot/Body/Head",
+            "parentPath": "Pivot/Body",
+            "posX": -0.003000006079673767,
+            "posY": 0.24400001764297486,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Face",
+            "path": "Pivot/Body/Head/Face",
+            "parentPath": "Pivot/Body/Head",
+            "posX": -0.1379999965429306,
+            "posY": 0.8100000023841858,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Head_0_1",
+            "path": "Pivot/Body/Head/Head_0_1",
+            "parentPath": "Pivot/Body/Head",
+            "posX": -0.1379999965429306,
+            "posY": 0.8100000023841858,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Head/Head_0_1/Image",
+            "parentPath": "Pivot/Body/Head/Head_0_1",
+            "posX": 0.0,
+            "posY": 0.0,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 6
+                }
+            ]
+        },
+        {
+            "name": "Head_0_2",
+            "path": "Pivot/Body/Head/Head_0_2",
+            "parentPath": "Pivot/Body/Head",
+            "posX": -0.1379999965429306,
+            "posY": 0.8100000023841858,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Head/Head_0_2/Image",
+            "parentPath": "Pivot/Body/Head/Head_0_2",
+            "posX": 0.0,
+            "posY": 0.0,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 6
+                }
+            ]
+        },
+        {
+            "name": "Head_0_3",
+            "path": "Pivot/Body/Head/Head_0_3",
+            "parentPath": "Pivot/Body/Head",
+            "posX": -0.1379999965429306,
+            "posY": 0.8100000023841858,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Body/Head/Head_0_3/Image",
+            "parentPath": "Pivot/Body/Head/Head_0_3",
+            "posX": 0.0,
+            "posY": 0.0,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 6
+                }
+            ]
+        },
+        {
+            "name": "Leg_L",
+            "path": "Pivot/Leg_L",
+            "parentPath": "Pivot",
+            "posX": 0.06000000238418579,
+            "posY": 0.1260000467300415,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Leg_L/Image",
+            "parentPath": "Pivot/Leg_L",
+            "posX": -0.1860000044107437,
+            "posY": 1.059999942779541,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 3
+                }
+            ]
+        },
+        {
+            "name": "Leg_R",
+            "path": "Pivot/Leg_R",
+            "parentPath": "Pivot",
+            "posX": -0.05900000035762787,
+            "posY": 0.12300002574920654,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        },
+        {
+            "name": "Image",
+            "path": "Pivot/Leg_R/Image",
+            "parentPath": "Pivot/Leg_R",
+            "posX": -0.06700000166893006,
+            "posY": 1.062999963760376,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                },
+                {
+                    "componentName": "SpriteRenderer",
+                    "componentType": "UnityEngine.SpriteRenderer",
+                    "sortingOrder": 4
+                }
+            ]
+        },
+        {
+            "name": "Manteau",
+            "path": "Pivot/Manteau",
+            "parentPath": "Pivot",
+            "posX": 0.031000003218650819,
+            "posY": 0.2549999952316284,
+            "posZ": 0.0,
+            "rotX": 0.0,
+            "rotY": 0.0,
+            "rotZ": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "scaleZ": 1.0,
+            "components": [
+                {
+                    "componentName": "Transform",
+                    "componentType": "UnityEngine.Transform",
+                    "sortingOrder": 0
+                }
+            ]
+        }
+    ]
+}
