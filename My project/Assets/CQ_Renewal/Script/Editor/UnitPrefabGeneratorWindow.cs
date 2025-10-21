@@ -25,7 +25,7 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     // Animator 이름들 (앞으로 추가될 수 있음)
     private static readonly string[] ANIMATOR_NAMES = 
     {
-        "Ar", "Hu", "Pa", "Pr", "Wa", "Wi", "Goblin"
+        "Ar", "Hu", "Pa", "Pr", "Wa", "Wi", "Sister", "Goblin", "Golem", "Ogre", "Slime", "Treeant", "Wolf"
         // 새로운 Animator가 추가되면 여기에 추가하면 됩니다.
     };
     
