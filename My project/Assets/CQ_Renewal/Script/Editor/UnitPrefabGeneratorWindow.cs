@@ -32,14 +32,14 @@ public class UnitPrefabGeneratorWindow : EditorWindow
     // 적 유닛 Animator 이름들
     private static readonly string[] ENEMY_ANIMATOR_NAMES = 
     {
-        "Goblin", "Golem", "Ogre", "Slime", "Treeant", "Wolf"
+        "Goblin", "Golem", "Ogre", "Slime", "Treeant", "Wolf", "Lizardman"
         // 새로운 적 Animator가 추가되면 여기에 추가하면 됩니다.
     };
     
     // 모든 Animator 이름들 (호환성을 위해 유지)
     private static readonly string[] ANIMATOR_NAMES = 
     {
-        "Ar", "Hu", "Pa", "Pr", "Wa", "Wi", "Sister", "Goblin", "Golem", "Ogre", "Slime", "Treeant", "Wolf"
+        "Ar", "Hu", "Pa", "Pr", "Wa", "Wi", "Sister", "Goblin", "Golem", "Ogre", "Slime", "Treeant", "Wolf", "Lizardman"
     };
     
     #endregion
