@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
+using UnityEditor.SceneManagement;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -26,8 +27,24 @@ namespace CAT.Utility
 
         private static void OnHierarchyWindowGUI(int instanceID, Rect selectionRect)
         {
-            if (selectionRect.y < 20 && selectionRect.x < 50)
+            // 프리팹 편집 모드가 아닌 경우에만 기존 로직 실행
+            if (PrefabStageUtility.GetCurrentPrefabStage() != null)
             {
+                // 프리팹 편집 모드에서는 항상 메뉴를 표시
+                const float buttonWidth = 120f;
+                float buttonX = EditorGUIUtility.currentViewWidth - buttonWidth - 4f;
+                Rect buttonRect = new Rect(buttonX, 0, buttonWidth, 20f);
+
+                if (EditorGUI.DropdownButton(buttonRect, buttonContent, FocusType.Passive))
+                {
+                    // AdvancedDropdown 인스턴스를 생성하고, 아이템 선택 시 실행될 콜백 함수를 넘겨줍니다.
+                    var dropdown = new PrefabDropdown(new AdvancedDropdownState(), OnPrefabSelected);
+                    dropdown.Show(buttonRect);
+                }
+            }
+            else if (selectionRect.y < 20 && selectionRect.x < 50)
+            {
+                // 일반 씬에서는 기존 로직대로 실행
                 const float buttonWidth = 120f;
                 float buttonX = EditorGUIUtility.currentViewWidth - buttonWidth - 4f;
                 Rect buttonRect = new Rect(buttonX, 0, buttonWidth, 20f);
@@ -40,6 +57,7 @@ namespace CAT.Utility
                 }
             }
         }
+
 
         /// <summary>
         /// 메뉴에서 프리팹이 선택되었을 때 호출되는 콜백 함수입니다.
@@ -58,10 +76,21 @@ namespace CAT.Utility
             GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
             instance.name = prefab.name;
 
-            GameObject parentObject = Selection.activeGameObject;
-            if (parentObject != null)
+            // 프리팹 편집 모드인지 확인
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            if (prefabStage != null)
             {
-                instance.transform.SetParent(parentObject.transform, false);
+                // 프리팹 편집 모드에서는 프리팹의 루트를 부모로 설정
+                instance.transform.SetParent(prefabStage.prefabContentsRoot.transform, false);
+            }
+            else
+            {
+                // 일반 씬에서는 선택된 오브젝트를 부모로 설정
+                GameObject parentObject = Selection.activeGameObject;
+                if (parentObject != null)
+                {
+                    instance.transform.SetParent(parentObject.transform, false);
+                }
             }
 
             Undo.RegisterCreatedObjectUndo(instance, $"Create {instance.name}");

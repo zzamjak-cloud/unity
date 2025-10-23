@@ -1,0 +1,110 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &4946601042770440570
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3240089693191889629, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_Name
+      value: _DogBase
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6286712585449806368, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3240089693191889629, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 8136162517860938319}
+  m_SourcePrefab: {fileID: 100100000, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+--- !u!114 &4822689057980516970 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 452745169284840208, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+  m_PrefabInstance: {fileID: 4946601042770440570}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7517289635755840423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9679e68a0f1144e79c664d9a11ca121, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &6054546287777584225 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1199024807112090907, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+  m_PrefabInstance: {fileID: 4946601042770440570}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7517289635755840423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cfe9431ea8ad072f2aecd3041b1524dd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!1 &7517289635755840423 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3240089693191889629, guid: bd9ff6feedc7e4d4cabb776cfb9655a2, type: 3}
+  m_PrefabInstance: {fileID: 4946601042770440570}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &8136162517860938319
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7517289635755840423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d326c854b12943e68353c4464a321ec7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  followerEntity: {fileID: 6054546287777584225}
+  aiDestinationSetter: {fileID: 4822689057980516970}
+  walkSpeed: 1
+  runSpeed: 2
+  animator: {fileID: 0}
+  idleAnim: Idle
+  walkAnim: Walk
+  runAnim: Run
+  chaseReadyAnim: Drive
