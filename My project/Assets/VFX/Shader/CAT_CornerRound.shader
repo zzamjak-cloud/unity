@@ -15,14 +15,16 @@ Shader "CAT/UI/CornerRound" {
 		[HideInInspector] _StencilReadMask ("Stencil Read Mask", Float) = 255
 		[HideInInspector] _ColorMask ("Color Mask", Float) = 15
 	}
-	SubShader {
-		Tags {
+	SubShader 
+	{
+		Tags 
+		{
 			"RenderType" = "Transparent"
 			"Queue" = "Transparent"
 		}
+
 		Cull Off
 		Lighting Off
-		// Alpha blending.
 		ZWrite Off
 		Blend SrcAlpha OneMinusSrcAlpha
 		
@@ -34,7 +36,9 @@ Shader "CAT/UI/CornerRound" {
 			ReadMask [_StencilReadMask]
 			WriteMask [_StencilWriteMask]
 		}
-		Pass {
+		
+		Pass 
+		{
 			// 컬러 마스크 설정 추가
 			ColorMask [_ColorMask]
 			

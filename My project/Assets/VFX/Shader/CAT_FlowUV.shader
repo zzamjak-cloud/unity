@@ -37,7 +37,6 @@ Shader "CAT/Particles/FlowUV" {
             v2f vert (appdata v) {
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
-                // 여기가 중요합니다: Custom1.y를 사용하여 UV의 y 오프셋 적용
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.uv.y = o.uv.y - v.custom1.y * _FlowMultiplier;
                 o.custom1 = v.custom1;

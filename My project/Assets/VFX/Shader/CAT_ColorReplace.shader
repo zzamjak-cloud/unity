@@ -93,6 +93,8 @@ Shader "CAT/Effects/ColorReplace"
                 return OUT;
             }
 
+            // rgb to hsv
+            // https://www.rapidtables.com/convert/color/rgb-to-hsv.html
             float3 rgb2hsv(float3 c)
             {
                 float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -103,6 +105,8 @@ Shader "CAT/Effects/ColorReplace"
                 return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
             }
 
+            // hsv to rgb
+            // https://www.rapidtables.com/convert/color/hsv-to-rgb.html
             float3 hsv2rgb(float3 c)
             {
                 c = float3(c.x, clamp(c.yz, 0.0, 1.0));
@@ -113,19 +117,25 @@ Shader "CAT/Effects/ColorReplace"
 
             fixed4 frag(v2f IN) : SV_Target
             {
+                // Texture Color
                 half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
+                // Clip Rect
                 #ifdef UNITY_UI_CLIP_RECT
                 color.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif
 
+                // Alpha Clip
                 #ifdef UNITY_UI_ALPHACLIP
                 clip(color.a - 0.001);
                 #endif
 
+                // HSV Adjust
                 float3 hsv = rgb2hsv(color.rgb);
                 float affectMult = step(_HSVRangeMin, hsv.x) * step(hsv.x, _HSVRangeMax);
                 float3 rgb = hsv2rgb(hsv + _HSVAAdjust.xyz * affectMult);
+
+                // Return Color
                 return fixed4(rgb, color.a + _HSVAAdjust.w);
             }
             ENDCG
