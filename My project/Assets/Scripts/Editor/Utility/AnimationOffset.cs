@@ -53,11 +53,9 @@ namespace CAT.Utility
             if (rawRoot == null) return;
 
             // 스크립트 리컴파일 시 UI가 중복으로 추가되는 것을 방지
-            if (rawRoot.Q<VisualElement>("AnimationOffsetContainer") != null)
-            {
-                return;
-            }
+            if (rawRoot.Q<VisualElement>("AnimationOffsetContainer") != null) return;
 
+            // 부모 컨테이너를 생성합니다.
             var parentContainer = new VisualElement
             {
                 name = "AnimationOffsetContainer", // 중복 주입 방지를 위한 이름 지정
@@ -72,6 +70,7 @@ namespace CAT.Utility
                 }
             };
 
+            // IMGUIContainer를 생성하고 이벤트 핸들러를 설정합니다.
             var imguiContainer = new IMGUIContainer(OnInjectedGUI);
             imguiContainer.style.flexGrow = 1;
 
@@ -118,10 +117,10 @@ namespace CAT.Utility
 
             GUI.backgroundColor = originalColor;
 
-            string inputTooltip = isTimeInputMode ? "Time (s) offset" : "Frame offset";
+            string inputTooltip = isTimeInputMode ? "Time offset" : "Frame offset";
             offsetValue = EditorGUILayout.FloatField(new GUIContent("", inputTooltip), offsetValue, EditorStyles.toolbarTextField, GUILayout.Width(inputFieldWidth));
 
-            if (GUILayout.Button(new GUIContent("R", "Reset offset to 0"), EditorStyles.toolbarButton, GUILayout.Width(resetButtonWidth)))
+            if (GUILayout.Button(new GUIContent("R", "Reset to 0"), EditorStyles.toolbarButton, GUILayout.Width(resetButtonWidth)))
             {
                 offsetValue = 0f;
                 GUI.FocusControl(null);
@@ -182,27 +181,30 @@ namespace CAT.Utility
             EditorGUILayout.EndHorizontal();
         }
 
+        /// <summary>
+        /// 선택된 GameObject의 Transform 속성에 대한 키를 추가합니다.
+        /// </summary>
         private static void AddTransformKeys(PropertyType propertyTypes)
         {
             GameObject selectedObject = Selection.activeGameObject;
             if (selectedObject == null) { Debug.LogError("Select a GameObject."); return; }
 
-            object state = GetAnimationWindowState();
+            object state = GetAnimationWindowState(); // Animation Window State를 가져옵니다.
             if (state == null) { Debug.LogError("Animation Window is not open."); return; }
 
-            AnimationClip activeClip = GetActiveAnimationClipFromState(state);
+            AnimationClip activeClip = GetActiveAnimationClipFromState(state); // 현재 선택된 Animation Clip을 가져옵니다.
             if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; }
 
-            string clipPath = AssetDatabase.GetAssetPath(activeClip);
+            string clipPath = AssetDatabase.GetAssetPath(activeClip); // Animation Clip의 경로를 가져옵니다.
             if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; }
 
-            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
+            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath); // Animation Clip을 로드합니다.
             if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; }
 
-            GameObject rootObject = GetActiveRootGameObjectFromState(state);
+            GameObject rootObject = GetActiveRootGameObjectFromState(state); // 애니메이션 루트 GameObject를 가져옵니다.
             if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; }
 
-            string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform);
+            string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform); // 선택된 GameObject의 경로를 가져옵니다.
             float clipDuration = sourceClip.length;
             
             Undo.RecordObject(sourceClip, "Add Transform Keys");
@@ -241,6 +243,7 @@ namespace CAT.Utility
                 }
             }
 
+            // 키가 추가되었다면 애니메이션 창을 새로고침합니다.
             if (anyKeyAdded)
             {
                 Debug.Log($"Transform keys added for: {addedProperties.Trim()} at frame 0 and {(clipDuration > 0 ? "end" : "0")}");
@@ -252,6 +255,9 @@ namespace CAT.Utility
             }
         }
 
+        /// <summary>
+        /// 선택된 GameObject의 Transform 속성에 대한 키를 추가합니다.
+        /// </summary>
         private static bool AddPropertyKeys(AnimationClip clip, string objectPath, string propertyName, Vector3 value, float duration)
         {
             try
@@ -291,43 +297,46 @@ namespace CAT.Utility
             }
         }
 
+        /// <summary>
+        /// 모든 객체의 불필요한 키를 제거합니다.
+        /// </summary>
         private static void CleanAllUnnecessaryKeys()
         {
-            object state = GetAnimationWindowState();
+            object state = GetAnimationWindowState(); // Animation Window State를 가져옵니다.
             if (state == null) { Debug.LogError("Animation Window is not open."); return; }
 
-            AnimationClip activeClip = GetActiveAnimationClipFromState(state);
+            AnimationClip activeClip = GetActiveAnimationClipFromState(state); // 현재 선택된 Animation Clip을 가져옵니다.
             if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; }
 
-            string clipPath = AssetDatabase.GetAssetPath(activeClip);
+            string clipPath = AssetDatabase.GetAssetPath(activeClip); // Animation Clip의 경로를 가져옵니다.
             if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; }
 
-            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
+            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath); // Animation Clip을 로드합니다.
             if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; }
 
-            GameObject rootObject = GetActiveRootGameObjectFromState(state);
+            GameObject rootObject = GetActiveRootGameObjectFromState(state); // 애니메이션 루트 GameObject를 가져옵니다.
             if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; }
 
             Undo.RecordObject(sourceClip, "Clean All Unnecessary Keys");
-            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip);
+            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip); // 모든 커브 바인딩을 가져옵니다.
             bool anyCurveModified = false;
             int totalKeysRemoved = 0;
             int objectsProcessed = 0;
-            var processedObjects = new HashSet<string>();
+            var processedObjects = new HashSet<string>(); // 이미 처리된 객체를 저장하기 위한 해시셋을 생성합니다.
 
             foreach (var binding in bindings)
             {
-                if (!processedObjects.Contains(binding.path))
+                if (!processedObjects.Contains(binding.path)) // 이미 처리된 객체가 아니라면 처리합니다.
                 {
                     processedObjects.Add(binding.path);
-                    objectsProcessed++;
+                    objectsProcessed++; // 처리된 객체 수를 증가시킵니다.
                 }
 
                 AnimationCurve curve = AnimationUtility.GetEditorCurve(sourceClip, binding);
-                if (curve == null || curve.keys.Length <= 2) continue;
+                if (curve == null || curve.keys.Length <= 2) continue; // 커브가 없거나 키가 2개 이하라면 건너뜁니다.
 
                 AnimationCurve cleanedCurve = RemoveUnnecessaryKeys(curve);
-                if (cleanedCurve != null && cleanedCurve.keys.Length != curve.keys.Length)
+                if (cleanedCurve != null && cleanedCurve.keys.Length != curve.keys.Length) // 불필요한 키가 제거되었다면 커브를 업데이트합니다.
                 {
                     AnimationUtility.SetEditorCurve(sourceClip, binding, cleanedCurve);
                     anyCurveModified = true;
@@ -346,21 +355,24 @@ namespace CAT.Utility
             }
         }
 
+        /// <summary>
+        /// 불필요한 키를 제거합니다.
+        /// </summary>
         private static AnimationCurve RemoveUnnecessaryKeys(AnimationCurve originalCurve)
         {
-            if (originalCurve.keys.Length <= 2) return originalCurve;
+            if (originalCurve.keys.Length <= 2) return originalCurve; // 키가 2개 이하라면 원본 반환합니다.
 
-            var keys = new List<Keyframe>(originalCurve.keys);
-            var cleanedKeys = new List<Keyframe>();
+            var keys = new List<Keyframe>(originalCurve.keys); // 원본 커브의 키를 리스트로 변환합니다.
+            var cleanedKeys = new List<Keyframe>(); // 정리된 키를 저장하기 위한 리스트를 생성합니다.
             
             // 첫 번째 키는 항상 유지
-            cleanedKeys.Add(keys[0]);
+            cleanedKeys.Add(keys[0]); // 첫 번째 키는 항상 유지합니다.
             
-            for (int i = 1; i < keys.Count - 1; i++)
+            for (int i = 1; i < keys.Count - 1; i++) // 두 번째 키부터 마지막 키 전까지 반복합니다.
             {
-                var currentKey = keys[i];
-                var previousKey = keys[i - 1];
-                var nextKey = keys[i + 1];
+                var currentKey = keys[i]; // 현재 키를 가져옵니다.
+                var previousKey = keys[i - 1]; // 이전 키를 가져옵니다.
+                var nextKey = keys[i + 1]; // 다음 키를 가져옵니다.
                 
                 // 현재 키의 값이 이전 키와 다음 키의 값과 동일한지 확인
                 bool isUnnecessary = Mathf.Approximately(currentKey.value, previousKey.value) && 
@@ -388,34 +400,37 @@ namespace CAT.Utility
             return newCurve;
         }
 
+        /// <summary>
+        /// 루프 애니메이션 오프셋을 적용합니다.
+        /// </summary>
         private static void ApplyLoopOffset(PropertyType propertyType)
         {
-            if (offsetValue == 0) { Debug.LogWarning("Offset value is 0."); return; }
+            if (offsetValue == 0) { Debug.LogWarning("Offset value is 0."); return; } // 오프셋 값이 0이라면 건너뜁니다.
 
             GameObject selectedObject = Selection.activeGameObject;
-            if (selectedObject == null) { Debug.LogError("Select a GameObject."); return; }
+            if (selectedObject == null) { Debug.LogError("Select a GameObject."); return; } // 선택된 GameObject가 없다면 건너뜁니다.
 
             object state = GetAnimationWindowState();
-            if (state == null) { Debug.LogError("Animation Window is not open."); return; }
+            if (state == null) { Debug.LogError("Animation Window is not open."); return; } // Animation Window가 열려 있지 않다면 건너뜁니다.
 
             AnimationClip activeClip = GetActiveAnimationClipFromState(state);
-            if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; }
+            if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; } // 선택된 Animation Clip이 없다면 건너뜁니다.
 
             string clipPath = AssetDatabase.GetAssetPath(activeClip);
-            if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; }
+            if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; } // Animation Clip의 경로를 찾을 수 없다면 건너뜁니다.
 
             AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
-            if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; }
+            if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; } // Animation Clip을 로드할 수 없다면 건너뜁니다.
 
             GameObject rootObject = GetActiveRootGameObjectFromState(state);
-            if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; }
+            if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; } // 애니메이션 루트 GameObject를 찾을 수 없다면 건너뜁니다.
 
             float loopDurationSecs = sourceClip.length;
-            if (loopDurationSecs <= 0) { Debug.LogError("Clip length must be greater than 0."); return; }
+            if (loopDurationSecs <= 0) { Debug.LogError("Clip length must be greater than 0."); return; } // 클립 길이가 0 이하라면 건너뜁니다.
 
-            float timeOffset = isTimeInputMode ? offsetValue : (offsetValue / sourceClip.frameRate);
+            float timeOffset = isTimeInputMode ? offsetValue : (offsetValue / sourceClip.frameRate); // 시간 오프셋 또는 프레임 오프셋을 계산합니다.
             timeOffset %= loopDurationSecs;
-            if (timeOffset < 0) timeOffset += loopDurationSecs;
+            if (timeOffset < 0) timeOffset += loopDurationSecs; // 오프셋 값이 음수라면 양수로 변환합니다.
 
             Undo.RecordObject(sourceClip, "Apply Loop Animation Offset");
             EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip);
@@ -450,9 +465,12 @@ namespace CAT.Utility
             }
         }
 
+        /// <summary>
+        /// 오프셋 커브를 생성합니다.
+        /// </summary>
         private static AnimationCurve CreateOffsetCurve(AnimationCurve originalCurve, float timeOffset, float loopDuration)
         {
-            if (originalCurve.keys.Length == 0) return null;
+            if (originalCurve.keys.Length == 0) return null; // 커브에 키가 없다면 null을 반환합니다.
 
             var offsetKeys = new List<Keyframe>();
             foreach (var originalKey in originalCurve.keys)
