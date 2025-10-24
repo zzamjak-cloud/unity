@@ -11,15 +11,15 @@ namespace CAT.Utility
     [DisallowMultipleComponent]
     public class ImageFollow : MonoBehaviour
     {
-        [Tooltip("따라갈 이미지가 있는 소스 게임 오브젝트입니다.")]
+        [Tooltip("follow할 대상 이미지")]
         public GameObject targetObject;
 
-        // 소스(Target)의 컴포넌트 캐시
+        // target 이미지 컴포넌트 캐시
         private Image _sourceImage;
         private RawImage _sourceRawImage;
         private SpriteRenderer _sourceSpriteRenderer;
 
-        // 팔로워(자신)의 컴포넌트 캐시
+        // follow 이미지 컴포넌트 캐시
         private Image _followerImage;
         private RawImage _followerRawImage;
         private SpriteRenderer _followerSpriteRenderer;

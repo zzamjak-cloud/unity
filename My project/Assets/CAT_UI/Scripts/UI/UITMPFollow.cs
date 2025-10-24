@@ -38,7 +38,6 @@ namespace CAT.UI
             child.text = parent.text;
             child.fontSize = parent.fontSize;
 
-            // Scene View ?????? ????
             if (!Application.isPlaying)
             {
                 UnityEditor.EditorUtility.SetDirty(child);
