@@ -1,90 +1,32 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
-using System.IO; // 이제 필요 없지만, 다른 용도로 쓸 수 있으니 남겨둘 수 있습니다.
 using System.Linq;
 
 namespace CAT.Utility
 {
-    // JSON 저장용 데이터 클래스 (구조는 동일)
+    // JSON 저장용 데이터 클래스
     [System.Serializable]
     public class FavoriteFoldersJsonData
     {
-        public List<FavoriteCategoryData> categories = new List<FavoriteCategoryData>();
-    }
-    
-    // JSON 저장용 폴더 카테고리 데이터 클래스 (구조는 동일)
-    [System.Serializable]
-    public class FavoriteCategoryData
-    {
-        public string name;
-        public bool isExpanded = true;
         public List<string> folderGUIDs = new List<string>();
-    }
-
-    // Editor 실행중에 사용할 폴더 카테고리 클래스 (구조는 동일)
-    public class FavoriteCategory
-    {
-        public string name;
-        public bool isExpanded = true;
-        public List<DefaultAsset> folders = new List<DefaultAsset>();
-
-        public FavoriteCategory(string name)
-        {
-            this.name = name;
-        }
-
-        public static FavoriteCategory FromJsonData(FavoriteCategoryData jsonData)
-        {
-            var category = new FavoriteCategory(jsonData.name);
-            category.isExpanded = jsonData.isExpanded;
-            foreach (string guid in jsonData.folderGUIDs)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (!string.IsNullOrEmpty(path))
-                {
-                    DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
-                    if (folder != null && AssetDatabase.IsValidFolder(path))
-                    {
-                        category.folders.Add(folder);
-                    }
-                }
-            }
-            return category;
-        }
-
-        public FavoriteCategoryData ToJsonData()
-        {
-            var jsonData = new FavoriteCategoryData();
-            jsonData.name = this.name;
-            jsonData.isExpanded = this.isExpanded;
-            jsonData.folderGUIDs = folders
-                .Where(f => f != null)
-                .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
-                .Where(guid => !string.IsNullOrEmpty(guid))
-                .ToList();
-            return jsonData;
-        }
     }
 
     // 즐겨찾기 폴더를 관리하는 에디터 창
     public class FavoriteFoldersWindow : EditorWindow
     {
-        // 변경: JSON 파일 경로 대신 PlayerPrefs 키를 사용합니다.
         private const string PREFS_KEY = "CAT_FavoriteFoldersData"; 
         private Color handleColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 
-        private List<FavoriteCategory> categories = new List<FavoriteCategory>();
+        private List<DefaultAsset> favoriteFolders = new List<DefaultAsset>();
         private Vector2 scrollPosition;
         private bool isDragging = false;
-        private int dragSourceCategoryIndex = -1;
-        private int dragSourceFolderIndex = -1;
+        private int dragSourceIndex = -1;
         private Rect dragRect;
         private bool showUIElements = false;
 
         private GUIStyle handleStyle;
         private GUIStyle editModeToggleStyle;
-        private GUIStyle categoryNameStyle;
         
         private bool stylesInitialized = false;
 
@@ -104,43 +46,55 @@ namespace CAT.Utility
             SaveToPlayerPrefs(); // 변경
         }
         
-        // 변경: LoadFromJson -> LoadFromPlayerPrefs
         private void LoadFromPlayerPrefs()
         {
-            categories.Clear();
+            favoriteFolders.Clear();
             if (PlayerPrefs.HasKey(PREFS_KEY))
             {
                 try
                 {
                     string json = PlayerPrefs.GetString(PREFS_KEY);
                     var jsonData = JsonUtility.FromJson<FavoriteFoldersJsonData>(json);
-                    if (jsonData != null && jsonData.categories != null)
+                    if (jsonData != null && jsonData.folderGUIDs != null)
                     {
-                        categories = jsonData.categories.Select(FavoriteCategory.FromJsonData).ToList();
+                        foreach (string guid in jsonData.folderGUIDs)
+                        {
+                            string path = AssetDatabase.GUIDToAssetPath(guid);
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
+                                if (folder != null && AssetDatabase.IsValidFolder(path))
+                                {
+                                    favoriteFolders.Add(folder);
+                                }
+                            }
+                        }
                     }
                 }
                 catch (System.Exception e)
                 {
                     Debug.LogError($"Favorite 폴더 데이터 로드 실패: {e.Message}");
-                    categories.Clear();
+                    favoriteFolders.Clear();
                 }
             }
         }
         
-        // 변경: SaveToJson -> SaveToPlayerPrefs
         private void SaveToPlayerPrefs()
         {
             try
             {
                 var jsonData = new FavoriteFoldersJsonData
                 {
-                    categories = categories.Select(c => c.ToJsonData()).ToList()
+                    folderGUIDs = favoriteFolders
+                        .Where(f => f != null)
+                        .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
+                        .Where(guid => !string.IsNullOrEmpty(guid))
+                        .ToList()
                 };
 
                 string json = JsonUtility.ToJson(jsonData, true);
                 PlayerPrefs.SetString(PREFS_KEY, json);
                 PlayerPrefs.Save();
-                // Debug.Log($"Favorite 폴더 데이터 저장 완료 (PlayerPrefs) - 카테고리 수: {categories.Count}");
             }
             catch (System.Exception e)
             {
@@ -158,12 +112,13 @@ namespace CAT.Utility
             DrawHeader();
 
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-            DrawCategories();
+            DrawFolders();
             EditorGUILayout.EndScrollView();
 
             EditorGUILayout.EndVertical();
 
             HandleDragVisuals();
+            HandleWindowDragDrop();
         }
         
         private void HandleDragVisuals()
@@ -194,11 +149,6 @@ namespace CAT.Utility
             };
 
             editModeToggleStyle = new GUIStyle(GUI.skin.toggle) { fontSize = 10 };
-            
-            categoryNameStyle = new GUIStyle(EditorStyles.textField)
-            {
-                fontStyle = FontStyle.Bold
-            };
 
             stylesInitialized = true;
         }
@@ -206,14 +156,6 @@ namespace CAT.Utility
         private void DrawHeader()
         {
             EditorGUILayout.BeginHorizontal();
-
-            if (showUIElements)
-            {
-                if (GUILayout.Button("Add", EditorStyles.toolbarButton, GUILayout.Width(35)))
-                {
-                    AddNewCategory();
-                }
-            }
 
             GUILayout.FlexibleSpace();
 
@@ -227,7 +169,7 @@ namespace CAT.Utility
                 showUIElements = newShowUIElements;
                 if (!showUIElements)
                 {
-                    SaveToPlayerPrefs(); // 변경: 편집 모드 종료 시 저장
+                    SaveToPlayerPrefs();
                 }
                 Repaint();
             }
@@ -236,120 +178,30 @@ namespace CAT.Utility
             EditorGUILayout.Space(3);
         }
 
-        private void AddNewCategory()
+        private void DrawFolders()
         {
-            string newName = "New Category " + (categories.Count + 1);
-            categories.Add(new FavoriteCategory(newName));
-        }
-
-        private void DrawCategories()
-        {
-            if (categories == null) return;
-            int categoryToDelete = -1;
-
-            for (int i = 0; i < categories.Count; i++)
-            {
-                if (DrawCategory(categories[i], i, out int tempDelete))
-                {
-                    categoryToDelete = tempDelete;
-                    break; 
-                }
-            }
-
-            if (categoryToDelete != -1)
-            {
-                categories.RemoveAt(categoryToDelete);
-                Repaint();
-            }
-        }
-
-        private bool DrawCategory(FavoriteCategory category, int categoryIndex, out int categoryToDelete)
-        {
-            categoryToDelete = -1;
-            EditorGUILayout.BeginVertical(GUI.skin.box);
-            EditorGUILayout.BeginHorizontal();
-
-            if (showUIElements)
-            {
-                GUILayout.Label("☰", handleStyle, GUILayout.Width(20));
-                Rect categoryDragHandleRect = GUILayoutUtility.GetLastRect();
-                HandleReordering(categoryDragHandleRect, categoryIndex, -1);
-
-                string newName = EditorGUILayout.TextField(category.name, categoryNameStyle);
-                if (newName != category.name)
-                {
-                    category.name = newName;
-                }
-            }
-            else
-            {
-                category.isExpanded = EditorGUILayout.Foldout(category.isExpanded, category.name, true);
-            }
-
-            GUILayout.FlexibleSpace();
-
-            if (showUIElements)
-            {
-                GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
-                if (GUILayout.Button("×", GUILayout.Width(20), GUILayout.Height(20)))
-                {
-                    if (EditorUtility.DisplayDialog("Delete Category", $"Delete '{category.name}'?", "Yes", "No"))
-                    {
-                        categoryToDelete = categoryIndex;
-                        GUI.backgroundColor = Color.white;
-                        EditorGUILayout.EndHorizontal();
-                        EditorGUILayout.EndVertical();
-                        return true;
-                    }
-                }
-                GUI.backgroundColor = Color.white;
-            }
-
-            EditorGUILayout.EndHorizontal();
-
-            if (category.isExpanded || showUIElements)
-            {
-                EditorGUILayout.BeginVertical();
-                
-                DrawFolders(category, categoryIndex);
-                
-                GUILayout.Space(10);
-                
-                EditorGUILayout.EndVertical();
-
-                Rect contentDropArea = GUILayoutUtility.GetLastRect();
-                HandleCategoryDragDrop(category, contentDropArea);
-            }
-
-            EditorGUILayout.EndVertical();
-            return false;
-        }
-
-        private void DrawFolders(FavoriteCategory category, int categoryIndex)
-        {
+            if (favoriteFolders == null) return;
             int folderToDelete = -1;
 
-            for (int j = 0; j < category.folders.Count; j++)
+            for (int i = 0; i < favoriteFolders.Count; i++)
             {
                 EditorGUILayout.BeginHorizontal();
-                GUILayout.Space(10); 
-
+                
                 if (showUIElements)
                 {
                     GUILayout.Label("☰", handleStyle, GUILayout.Width(20));
                     Rect folderDragHandleRect = GUILayoutUtility.GetLastRect();
-                    HandleReordering(folderDragHandleRect, categoryIndex, j);
+                    HandleReordering(folderDragHandleRect, i);
                 }
 
                 GUIContent folderIcon = EditorGUIUtility.IconContent("Folder Icon");
                 GUILayout.Label(folderIcon, GUILayout.Width(16), GUILayout.Height(16));
 
-                DefaultAsset folder = category.folders[j];
+                DefaultAsset folder = favoriteFolders[i];
                 if (folder != null)
                 {
                     if (GUILayout.Button(folder.name, EditorStyles.label))
                     {
-                        // 폴더를 더블클릭한 것처럼 열기
                         AssetDatabase.OpenAsset(folder);
                     }
                 }
@@ -367,7 +219,7 @@ namespace CAT.Utility
                     GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
                     if (GUILayout.Button("×", GUILayout.Width(18), GUILayout.Height(18)))
                     {
-                        folderToDelete = j;
+                        folderToDelete = i;
                     }
                     GUI.backgroundColor = Color.white;
                 }
@@ -377,11 +229,11 @@ namespace CAT.Utility
 
             if (folderToDelete != -1)
             {
-                category.folders.RemoveAt(folderToDelete);
+                favoriteFolders.RemoveAt(folderToDelete);
             }
         }
 
-        private void HandleReordering(Rect handleRect, int categoryIndex, int folderIndex)
+        private void HandleReordering(Rect handleRect, int folderIndex)
         {
             Event current = Event.current;
             int controlID = GUIUtility.GetControlID(FocusType.Passive);
@@ -390,8 +242,7 @@ namespace CAT.Utility
             {
                 case EventType.MouseDown when handleRect.Contains(current.mousePosition) && current.button == 0:
                     isDragging = true;
-                    dragSourceCategoryIndex = categoryIndex;
-                    dragSourceFolderIndex = folderIndex;
+                    dragSourceIndex = folderIndex;
                     dragRect = handleRect;
                     GUIUtility.hotControl = controlID;
                     current.Use();
@@ -416,42 +267,24 @@ namespace CAT.Utility
         {
             float deltaY = mousePos.y - dragRect.y;
 
-            if (dragSourceFolderIndex == -1) // Category reordering
+            if (Mathf.Abs(deltaY) > 20)
             {
-                if (Mathf.Abs(deltaY) > 25)
+                int direction = deltaY > 0 ? 1 : -1;
+                int targetIndex = dragSourceIndex + direction;
+                if (targetIndex >= 0 && targetIndex < favoriteFolders.Count)
                 {
-                    int direction = deltaY > 0 ? 1 : -1;
-                    int targetIndex = dragSourceCategoryIndex + direction;
-                    if (targetIndex >= 0 && targetIndex < categories.Count)
-                    {
-                        var temp = categories[dragSourceCategoryIndex];
-                        categories[dragSourceCategoryIndex] = categories[targetIndex];
-                        categories[targetIndex] = temp;
-                    }
-                }
-            }
-            else // Folder reordering
-            {
-                var category = categories[dragSourceCategoryIndex];
-                if (Mathf.Abs(deltaY) > 20)
-                {
-                    int direction = deltaY > 0 ? 1 : -1;
-                    int targetIndex = dragSourceFolderIndex + direction;
-                    if (targetIndex >= 0 && targetIndex < category.folders.Count)
-                    {
-                        var temp = category.folders[dragSourceFolderIndex];
-                        category.folders[dragSourceFolderIndex] = category.folders[targetIndex];
-                        category.folders[targetIndex] = temp;
-                    }
+                    var temp = favoriteFolders[dragSourceIndex];
+                    favoriteFolders[dragSourceIndex] = favoriteFolders[targetIndex];
+                    favoriteFolders[targetIndex] = temp;
                 }
             }
         }
 
-        private void HandleCategoryDragDrop(FavoriteCategory category, Rect dropArea)
+        private void HandleWindowDragDrop()
         {
             Event current = Event.current;
             
-            if (!dropArea.Contains(current.mousePosition)) return;
+            if (!showUIElements) return;
 
             switch (current.type)
             {
@@ -468,9 +301,9 @@ namespace CAT.Utility
                     {
                         if (obj is DefaultAsset folder && AssetDatabase.IsValidFolder(AssetDatabase.GetAssetPath(folder)))
                         {
-                            if (!category.folders.Contains(folder))
+                            if (!favoriteFolders.Contains(folder))
                             {
-                                category.folders.Add(folder);
+                                favoriteFolders.Add(folder);
                                 addedAny = true;
                             }
                         }

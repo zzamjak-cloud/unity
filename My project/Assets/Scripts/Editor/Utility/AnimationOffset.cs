@@ -16,21 +16,21 @@ namespace CAT.Utility
     /// </summary>
     public static class AnimationOffset
     {
-        private static float offsetValue = 0f;
-        private static bool isTimeInputMode = false;
+        private static float offsetValue = 0f;               // Offset 값
+        private static bool isTimeInputMode = false;         // Offset 단위 모드 (Time, Frame)
         [System.Flags]
-        private enum PropertyType { Position = 1, Rotation = 2, Scale = 4 }
+        private enum PropertyType { Position = 1, Rotation = 2, Scale = 4 } // Position, Rotation, Scale 속성 타입
 
-        private static float objectNameWidth = 120f;
-        private static float inputFieldWidth = 100f;
-        private static float modeButtonWidth = 50f;
-        private static float resetButtonWidth = 40f;
-        private static float keyGenButtonWidth = 45f;      // [+All], [+Pos], [+Rot], [+Sca]
-        private static float offsetButtonWidth = 68f;      // [Position], [Rotation], [Scale]
+        private static float objectNameWidth = 120f;         // 선택된 GameObject 이름 너비
+        private static float inputFieldWidth = 100f;         // Offset 값 입력 필드
+        private static float modeButtonWidth = 50f;          // [Time], [Frame]
+        private static float resetButtonWidth = 40f;         // [Reset]
+        private static float keyGenButtonWidth = 45f;        // [+All], [+Pos], [+Rot], [+Sca]
+        private static float offsetButtonWidth = 68f;        // [Position], [Rotation], [Scale]
         private static float cleanButtonWidth = 60f;         // [Clean]
-        private static float sectionSpacing = 10f;
+        private static float sectionSpacing = 10f;           // 버튼 사이 간격
         
-        private static bool _isRefreshPending = false;
+        private static bool _isRefreshPending = false;       // 애니메이션 창 새로고침 상태 관리
 
         // EditorApplication.update를 제거하고, 에디터 초기화 후 단 한 번만 실행되도록 변경
         [InitializeOnLoadMethod]
@@ -44,21 +44,23 @@ namespace CAT.Utility
         /// </summary>
         private static void InjectUI()
         {
+            // Editor 어셈블리에서 AnimationWindow 타입을 찾습니다.
             var editorAssembly = typeof(Editor).Assembly;
             var animationWindows = Resources.FindObjectsOfTypeAll(editorAssembly.GetType("UnityEditor.AnimationWindow"));
             if (animationWindows.Length == 0) return;
 
+            // AnimationWindow 윈도우의 rootVisualElement를 가져옵니다.
+            // 스크립트 리컴파일시 UI가 중복으로 추가되는 것을 방지합니다.
+            // 이미 주입된 UI가 있는지 확인합니다.
             var animationWindow = (EditorWindow)animationWindows[0];
             var rawRoot = animationWindow.rootVisualElement;
             if (rawRoot == null) return;
-
-            // 스크립트 리컴파일 시 UI가 중복으로 추가되는 것을 방지
             if (rawRoot.Q<VisualElement>("AnimationOffsetContainer") != null) return;
 
-            // 부모 컨테이너를 생성합니다.
+            // 부모 컨테이너를 생성합니다. 중복 주입 방지를 위한 이름 지정
             var parentContainer = new VisualElement
             {
-                name = "AnimationOffsetContainer", // 중복 주입 방지를 위한 이름 지정
+                name = "AnimationOffsetContainer",
                 style =
                 {
                     position = Position.Absolute,
@@ -70,23 +72,25 @@ namespace CAT.Utility
                 }
             };
 
-            // IMGUIContainer를 생성하고 이벤트 핸들러를 설정합니다.
+            // IMGUIContainer를 생성하고 UI를 그리는 함수를 설정합니다.
+            // Animation Window의 모든 UI 그리기는 여기서 처리됩니다.
             var imguiContainer = new IMGUIContainer(OnInjectedGUI);
             imguiContainer.style.flexGrow = 1;
-
             parentContainer.Add(imguiContainer);
             rawRoot.Add(parentContainer);
         }
 
-        // Animation Window에 Offset UI를 그립니다.
+        // Animation Window 위에 삽입될 UI를 그립니다.
         private static void OnInjectedGUI()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
+            // 선택된 GameObject 이름을 표시합니다.
             GameObject selectedObject = Selection.activeGameObject;
             string selectedObjectName = (selectedObject != null) ? selectedObject.name : "None";
             EditorGUILayout.LabelField(new GUIContent(selectedObjectName, "Selected GameObject"), GUILayout.Width(objectNameWidth));
 
+            // Offset 모드(Time, Frame) 버튼을 그립니다.
             Color originalColor = GUI.backgroundColor;
             string modeText;
             if (isTimeInputMode)
@@ -100,6 +104,7 @@ namespace CAT.Utility
                 modeText = "Frame";
             }
 
+            // Offset 모드(Time, Frame) 버튼을 클릭하면 모드를 전환합니다.
             if (GUILayout.Button(new GUIContent(modeText, "Switch input: Frames vs Seconds"), EditorStyles.toolbarButton, GUILayout.Width(modeButtonWidth)))
             {
                 if (offsetValue != 0)
@@ -120,6 +125,7 @@ namespace CAT.Utility
             string inputTooltip = isTimeInputMode ? "Time offset" : "Frame offset";
             offsetValue = EditorGUILayout.FloatField(new GUIContent("", inputTooltip), offsetValue, EditorStyles.toolbarTextField, GUILayout.Width(inputFieldWidth));
 
+            // Offset 값을 0으로 초기화하는 "[Reset]" 버튼을 그립니다.
             if (GUILayout.Button(new GUIContent("R", "Reset to 0"), EditorStyles.toolbarButton, GUILayout.Width(resetButtonWidth)))
             {
                 offsetValue = 0f;
@@ -128,6 +134,7 @@ namespace CAT.Utility
 
             GUILayout.Space(sectionSpacing);
 
+            // 모든 객체의 불필요한 키를 제거하는 "[Clean]" 버튼을 그립니다.
             Color cleanButtonColor = GUI.backgroundColor;
             GUI.backgroundColor = new Color(1.0f, 0.6f, 0.6f);
             if (GUILayout.Button(new GUIContent("Clean", "Remove unnecessary keys for all objects"), EditorStyles.toolbarButton, GUILayout.Width(cleanButtonWidth)))
@@ -138,9 +145,9 @@ namespace CAT.Utility
 
             EditorGUILayout.EndHorizontal();
             
-            // 두 번째 줄: 키 생성 버튼들과 Position, Rotation, Scale 버튼들
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             
+            // 키 생성 버튼 "[+All], [+Pos], [+Rot], [+Sca]" 을 그립니다.
             Color keyGenButtonColor = GUI.backgroundColor;
             GUI.backgroundColor = new Color(0.6f, 1.0f, 0.6f);
             
@@ -186,25 +193,36 @@ namespace CAT.Utility
         /// </summary>
         private static void AddTransformKeys(PropertyType propertyTypes)
         {
+            // Property 생성 과정
+            // 1. 선택된 GameObject를 가져옵니다.
+            // 2. Animation Window State를 가져옵니다.
+            // 3. 현재 선택된 Animation Clip을 가져옵니다.
+            // 4. Animation Clip의 경로를 가져옵니다.
+            // 5. Animation Clip을 로드합니다.
+            // 6. 애니메이션 루트 GameObject를 가져옵니다.
+            // 7. 선택된 GameObject의 경로를 가져옵니다.
+            // 8. 클립 길이를 가져옵니다.
+            // 9. 키를 추가합니다.
+            // 10. 애니메이션 창을 새로고침합니다.
             GameObject selectedObject = Selection.activeGameObject;
             if (selectedObject == null) { Debug.LogError("Select a GameObject."); return; }
 
-            object state = GetAnimationWindowState(); // Animation Window State를 가져옵니다.
+            object state = GetAnimationWindowState();
             if (state == null) { Debug.LogError("Animation Window is not open."); return; }
 
-            AnimationClip activeClip = GetActiveAnimationClipFromState(state); // 현재 선택된 Animation Clip을 가져옵니다.
+            AnimationClip activeClip = GetActiveAnimationClipFromState(state);
             if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; }
 
-            string clipPath = AssetDatabase.GetAssetPath(activeClip); // Animation Clip의 경로를 가져옵니다.
+            string clipPath = AssetDatabase.GetAssetPath(activeClip);
             if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; }
 
-            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath); // Animation Clip을 로드합니다.
+            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
             if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; }
 
-            GameObject rootObject = GetActiveRootGameObjectFromState(state); // 애니메이션 루트 GameObject를 가져옵니다.
+            GameObject rootObject = GetActiveRootGameObjectFromState(state);
             if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; }
 
-            string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform); // 선택된 GameObject의 경로를 가져옵니다.
+            string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform);
             float clipDuration = sourceClip.length;
             
             Undo.RecordObject(sourceClip, "Add Transform Keys");
@@ -302,23 +320,32 @@ namespace CAT.Utility
         /// </summary>
         private static void CleanAllUnnecessaryKeys()
         {
-            object state = GetAnimationWindowState(); // Animation Window State를 가져옵니다.
+            // 불필요한 키를 모두 제거하는 과정
+            // 1. Animation Window State를 가져옵니다.
+            // 2. 현재 선택된 Animation Clip을 가져옵니다.
+            // 3. Animation Clip의 경로를 가져옵니다.
+            // 4. Animation Clip을 로드합니다.
+            // 5. 애니메이션 루트 GameObject를 가져옵니다.
+            // 6. 모든 커브 바인딩을 가져옵니다.
+            // 7. 불필요한 키를 제거합니다.
+            // 8. 애니메이션 창을 새로고침합니다.
+            object state = GetAnimationWindowState();
             if (state == null) { Debug.LogError("Animation Window is not open."); return; }
 
-            AnimationClip activeClip = GetActiveAnimationClipFromState(state); // 현재 선택된 Animation Clip을 가져옵니다.
+            AnimationClip activeClip = GetActiveAnimationClipFromState(state);
             if (activeClip == null) { Debug.LogError("Select an Animation Clip."); return; }
 
-            string clipPath = AssetDatabase.GetAssetPath(activeClip); // Animation Clip의 경로를 가져옵니다.
+            string clipPath = AssetDatabase.GetAssetPath(activeClip);
             if (string.IsNullOrEmpty(clipPath)) { Debug.LogError("Cannot find asset path for the clip."); return; }
 
-            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath); // Animation Clip을 로드합니다.
+            AnimationClip sourceClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
             if (sourceClip == null) { Debug.LogError($"Failed to load clip from path: {clipPath}"); return; }
 
-            GameObject rootObject = GetActiveRootGameObjectFromState(state); // 애니메이션 루트 GameObject를 가져옵니다.
+            GameObject rootObject = GetActiveRootGameObjectFromState(state);
             if (rootObject == null) { Debug.LogError("Cannot find animation root GameObject."); return; }
 
             Undo.RecordObject(sourceClip, "Clean All Unnecessary Keys");
-            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip); // 모든 커브 바인딩을 가져옵니다.
+            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(sourceClip);
             bool anyCurveModified = false;
             int totalKeysRemoved = 0;
             int objectsProcessed = 0;
