@@ -21,8 +21,8 @@ public class RewardLayoutController : MonoBehaviour
     [Tooltip("Reward Container의 자식 Grid Layout Group들")]
     [SerializeField] private List<GridLayoutGroup> grids = new List<GridLayoutGroup>();
     
-    [Tooltip("각 Grid에 미리 배치된 RewardItem 프리팹들")]
-    [SerializeField] private List<List<GameObject>> preplacedRewardItems = new List<List<GameObject>>();
+    [Tooltip("각 Grid에 미리 배치된 RewardItem 프리팹들 (인스펙터에서 직접 등록)")]
+    [SerializeField] private List<GridPrefabData> gridPrefabData = new List<GridPrefabData>();
     
     [Header("순차 활성화 설정")]
     [Tooltip("순차 활성화 사용 여부")]
@@ -60,6 +60,13 @@ public class RewardLayoutController : MonoBehaviour
     #region Serializable Classes
     
     [Serializable]
+    public class GridPrefabData
+    {
+        [Tooltip("이 Grid에 등록된 RewardItem 프리팹들")]
+        public List<GameObject> rewardItems = new List<GameObject>();
+    }
+    
+    [Serializable]
     public class LayoutConfig
     {
         [Tooltip("이 설정이 적용될 총 보상 개수")]
@@ -83,6 +90,14 @@ public class RewardLayoutController : MonoBehaviour
     #endregion
 
     #region Private Fields
+    
+    // 상수 정의
+    private const float SCALE_TOLERANCE_MIN = 0.9f;
+    private const float SCALE_TOLERANCE_MAX = 1.1f;
+    private const float POSITION_Z_TOLERANCE = 0.1f;
+    private const float SIZE_DELTA_TOLERANCE = 1000f;
+    private const int FRAME_DISTRIBUTION_THRESHOLD = 10;
+    private const float MIN_INTERVAL_TIME = 0.05f;
     
     private RectTransform containerRectTransform;
     private int lastTestCount = -1;
@@ -135,7 +150,7 @@ public class RewardLayoutController : MonoBehaviour
         {
             if (!ValidateComponents())
             {
-                Debug.LogError("RewardLayoutController: 필수 컴포넌트가 누락되어 테스트를 중단합니다.");
+                LogError("필수 컴포넌트가 누락되어 테스트를 중단합니다.");
                 return;
             }
             
@@ -153,13 +168,13 @@ public class RewardLayoutController : MonoBehaviour
     /// </summary>
     private void InitializeComponent()
     {
-        try
-        {
-            containerRectTransform = GetComponent<RectTransform>();
-            
+        SafeExecute(() =>
+    {
+        containerRectTransform = GetComponent<RectTransform>();
+
             if (containerRectTransform == null)
             {
-                Debug.LogError("RewardLayoutController: RectTransform 컴포넌트를 찾을 수 없습니다!");
+                LogError("RectTransform 컴포넌트를 찾을 수 없습니다!");
                 return;
             }
 
@@ -168,12 +183,7 @@ public class RewardLayoutController : MonoBehaviour
             InitializePreplacedPrefabs();
             
             isInitialized = true;
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController 초기화 중 오류 발생: {e.Message}");
-            isInitialized = false;
-        }
+        }, "컴포넌트 초기화");
     }
     
     /// <summary>
@@ -181,23 +191,19 @@ public class RewardLayoutController : MonoBehaviour
     /// </summary>
     private void InitializeGrids()
     {
-        try
+        SafeExecute(() =>
         {
             if (grids != null)
             {
-                foreach (var grid in grids)
-                {
-                    if (grid != null)
-                    {
-                        grid.gameObject.SetActive(false);
-                    }
-                }
+        foreach (var grid in grids)
+        {
+            if (grid != null)
+            {
+                grid.gameObject.SetActive(false);
             }
         }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController: Grid 초기화 중 오류 발생: {e.Message}");
-        }
+            }
+        }, "Grid 초기화");
     }
     
     /// <summary>
@@ -205,7 +211,7 @@ public class RewardLayoutController : MonoBehaviour
     /// </summary>
     private void InitializeCache()
     {
-        try
+        SafeExecute(() =>
         {
             layoutConfigCache.Clear();
             scaleConfigCache.Clear();
@@ -231,11 +237,7 @@ public class RewardLayoutController : MonoBehaviour
                     }
                 }
             }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController: 캐시 초기화 중 오류 발생: {e.Message}");
-        }
+        }, "캐시 초기화");
     }
     
     /// <summary>
@@ -243,22 +245,15 @@ public class RewardLayoutController : MonoBehaviour
     /// </summary>
     private void InitializePreplacedPrefabs()
     {
-        try
+        SafeExecute(() =>
         {
-            // Inspector에서 설정되지 않은 경우 자동으로 찾기
-            if (preplacedRewardItems == null || preplacedRewardItems.Count == 0)
+            if (gridPrefabData != null)
             {
-                Debug.LogWarning("RewardLayoutController: Inspector에서 preplacedRewardItems가 설정되지 않았습니다. 자동으로 찾는 중...");
-                AutoFindPreplacedPrefabs();
-            }
-            
-            if (preplacedRewardItems != null)
-            {
-                foreach (var gridPrefabs in preplacedRewardItems)
+                foreach (var gridData in gridPrefabData)
                 {
-                    if (gridPrefabs != null)
+                    if (gridData?.rewardItems != null)
                     {
-                        foreach (var prefab in gridPrefabs)
+                        foreach (var prefab in gridData.rewardItems)
                         {
                             if (prefab != null)
                             {
@@ -268,63 +263,14 @@ public class RewardLayoutController : MonoBehaviour
                     }
                 }
             }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController: 프리팹 초기화 중 오류 발생: {e.Message}");
-        }
+        }, "프리팹 초기화");
     }
     
-    /// <summary>
-    /// Grid들에서 미리 배치된 프리팹들을 자동으로 찾아서 설정합니다.
-    /// </summary>
-    private void AutoFindPreplacedPrefabs()
-    {
-        try
-        {
-            preplacedRewardItems = new List<List<GameObject>>();
-            
-            if (grids != null)
-            {
-                for (int i = 0; i < grids.Count; i++)
-                {
-                    var grid = grids[i];
-                    if (grid != null)
-                    {
-                        List<GameObject> gridPrefabs = new List<GameObject>();
-                        
-                        // Grid의 자식 오브젝트들을 찾아서 RewardItem 프리팹으로 간주
-                        for (int j = 0; j < grid.transform.childCount; j++)
-                        {
-                            Transform child = grid.transform.GetChild(j);
-                            if (child != null && child.gameObject.name.Contains("RewardItem"))
-                            {
-                                gridPrefabs.Add(child.gameObject);
-                            }
-                        }
-                        
-                        preplacedRewardItems.Add(gridPrefabs);
-                        Debug.Log($"RewardLayoutController: Grid {i}에서 {gridPrefabs.Count}개의 RewardItem 프리팹을 자동으로 찾았습니다.");
-                    }
-                    else
-                    {
-                        preplacedRewardItems.Add(new List<GameObject>());
-                    }
-                }
-            }
-            
-            Debug.Log($"RewardLayoutController: 총 {preplacedRewardItems.Count}개의 Grid에서 미리 배치된 프리팹들을 자동으로 찾았습니다.");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController: 자동 프리팹 찾기 중 오류 발생: {e.Message}");
-        }
-    }
 
     #endregion
 
     #region Public Methods
-    
+
     /// <summary>
     /// 보상을 표시하고 레이아웃을 업데이트합니다.
     /// </summary>
@@ -333,27 +279,27 @@ public class RewardLayoutController : MonoBehaviour
     {
         if (rewards == null)
         {
-            Debug.LogWarning("RewardLayoutController: rewards 리스트가 null입니다. 빈 리스트로 처리합니다.");
+            LogWarning("rewards 리스트가 null입니다. 빈 리스트로 처리합니다.");
             rewards = new List<object>();
         }
         
         if (!ValidateComponents())
         {
-            Debug.LogError("RewardLayoutController: 필수 컴포넌트가 누락되어 DisplayRewards를 실행할 수 없습니다.");
+            LogError("필수 컴포넌트가 누락되어 DisplayRewards를 실행할 수 없습니다.");
             return;
         }
         
         if (isUpdatingLayout)
         {
-            Debug.LogWarning("RewardLayoutController: 이미 레이아웃 업데이트가 진행 중입니다. 요청을 무시합니다.");
+            LogWarning("이미 레이아웃 업데이트가 진행 중입니다. 요청을 무시합니다.");
             return;
         }
-        
+
         StoreRewardsData(rewards);
         
         int totalRewards = rewards.Count;
-        
-        if (useFrameDistribution && totalRewards > 10)
+
+        if (useFrameDistribution && totalRewards > FRAME_DISTRIBUTION_THRESHOLD)
         {
             if (layoutUpdateCoroutine != null)
             {
@@ -381,35 +327,21 @@ public class RewardLayoutController : MonoBehaviour
     #region Core Display Methods
     
     /// <summary>
-    /// 보상 레이아웃을 즉시 업데이트합니다.
+    /// 보상 레이아웃의 공통 처리 로직을 수행합니다.
     /// </summary>
-    private void DisplayRewardsImmediate(List<object> rewards)
+    private int ProcessRewardsLayout(List<object> rewards, LayoutConfig layoutConfig)
     {
         int totalRewards = rewards.Count;
-        
-        if (totalRewards == 0)
-        {
-            ClearAllGrids();
-            return;
-        }
-
-        var layoutConfig = GetLayoutConfig(totalRewards);
-        if (layoutConfig == null)
-        {
-            Debug.LogError($"RewardLayoutController: {totalRewards}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
-            return;
-        }
-
         int maxItemsInAnyGrid = 0;
         
-        Debug.Log($"RewardLayoutController: 즉시 처리 시작 - 총 {totalRewards}개 보상");
+        LogInfo($"레이아웃 처리 시작 - 총 {totalRewards}개 보상");
         
         // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
         for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
         {
             if (i >= grids.Count)
             {
-                Debug.LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
+                LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
                 break;
             }
 
@@ -431,19 +363,45 @@ public class RewardLayoutController : MonoBehaviour
             }
         }
 
-        Debug.Log($"RewardLayoutController: 모든 Grid 활성화 완료 - 최대 아이템 수: {maxItemsInAnyGrid}");
+        LogInfo($"모든 Grid 활성화 완료 - 최대 아이템 수: {maxItemsInAnyGrid}");
         
         // 2단계: 스케일 적용 (모든 Grid가 활성화된 후)
         ApplyScaleConfig(maxItemsInAnyGrid);
         
+        return maxItemsInAnyGrid;
+    }
+    
+    /// <summary>
+    /// 보상 레이아웃을 즉시 업데이트합니다.
+    /// </summary>
+    private void DisplayRewardsImmediate(List<object> rewards)
+    {
+        int totalRewards = rewards.Count;
+        
+        if (totalRewards == 0)
+        {
+            ClearAllGrids();
+            return;
+        }
+
+        var layoutConfig = GetLayoutConfig(totalRewards);
+        if (layoutConfig == null)
+        {
+            LogError($"{totalRewards}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
+            return;
+        }
+
+        // 공통 레이아웃 처리 로직 실행
+        ProcessRewardsLayout(rewards, layoutConfig);
+        
         // 3단계: RewardItem만 순차 활성화
         if (useSequentialActivation)
         {
-            Debug.Log("RewardLayoutController: RewardItem 순차 활성화 시작");
+            LogInfo("RewardItem 순차 활성화 시작");
             StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
         }
     }
-    
+
     /// <summary>
     /// 보상 레이아웃을 비동기로 업데이트합니다.
     /// </summary>
@@ -464,50 +422,17 @@ public class RewardLayoutController : MonoBehaviour
             var layoutConfig = GetLayoutConfig(totalRewards);
             if (layoutConfig == null)
             {
-                Debug.LogError($"RewardLayoutController: {totalRewards}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
+                LogError($"{totalRewards}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
                 yield break;
             }
 
-            int maxItemsInAnyGrid = 0;
-            
-            Debug.Log($"RewardLayoutController: 비동기 처리 시작 - 총 {totalRewards}개 보상");
-            
-            // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
-            for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
-            {
-                if (i >= grids.Count)
-                {
-                    Debug.LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
-                    break;
-                }
-
-                int itemsToLoad = layoutConfig.itemsPerGrid[i];
-                GridLayoutGroup targetGrid = grids[i];
-
-                if (targetGrid != null)
-                {
-                    if (itemsToLoad > 0)
-                    {
-                        // Grid만 활성화하고 아이템은 비활성화 상태로 준비
-                        ActivateGridOnly(targetGrid, i, itemsToLoad);
-                        maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
-                    }
-                    else
-                    {
-                        targetGrid.gameObject.SetActive(false);
-                    }
-                }
-            }
-
-            Debug.Log($"RewardLayoutController: 모든 Grid 활성화 완료 - 최대 아이템 수: {maxItemsInAnyGrid}");
-            
-            // 2단계: 스케일 적용 (모든 Grid가 활성화된 후)
-            ApplyScaleConfig(maxItemsInAnyGrid);
+            // 공통 레이아웃 처리 로직 실행
+            ProcessRewardsLayout(rewards, layoutConfig);
             
             // 3단계: RewardItem만 순차 활성화
             if (useSequentialActivation)
             {
-                Debug.Log("RewardLayoutController: RewardItem 순차 활성화 시작");
+                LogInfo("RewardItem 순차 활성화 시작");
                 yield return StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
             }
         }
@@ -539,7 +464,7 @@ public class RewardLayoutController : MonoBehaviour
         
         LayoutRebuilder.ForceRebuildLayoutImmediate(targetGrid.GetComponent<RectTransform>());
         
-        Debug.Log($"RewardLayoutController: Grid {gridIndex} 활성화 완료 (아이템 {itemsToLoad}개 준비됨)");
+        LogInfo($"Grid {gridIndex} 활성화 완료 (아이템 {itemsToLoad}개 준비됨)");
     }
     
     /// <summary>
@@ -567,91 +492,64 @@ public class RewardLayoutController : MonoBehaviour
     }
     
     /// <summary>
+    /// 아이템 리스트를 활성화/비활성화합니다.
+    /// </summary>
+    private void SetItemsActive(List<GameObject> items, bool active)
+    {
+        if (items == null) return;
+        
+        foreach (var item in items)
+        {
+            if (item != null)
+            {
+                item.SetActive(active);
+                if (active)
+                {
+                    ValidateAndFixItemTransform(item);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Grid의 모든 아이템을 활성화/비활성화합니다.
+    /// </summary>
+    private void SetGridItemsActive(int gridIndex, bool active, int count = -1)
+    {
+        var gridData = GetGridData(gridIndex);
+        if (gridData == null) return;
+        
+        int processedCount = 0;
+        foreach (var item in gridData.rewardItems)
+        {
+            if (item != null)
+            {
+                item.SetActive(active);
+                if (active)
+                {
+                    ValidateAndFixItemTransform(item);
+                }
+                processedCount++;
+                
+                if (count > 0 && processedCount >= count)
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
     /// Grid를 순차 활성화를 위해 준비합니다.
     /// </summary>
     private void PrepareGridForSequentialActivation(int gridIndex, int count)
     {
-        // preplacedRewardItems가 초기화되지 않은 경우 다시 초기화 시도
-        if (preplacedRewardItems == null || preplacedRewardItems.Count == 0)
-        {
-            Debug.LogWarning("RewardLayoutController: preplacedRewardItems가 초기화되지 않았습니다. 다시 초기화를 시도합니다.");
-            AutoFindPreplacedPrefabs();
-        }
-        
-        if (preplacedRewardItems == null || gridIndex >= preplacedRewardItems.Count)
-        {
-            Debug.LogError($"RewardLayoutController: Grid {gridIndex}의 미리 배치된 프리팹을 찾을 수 없습니다. (preplacedRewardItems.Count: {preplacedRewardItems?.Count ?? 0})");
-            return;
-        }
-        
-        var gridPrefabs = preplacedRewardItems[gridIndex];
-        if (gridPrefabs == null)
-        {
-            Debug.LogError($"RewardLayoutController: Grid {gridIndex}의 프리팹 리스트가 null입니다.");
-            return;
-        }
-        
-        int preparedCount = 0;
-        for (int i = 0; i < gridPrefabs.Count && preparedCount < count; i++)
-        {
-            if (gridPrefabs[i] != null)
-            {
-                gridPrefabs[i].SetActive(false);
-                preparedCount++;
-            }
-        }
-        
-        Debug.Log($"RewardLayoutController: Grid {gridIndex}에서 {preparedCount}개의 프리팹을 순차 활성화를 위해 준비했습니다.");
+        SetGridItemsActive(gridIndex, false, count);
+        LogInfo($"Grid {gridIndex}에서 {count}개의 프리팹을 순차 활성화를 위해 준비했습니다.");
     }
     
     /// <summary>
-    /// 모든 아이템들을 하나의 시퀀스로 순차 활성화합니다.
+    /// 순차 활성화를 위한 아이템들을 수집합니다.
     /// </summary>
-    private IEnumerator ActivateAllItemsSequentially(LayoutConfig layoutConfig)
-    {
-        if (layoutConfig == null)
-        {
-            Debug.LogError("RewardLayoutController: LayoutConfig가 null입니다.");
-            yield break;
-        }
-        
-        List<GameObject> allItemsToActivate = CollectAllItemsToActivate(layoutConfig);
-        
-        if (allItemsToActivate.Count == 0)
-        {
-            Debug.LogWarning("RewardLayoutController: 활성화할 아이템이 없습니다.");
-            yield break;
-        }
-        
-        Debug.Log($"RewardLayoutController: 총 {allItemsToActivate.Count}개의 아이템을 순차적으로 활성화합니다.");
-        
-        float intervalBetweenItems = CalculateItemInterval(allItemsToActivate.Count);
-        
-        Debug.Log($"RewardLayoutController: 아이템 간격 {intervalBetweenItems:F3}초로 설정 (총 예상 시간: {intervalBetweenItems * (allItemsToActivate.Count - 1):F2}초)");
-        
-        for (int i = 0; i < allItemsToActivate.Count; i++)
-        {
-            if (allItemsToActivate[i] != null)
-            {
-                allItemsToActivate[i].SetActive(true);
-                ValidateAndFixItemTransform(allItemsToActivate[i]);
-                
-                Debug.Log($"RewardLayoutController: 아이템 {i + 1}/{allItemsToActivate.Count} 활성화 완료");
-                
-                if (i < allItemsToActivate.Count - 1)
-                {
-                    yield return new WaitForSeconds(intervalBetweenItems);
-                }
-            }
-        }
-        
-        Debug.Log($"RewardLayoutController: 모든 아이템의 순차 활성화가 완료되었습니다.");
-    }
-    
-    /// <summary>
-    /// 활성화할 모든 아이템들을 수집합니다.
-    /// </summary>
-    private List<GameObject> CollectAllItemsToActivate(LayoutConfig layoutConfig)
+    private List<GameObject> CollectItemsForSequentialActivation(LayoutConfig layoutConfig)
     {
         List<GameObject> allItemsToActivate = new List<GameObject>();
         
@@ -659,16 +557,16 @@ public class RewardLayoutController : MonoBehaviour
         {
             int itemsToLoad = layoutConfig.itemsPerGrid[gridIndex];
             
-            if (itemsToLoad > 0 && gridIndex < preplacedRewardItems.Count && preplacedRewardItems[gridIndex] != null)
+            if (itemsToLoad > 0 && gridIndex < gridPrefabData.Count && gridPrefabData[gridIndex] != null)
             {
-                var gridPrefabs = preplacedRewardItems[gridIndex];
+                var gridData = gridPrefabData[gridIndex];
                 int addedCount = 0;
                 
-                for (int i = 0; i < gridPrefabs.Count && addedCount < itemsToLoad; i++)
+                for (int i = 0; i < gridData.rewardItems.Count && addedCount < itemsToLoad; i++)
                 {
-                    if (gridPrefabs[i] != null)
+                    if (gridData.rewardItems[i] != null)
                     {
-                        allItemsToActivate.Add(gridPrefabs[i]);
+                        allItemsToActivate.Add(gridData.rewardItems[i]);
                         addedCount++;
                     }
                 }
@@ -679,59 +577,79 @@ public class RewardLayoutController : MonoBehaviour
     }
     
     /// <summary>
+    /// 아이템들을 순차적으로 활성화합니다.
+    /// </summary>
+    private IEnumerator ActivateItemsSequentially(List<GameObject> itemsToActivate)
+    {
+        if (itemsToActivate.Count == 0)
+        {
+            LogWarning("활성화할 아이템이 없습니다.");
+            yield break;
+        }
+        
+        LogInfo($"총 {itemsToActivate.Count}개의 아이템을 순차적으로 활성화합니다.");
+        
+        float intervalBetweenItems = CalculateItemInterval(itemsToActivate.Count);
+        LogInfo($"아이템 간격 {intervalBetweenItems:F3}초로 설정 (총 예상 시간: {intervalBetweenItems * (itemsToActivate.Count - 1):F2}초)");
+        
+        for (int i = 0; i < itemsToActivate.Count; i++)
+        {
+            if (itemsToActivate[i] != null)
+            {
+                itemsToActivate[i].SetActive(true);
+                ValidateAndFixItemTransform(itemsToActivate[i]);
+                
+                LogInfo($"아이템 {i + 1}/{itemsToActivate.Count} 활성화 완료");
+                
+                if (i < itemsToActivate.Count - 1)
+                {
+                    yield return new WaitForSeconds(intervalBetweenItems);
+                }
+            }
+        }
+        
+        LogInfo("모든 아이템의 순차 활성화가 완료되었습니다.");
+    }
+    
+    /// <summary>
+    /// 모든 아이템들을 하나의 시퀀스로 순차 활성화합니다.
+    /// </summary>
+    private IEnumerator ActivateAllItemsSequentially(LayoutConfig layoutConfig)
+    {
+        if (layoutConfig == null)
+        {
+            LogError("LayoutConfig가 null입니다.");
+            yield break;
+        }
+        
+        List<GameObject> allItemsToActivate = CollectItemsForSequentialActivation(layoutConfig);
+        yield return StartCoroutine(ActivateItemsSequentially(allItemsToActivate));
+    }
+    
+    
+    /// <summary>
     /// 지정된 Grid에 미리 배치된 프리팹들을 즉시 활성화합니다.
     /// </summary>
     private void ActivatePreplacedItems(int gridIndex, int count)
     {
-        // preplacedRewardItems가 초기화되지 않은 경우 다시 초기화 시도
-        if (preplacedRewardItems == null || preplacedRewardItems.Count == 0)
-        {
-            Debug.LogWarning("RewardLayoutController: preplacedRewardItems가 초기화되지 않았습니다. 다시 초기화를 시도합니다.");
-            AutoFindPreplacedPrefabs();
-        }
-        
-        if (preplacedRewardItems == null || gridIndex >= preplacedRewardItems.Count)
-        {
-            Debug.LogError($"RewardLayoutController: Grid {gridIndex}의 미리 배치된 프리팹을 찾을 수 없습니다. (preplacedRewardItems.Count: {preplacedRewardItems?.Count ?? 0})");
-            return;
-        }
-        
-        var gridPrefabs = preplacedRewardItems[gridIndex];
-        if (gridPrefabs == null)
-        {
-            Debug.LogError($"RewardLayoutController: Grid {gridIndex}의 프리팹 리스트가 null입니다.");
-            return;
-        }
-        
-        int activatedCount = 0;
-        for (int i = 0; i < gridPrefabs.Count && activatedCount < count; i++)
-        {
-            if (gridPrefabs[i] != null)
-            {
-                gridPrefabs[i].SetActive(true);
-                ValidateAndFixItemTransform(gridPrefabs[i]);
-                activatedCount++;
-            }
-        }
-        
-        Debug.Log($"RewardLayoutController: Grid {gridIndex}에서 {activatedCount}개의 프리팹을 활성화했습니다.");
+        SetGridItemsActive(gridIndex, true, count);
+        LogInfo($"Grid {gridIndex}에서 {count}개의 프리팹을 활성화했습니다.");
     }
     
     /// <summary>
-    /// 모든 Grid의 미리 배치된 프리팹들을 비활성화합니다.
+    /// 모든 Grid의 아이템들을 비활성화합니다.
     /// </summary>
-    private void ClearAllGrids()
+    private void DeactivateAllItems()
     {
-        try
+        SafeExecute(() =>
         {
-            if (preplacedRewardItems != null)
+            if (gridPrefabData != null)
             {
-                for (int gridIndex = 0; gridIndex < preplacedRewardItems.Count; gridIndex++)
+                foreach (var gridData in gridPrefabData)
                 {
-                    var gridPrefabs = preplacedRewardItems[gridIndex];
-                    if (gridPrefabs != null)
+                    if (gridData?.rewardItems != null)
                     {
-                        foreach (var prefab in gridPrefabs)
+                        foreach (var prefab in gridData.rewardItems)
                         {
                             if (prefab != null)
                             {
@@ -739,18 +657,38 @@ public class RewardLayoutController : MonoBehaviour
                             }
                         }
                     }
-                    
-                    if (gridIndex < grids.Count && grids[gridIndex] != null)
+                }
+            }
+        }, "아이템 비활성화");
+    }
+    
+    /// <summary>
+    /// 모든 Grid를 비활성화합니다.
+    /// </summary>
+    private void DeactivateAllGrids()
+    {
+        SafeExecute(() =>
+        {
+            if (grids != null)
+            {
+                for (int i = 0; i < grids.Count; i++)
+                {
+                    if (grids[i] != null)
                     {
-                        grids[gridIndex].gameObject.SetActive(false);
+                        grids[i].gameObject.SetActive(false);
                     }
                 }
             }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"RewardLayoutController: Grid 정리 중 오류 발생: {e.Message}");
-        }
+        }, "Grid 비활성화");
+    }
+    
+    /// <summary>
+    /// 모든 Grid의 미리 배치된 프리팹들을 비활성화합니다.
+    /// </summary>
+    private void ClearAllGrids()
+    {
+        DeactivateAllItems();
+        DeactivateAllGrids();
     }
 
     #endregion
@@ -767,37 +705,12 @@ public class RewardLayoutController : MonoBehaviour
             RectTransform gridRectTransform = grid.GetComponent<RectTransform>();
             if (gridRectTransform != null)
             {
-                bool needsReset = false;
-                
-                if (gridRectTransform.localScale.magnitude > 1.1f || gridRectTransform.localScale.magnitude < 0.9f)
-                {
-                    gridRectTransform.localScale = Vector3.one;
-                    needsReset = true;
-                }
-                
-                if (Mathf.Abs(gridRectTransform.localPosition.z) > 0.1f)
-                {
-                    Vector3 pos = gridRectTransform.localPosition;
-                    pos.z = 0f;
-                    gridRectTransform.localPosition = pos;
-                    needsReset = true;
-                }
-                
-                if (gridRectTransform.sizeDelta.magnitude > 1000f)
-                {
-                    gridRectTransform.sizeDelta = Vector2.zero;
-                    needsReset = true;
-                }
-                
-                if (needsReset)
-                {
-                    Debug.LogWarning($"RewardLayoutController: Grid Transform 수정됨 - Scale: {gridRectTransform.localScale}, Position: {gridRectTransform.localPosition}");
-                }
+                ValidateAndFixTransform(gridRectTransform, $"Grid {grid.name}");
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"RewardLayoutController: Grid Transform 초기화 중 오류 발생: {e.Message}");
+            LogError($"Grid Transform 초기화 중 오류 발생: {e.Message}");
         }
     }
     
@@ -811,31 +724,12 @@ public class RewardLayoutController : MonoBehaviour
             RectTransform rectTransform = item.GetComponent<RectTransform>();
             if (rectTransform != null)
             {
-                bool needsFix = false;
-                
-                if (rectTransform.localScale.magnitude > 1.1f || rectTransform.localScale.magnitude < 0.9f)
-                {
-                    rectTransform.localScale = Vector3.one;
-                    needsFix = true;
-                }
-                
-                if (Mathf.Abs(rectTransform.localPosition.z) > 0.1f)
-                {
-                    Vector3 pos = rectTransform.localPosition;
-                    pos.z = 0f;
-                    rectTransform.localPosition = pos;
-                    needsFix = true;
-                }
-                
-                if (needsFix)
-                {
-                    Debug.LogWarning($"RewardLayoutController: 아이템 Transform 수정됨 - Scale: {rectTransform.localScale}, Position: {rectTransform.localPosition}");
-                }
+                ValidateAndFixTransform(rectTransform, $"Item {item.name}");
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"RewardLayoutController: 아이템 Transform 검증 중 오류 발생: {e.Message}");
+            LogError($"아이템 Transform 검증 중 오류 발생: {e.Message}");
         }
     }
 
@@ -861,9 +755,9 @@ public class RewardLayoutController : MonoBehaviour
         float weightFactor = (itemCount - 3) * countWeightMultiplier / itemCount;
         float calculatedInterval = baseItemInterval * (1 - weightFactor);
         
-        calculatedInterval = Mathf.Clamp(calculatedInterval, 0.05f, maxItemInterval);
+        calculatedInterval = Mathf.Clamp(calculatedInterval, MIN_INTERVAL_TIME, maxItemInterval);
         
-        Debug.Log($"RewardLayoutController: 아이템 {itemCount}개에 대한 간격 계산 - 기본: {baseItemInterval}, 계산된 간격: {calculatedInterval:F3}");
+        LogInfo($"아이템 {itemCount}개에 대한 간격 계산 - 기본: {baseItemInterval}, 계산된 간격: {calculatedInterval:F3}");
         
         return calculatedInterval;
     }
@@ -878,7 +772,7 @@ public class RewardLayoutController : MonoBehaviour
             return config;
         }
         
-        Debug.LogError($"RewardLayoutController: {rewardCount}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
+        LogError($"{rewardCount}개 보상에 대한 레이아웃 설정을 찾을 수 없습니다.");
         return null;
     }
     
@@ -892,7 +786,7 @@ public class RewardLayoutController : MonoBehaviour
             return config;
         }
         
-        Debug.LogError($"RewardLayoutController: {maxItemsInGrid}개 아이템에 대한 스케일 설정을 찾을 수 없습니다.");
+        LogError($"{maxItemsInGrid}개 아이템에 대한 스케일 설정을 찾을 수 없습니다.");
         return null;
     }
     
@@ -907,7 +801,7 @@ public class RewardLayoutController : MonoBehaviour
             containerRectTransform.localScale = Vector3.one * scaleConfig.containerScale;
             LayoutRebuilder.ForceRebuildLayoutImmediate(containerRectTransform);
             
-            Debug.Log($"RewardLayoutController: 컨테이너 스케일을 {scaleConfig.containerScale}로 설정했습니다.");
+            LogInfo($"컨테이너 스케일을 {scaleConfig.containerScale}로 설정했습니다.");
         }
     }
 
@@ -916,19 +810,164 @@ public class RewardLayoutController : MonoBehaviour
     #region Utility Methods
     
     /// <summary>
+    /// 일관된 정보 로그를 출력합니다.
+    /// </summary>
+    private void LogInfo(string message)
+    {
+        Debug.Log($"RewardLayoutController: {message}");
+    }
+    
+    /// <summary>
+    /// 일관된 경고 로그를 출력합니다.
+    /// </summary>
+    private void LogWarning(string message)
+    {
+        Debug.LogWarning($"RewardLayoutController: {message}");
+    }
+    
+    /// <summary>
+    /// 일관된 에러 로그를 출력합니다.
+    /// </summary>
+    private void LogError(string message)
+    {
+        Debug.LogError($"RewardLayoutController: {message}");
+    }
+    
+    /// <summary>
+    /// Grid 프리팹 데이터를 검증하고 안전하게 가져옵니다.
+    /// </summary>
+    private GridPrefabData GetGridData(int gridIndex)
+    {
+        if (gridPrefabData == null || gridIndex >= gridPrefabData.Count)
+        {
+            LogError($"Grid {gridIndex}의 미리 배치된 프리팹을 찾을 수 없습니다. (gridPrefabData.Count: {gridPrefabData?.Count ?? 0})");
+            return null;
+        }
+        
+        var gridData = gridPrefabData[gridIndex];
+        if (gridData?.rewardItems == null)
+        {
+            LogError($"Grid {gridIndex}의 프리팹 리스트가 null입니다.");
+            return null;
+        }
+        
+        return gridData;
+    }
+    
+    /// <summary>
+    /// Grid 프리팹 데이터가 유효한지 검증합니다.
+    /// </summary>
+    private bool ValidateGridPrefabData(int gridIndex)
+    {
+        return GetGridData(gridIndex) != null;
+    }
+    
+    /// <summary>
+    /// RectTransform을 검증하고 수정합니다.
+    /// </summary>
+    private void ValidateAndFixTransform(RectTransform rectTransform, string objectName)
+    {
+        try
+        {
+            if (rectTransform == null) return;
+            
+            bool needsFix = false;
+            string fixDetails = "";
+            
+            // 스케일 검증 및 수정
+            Vector3 originalScale = rectTransform.localScale;
+            if (originalScale.magnitude > SCALE_TOLERANCE_MAX || originalScale.magnitude < SCALE_TOLERANCE_MIN)
+            {
+                rectTransform.localScale = Vector3.one;
+                needsFix = true;
+                fixDetails += $"Scale: {originalScale} → {Vector3.one} ";
+            }
+            
+            // Z 위치 검증 및 수정
+            Vector3 originalPosition = rectTransform.localPosition;
+            if (Mathf.Abs(originalPosition.z) > POSITION_Z_TOLERANCE)
+            {
+                Vector3 newPosition = originalPosition;
+                newPosition.z = 0f;
+                rectTransform.localPosition = newPosition;
+                needsFix = true;
+                fixDetails += $"Position Z: {originalPosition.z} → 0 ";
+            }
+            
+            // SizeDelta 검증 및 수정 (Grid에만 적용)
+            if (objectName.StartsWith("Grid"))
+            {
+                Vector2 originalSizeDelta = rectTransform.sizeDelta;
+                if (originalSizeDelta.magnitude > SIZE_DELTA_TOLERANCE)
+                {
+                    rectTransform.sizeDelta = Vector2.zero;
+                    needsFix = true;
+                    fixDetails += $"SizeDelta: {originalSizeDelta} → {Vector2.zero} ";
+                }
+            }
+            
+            if (needsFix)
+            {
+                LogWarning($"{objectName} Transform 수정됨 - {fixDetails.Trim()}");
+            }
+        }
+        catch (System.Exception e)
+        {
+            LogError($"{objectName} Transform 검증 중 오류 발생: {e.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 안전한 실행을 위한 예외 처리 래퍼입니다.
+    /// </summary>
+    private void SafeExecute(System.Action action, string operationName)
+    {
+        try
+        {
+            action?.Invoke();
+        }
+        catch (System.Exception e)
+        {
+            LogError($"{operationName} 중 오류 발생: {e.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 안전한 실행을 위한 예외 처리 래퍼입니다. (반환값 있음)
+    /// </summary>
+    private T SafeExecute<T>(System.Func<T> func, string operationName, T defaultValue = default(T))
+    {
+        try
+        {
+            return func != null ? func.Invoke() : defaultValue;
+        }
+        catch (System.Exception e)
+        {
+            LogError($"{operationName} 중 오류 발생: {e.Message}");
+            return defaultValue;
+        }
+    }
+    
+    /// <summary>
     /// 필수 컴포넌트들이 올바르게 설정되어 있는지 검사합니다.
     /// </summary>
     private bool ValidateComponents()
     {
         if (containerRectTransform == null)
         {
-            Debug.LogError("RewardLayoutController: containerRectTransform이 null입니다!");
+            LogError("containerRectTransform이 null입니다!");
             return false;
         }
         
         if (grids == null || grids.Count == 0)
         {
-            Debug.LogError("RewardLayoutController: grids 리스트가 비어있거나 null입니다!");
+            LogError("grids 리스트가 비어있거나 null입니다!");
+            return false;
+        }
+        
+        if (gridPrefabData == null || gridPrefabData.Count == 0)
+        {
+            LogError("gridPrefabData가 설정되지 않았습니다! Inspector에서 프리팹을 등록해주세요.");
             return false;
         }
         
@@ -944,13 +983,13 @@ public class RewardLayoutController : MonoBehaviour
         
         if (!hasValidGrid)
         {
-            Debug.LogError("RewardLayoutController: 유효한 Grid가 하나도 없습니다!");
+            LogError("유효한 Grid가 하나도 없습니다!");
             return false;
         }
         
         return true;
     }
-    
+
     /// <summary>
     /// 테스트용 보상 데이터를 생성합니다.
     /// </summary>
@@ -978,7 +1017,7 @@ public class RewardLayoutController : MonoBehaviour
                 containerRectTransform.localScale = Vector3.one;
             }
             
-            Debug.Log("RewardLayoutController: 현재 표시 상태가 정리되었습니다.");
+            LogInfo("현재 표시 상태가 정리되었습니다.");
         }
         catch (System.Exception e)
         {
@@ -997,7 +1036,7 @@ public class RewardLayoutController : MonoBehaviour
             {
                 lastRewardsData = new List<object>(rewards);
                 hasStoredRewards = true;
-                Debug.Log($"RewardLayoutController: {rewards.Count}개의 보상 데이터를 저장했습니다.");
+                LogInfo($"{rewards.Count}개의 보상 데이터를 저장했습니다.");
             }
             else
             {
@@ -1020,11 +1059,11 @@ public class RewardLayoutController : MonoBehaviour
         
         if (lastRewardsData != null)
         {
-            Debug.Log("RewardLayoutController: 저장된 보상 데이터로 표시를 복원합니다.");
+            LogInfo("저장된 보상 데이터로 표시를 복원합니다.");
             DisplayRewards(lastRewardsData);
         }
     }
-    
+
     /// <summary>
     /// 캐시를 정리합니다.
     /// </summary>
