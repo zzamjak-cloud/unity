@@ -402,7 +402,9 @@ public class RewardLayoutController : MonoBehaviour
 
         int maxItemsInAnyGrid = 0;
         
-        // 각 Grid에 아이템 배치
+        Debug.Log($"RewardLayoutController: 즉시 처리 시작 - 총 {totalRewards}개 보상");
+        
+        // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
         for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
         {
             if (i >= grids.Count)
@@ -418,7 +420,8 @@ public class RewardLayoutController : MonoBehaviour
             {
                 if (itemsToLoad > 0)
                 {
-                    SetupGrid(targetGrid, i, itemsToLoad);
+                    // Grid만 활성화하고 아이템은 비활성화 상태로 준비
+                    ActivateGridOnly(targetGrid, i, itemsToLoad);
                     maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
                 }
                 else
@@ -428,12 +431,15 @@ public class RewardLayoutController : MonoBehaviour
             }
         }
 
-        // 스케일 적용
+        Debug.Log($"RewardLayoutController: 모든 Grid 활성화 완료 - 최대 아이템 수: {maxItemsInAnyGrid}");
+        
+        // 2단계: 스케일 적용 (모든 Grid가 활성화된 후)
         ApplyScaleConfig(maxItemsInAnyGrid);
         
-        // 순차 활성화 실행
+        // 3단계: RewardItem만 순차 활성화
         if (useSequentialActivation)
         {
+            Debug.Log("RewardLayoutController: RewardItem 순차 활성화 시작");
             StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
         }
     }
@@ -464,7 +470,9 @@ public class RewardLayoutController : MonoBehaviour
 
             int maxItemsInAnyGrid = 0;
             
-            // 각 Grid에 아이템 배치 (프레임 분산 처리)
+            Debug.Log($"RewardLayoutController: 비동기 처리 시작 - 총 {totalRewards}개 보상");
+            
+            // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
             for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
             {
                 if (i >= grids.Count)
@@ -480,7 +488,8 @@ public class RewardLayoutController : MonoBehaviour
                 {
                     if (itemsToLoad > 0)
                     {
-                        SetupGrid(targetGrid, i, itemsToLoad);
+                        // Grid만 활성화하고 아이템은 비활성화 상태로 준비
+                        ActivateGridOnly(targetGrid, i, itemsToLoad);
                         maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
                     }
                     else
@@ -488,16 +497,17 @@ public class RewardLayoutController : MonoBehaviour
                         targetGrid.gameObject.SetActive(false);
                     }
                 }
-                
-                yield return null; // 프레임 분산
             }
 
-            // 스케일 적용
+            Debug.Log($"RewardLayoutController: 모든 Grid 활성화 완료 - 최대 아이템 수: {maxItemsInAnyGrid}");
+            
+            // 2단계: 스케일 적용 (모든 Grid가 활성화된 후)
             ApplyScaleConfig(maxItemsInAnyGrid);
             
-            // 순차 활성화 실행
+            // 3단계: RewardItem만 순차 활성화
             if (useSequentialActivation)
             {
+                Debug.Log("RewardLayoutController: RewardItem 순차 활성화 시작");
                 yield return StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
             }
         }
@@ -513,7 +523,27 @@ public class RewardLayoutController : MonoBehaviour
     #region Grid and Item Management
     
     /// <summary>
-    /// Grid를 설정하고 아이템을 준비합니다.
+    /// Grid만 활성화하고 아이템은 비활성화 상태로 준비합니다. (레이아웃 안정화용)
+    /// </summary>
+    private void ActivateGridOnly(GridLayoutGroup targetGrid, int gridIndex, int itemsToLoad)
+    {
+        targetGrid.gameObject.SetActive(true);
+        
+        if (useGridTransformReset)
+        {
+            ResetGridTransform(targetGrid);
+        }
+        
+        // 아이템들을 비활성화 상태로 준비 (순차 활성화에서 사용할 예정)
+        PrepareGridForSequentialActivation(gridIndex, itemsToLoad);
+        
+        LayoutRebuilder.ForceRebuildLayoutImmediate(targetGrid.GetComponent<RectTransform>());
+        
+        Debug.Log($"RewardLayoutController: Grid {gridIndex} 활성화 완료 (아이템 {itemsToLoad}개 준비됨)");
+    }
+    
+    /// <summary>
+    /// Grid를 설정하고 아이템을 준비합니다. (즉시 활성화용)
     /// </summary>
     private void SetupGrid(GridLayoutGroup targetGrid, int gridIndex, int itemsToLoad)
     {
