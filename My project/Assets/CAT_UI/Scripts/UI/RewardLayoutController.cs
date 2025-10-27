@@ -21,8 +21,12 @@ public class RewardLayoutController : MonoBehaviour
     [SerializeField] private List<GridLayoutGroup> grids = new List<GridLayoutGroup>();
 
     [Header("레이아웃 설정")]
-    [Tooltip("총 보상 개수에 따른 레이아웃 및 스케일 설정 목록")]
+    [Tooltip("총 보상 개수에 따른 레이아웃 설정 목록")]
     [SerializeField] private List<LayoutConfig> layoutConfigs = new List<LayoutConfig>();
+    
+    [Header("스케일 설정")]
+    [Tooltip("Grid 내 최대 아이템 개수에 따른 스케일 설정 목록")]
+    [SerializeField] private List<ScaleConfig> scaleConfigs = new List<ScaleConfig>();
 
 
     // ===================================================================================================
@@ -36,9 +40,17 @@ public class RewardLayoutController : MonoBehaviour
         
         [Tooltip("각 Grid에 들어갈 아이템 개수 목록 (Grid 0, Grid 1, ...)")]
         public List<int> itemsPerGrid; 
+    }
+    
+    [Serializable]
+    public class ScaleConfig
+    {
+        [Tooltip("이 스케일이 적용될 Grid 내 최대 아이템 개수")]
+        public int maxItemsInGrid;
         
-        [Tooltip("Reward Container의 최종 RectTransform.localScale")]
-        public Vector3 containerScale = Vector3.one; 
+        [Tooltip("Reward Container의 Uniform Scale 값 (XYZ 모두 동일하게 적용)")]
+        [Range(0.1f, 2.0f)]
+        public float containerScale = 1.0f;
     }
 
 
@@ -259,9 +271,9 @@ public class RewardLayoutController : MonoBehaviour
         }
 
         // 2. 해당 보상 개수에 맞는 레이아웃 설정 찾기
-        LayoutConfig config = GetLayoutConfig(totalRewards);
+        LayoutConfig layoutConfig = GetLayoutConfig(totalRewards);
 
-        if (config == null)
+        if (layoutConfig == null)
         {
             Debug.LogWarning($"보상 개수 {totalRewards}에 맞는 레이아웃 설정이 없습니다. 첫 번째 Grid에 모두 넣습니다.");
             
@@ -270,14 +282,22 @@ public class RewardLayoutController : MonoBehaviour
             {
                 grids[0].gameObject.SetActive(true);
                 InstantiateItems(grids[0].transform, totalRewards);
+                
+                // 스케일 설정 적용 (최대 아이템 개수 = totalRewards)
+                ApplyScaleConfig(totalRewards);
             }
-            containerRectTransform.localScale = Vector3.one; // 기본 스케일
+            else
+            {
+                ApplyScaleConfig(0); // 기본 스케일
+            }
             LayoutRebuilder.ForceRebuildLayoutImmediate(containerRectTransform);
             return;
         }
 
         // 3. 레이아웃에 따라 아이템 로드 및 Grid 활성화
-        for (int i = 0; i < config.itemsPerGrid.Count; i++)
+        int maxItemsInAnyGrid = 0; // 가장 많은 아이템이 들어가는 Grid의 아이템 개수
+        
+        for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
         {
             if (i >= grids.Count)
             {
@@ -285,7 +305,7 @@ public class RewardLayoutController : MonoBehaviour
                 break;
             }
 
-            int itemsToLoad = config.itemsPerGrid[i];
+            int itemsToLoad = layoutConfig.itemsPerGrid[i];
             GridLayoutGroup targetGrid = grids[i];
 
             if (targetGrid != null)
@@ -294,6 +314,12 @@ public class RewardLayoutController : MonoBehaviour
                 {
                     targetGrid.gameObject.SetActive(true);
                     InstantiateItems(targetGrid.transform, itemsToLoad);
+                    
+                    // 최대 아이템 개수 업데이트
+                    if (itemsToLoad > maxItemsInAnyGrid)
+                    {
+                        maxItemsInAnyGrid = itemsToLoad;
+                    }
                 }
                 else
                 {
@@ -302,12 +328,12 @@ public class RewardLayoutController : MonoBehaviour
             }
         }
 
-        // 4. Reward Container 스케일 조정
+        // 4. Reward Container 스케일 조정 (Grid 내 최대 아이템 개수 기준)
+        ApplyScaleConfig(maxItemsInAnyGrid);
+        
+        // 5. UGUI 레이아웃 시스템 강제 업데이트 (Content Size Fitter 사용 시 중요)
         if (containerRectTransform != null)
         {
-            containerRectTransform.localScale = config.containerScale;
-            
-            // 5. UGUI 레이아웃 시스템 강제 업데이트 (Content Size Fitter 사용 시 중요)
             LayoutRebuilder.ForceRebuildLayoutImmediate(containerRectTransform);
         }
     }
@@ -408,5 +434,77 @@ public class RewardLayoutController : MonoBehaviour
     {
         // 보상 개수가 정확히 일치하는 설정을 찾습니다.
         return layoutConfigs.Find(config => config.rewardCount == totalCount);
+    }
+    
+    /// <summary>
+    /// Grid 내 최대 아이템 개수에 맞는 스케일 설정을 찾습니다.
+    /// </summary>
+    private ScaleConfig GetScaleConfig(int maxItemsInGrid)
+    {
+        // 정확히 일치하는 설정을 먼저 찾습니다.
+        ScaleConfig exactMatch = scaleConfigs.Find(config => config.maxItemsInGrid == maxItemsInGrid);
+        if (exactMatch != null)
+        {
+            return exactMatch;
+        }
+        
+        // 정확한 매치가 없으면 가장 가까운 작은 값의 설정을 찾습니다.
+        ScaleConfig bestMatch = null;
+        int bestDifference = int.MaxValue;
+        
+        foreach (var config in scaleConfigs)
+        {
+            if (config.maxItemsInGrid <= maxItemsInGrid)
+            {
+                int difference = maxItemsInGrid - config.maxItemsInGrid;
+                if (difference < bestDifference)
+                {
+                    bestDifference = difference;
+                    bestMatch = config;
+                }
+            }
+        }
+        
+        return bestMatch;
+    }
+    
+    /// <summary>
+    /// Grid 내 최대 아이템 개수에 따라 Uniform Scale을 적용합니다.
+    /// </summary>
+    private void ApplyScaleConfig(int maxItemsInGrid)
+    {
+        try
+        {
+            if (containerRectTransform == null)
+            {
+                Debug.LogError("RewardLayoutController: containerRectTransform이 null입니다!");
+                return;
+            }
+            
+            ScaleConfig scaleConfig = GetScaleConfig(maxItemsInGrid);
+            
+            if (scaleConfig != null)
+            {
+                // Uniform Scale 적용 (XYZ 모두 동일한 값)
+                Vector3 uniformScale = Vector3.one * scaleConfig.containerScale;
+                containerRectTransform.localScale = uniformScale;
+                Debug.Log($"RewardLayoutController: Grid 내 최대 아이템 개수 {maxItemsInGrid}에 대해 Uniform Scale {scaleConfig.containerScale} 적용");
+            }
+            else
+            {
+                // 스케일 설정이 없으면 기본 스케일 사용
+                containerRectTransform.localScale = Vector3.one;
+                Debug.LogWarning($"RewardLayoutController: Grid 내 최대 아이템 개수 {maxItemsInGrid}에 맞는 스케일 설정이 없습니다. 기본 스케일(1.0)을 사용합니다.");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"RewardLayoutController: 스케일 적용 중 오류 발생: {e.Message}");
+            // 오류 발생 시 기본 스케일로 설정
+            if (containerRectTransform != null)
+            {
+                containerRectTransform.localScale = Vector3.one;
+            }
+        }
     }
 }
