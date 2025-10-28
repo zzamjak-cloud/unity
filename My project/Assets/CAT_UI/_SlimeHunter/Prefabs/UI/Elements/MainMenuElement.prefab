@@ -120,7 +120,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8694791457903866012}
+  - component: {fileID: 8083691929111718843}
   - component: {fileID: 5884291068002417363}
+  - component: {fileID: 4964748874776205049}
   m_Layer: 5
   m_Name: MainMenuElement
   m_TagString: Untagged
@@ -150,6 +152,36 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 182, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &8083691929111718843
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5745794105967363310}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
 --- !u!114 &5884291068002417363
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -233,23 +265,7 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  imageColorInfos:
-  - targetImage: {fileID: 0}
-    stateColors:
-    - state: 0
-      color: {r: 0.6097263, g: 0.9622642, b: 0.41304737, a: 1}
-    - state: 1
-      color: {r: 0.7316716, g: 1, b: 0.49565688, a: 1}
-    - state: 2
-      color: {r: 0.6415094, g: 0.6415094, b: 0.6415094, a: 1}
-  - targetImage: {fileID: 0}
-    stateColors:
-    - state: 0
-      color: {r: 0.41596457, g: 0.8301887, b: 0.36418653, a: 1}
-    - state: 1
-      color: {r: 0.49915752, g: 0.9962265, b: 0.43702385, a: 1}
-    - state: 2
-      color: {r: 0.47058824, g: 0.47058824, b: 0.47058824, a: 1}
+  imageColorInfos: []
   textColorInfos:
   - targetText: {fileID: 0}
     stateColors:
@@ -291,6 +307,14 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   buttonId: 
+--- !u!222 &4964748874776205049
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5745794105967363310}
+  m_CullTransparentMesh: 1
 --- !u!1 &5759238842655300448
 GameObject:
   m_ObjectHideFlags: 0
