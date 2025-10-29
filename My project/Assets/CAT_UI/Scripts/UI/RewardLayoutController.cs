@@ -199,7 +199,7 @@ public class RewardLayoutController : MonoBehaviour
             }
             
             // 런타임에서도 Test Reward Count 제한
-            int maxPrefabCount = GetTotalPrefabCountRuntime();
+            int maxPrefabCount = GetTotalPrefabCount();
             if (testRewardCount > maxPrefabCount)
             {
                 testRewardCount = maxPrefabCount;
@@ -276,68 +276,17 @@ public class RewardLayoutController : MonoBehaviour
     }
     
     /// <summary>
-    /// 모든 Grid에 등록된 총 프리팹 개수를 계산합니다 (런타임용).
-    /// </summary>
-    private int GetTotalPrefabCountRuntime()
-    {
-        if (gridPrefabData == null)
-            return 0;
-        
-        int totalCount = 0;
-        foreach (var gridData in gridPrefabData)
-        {
-            if (gridData?.rewardItems != null)
-            {
-                totalCount += GetValidPrefabCount(gridData.rewardItems);
-            }
-        }
-        
-        return totalCount;
-    }
-    
-    /// <summary>
     /// LayoutConfig 리스트의 각 항목의 rewardCount를 Element Index + 1로 자동 설정합니다.
     /// Unity 직렬화 문제로 인한 값 변경을 방지하고 자동으로 올바른 값을 유지합니다.
     /// </summary>
     private void AutoSyncRewardCounts()
     {
-        if (layoutConfigs == null)
-            return;
-        
-        bool needsSync = false;
-        
-        // 리스트 크기가 변경되었거나, 각 항목의 rewardCount가 올바르지 않은 경우 동기화
-        if (previousLayoutConfigsCount != layoutConfigs.Count)
-        {
-            needsSync = true;
-        }
-        else
-        {
-            // 리스트 크기가 동일한 경우에도 각 항목의 값이 올바른지 확인
-            for (int i = 0; i < layoutConfigs.Count; i++)
-            {
-                if (layoutConfigs[i] != null && layoutConfigs[i].rewardCount != (i + 1))
-                {
-                    needsSync = true;
-                    break;
-                }
-            }
-        }
-        
-        if (needsSync)
-        {
-            // 각 항목의 rewardCount를 Element Index + 1로 설정
-            for (int i = 0; i < layoutConfigs.Count; i++)
-            {
-                if (layoutConfigs[i] != null)
-                {
-                    layoutConfigs[i].rewardCount = i + 1;
-                }
-            }
-            
-            previousLayoutConfigsCount = layoutConfigs.Count;
-            UnityEditor.EditorUtility.SetDirty(this);
-        }
+        AutoSyncConfigValues(
+            layoutConfigs, 
+            ref previousLayoutConfigsCount, 
+            (config, index) => config.rewardCount != (index + 1),
+            (config, index) => config.rewardCount = index + 1
+        );
     }
     
     /// <summary>
@@ -346,22 +295,35 @@ public class RewardLayoutController : MonoBehaviour
     /// </summary>
     private void AutoSyncScaleConfigs()
     {
-        if (scaleConfigs == null)
+        AutoSyncConfigValues(
+            scaleConfigs, 
+            ref previousScaleConfigsCount, 
+            (config, index) => config.maxItemsInGrid != (index + 1),
+            (config, index) => config.maxItemsInGrid = index + 1
+        );
+    }
+    
+    /// <summary>
+    /// Config 리스트의 각 항목을 Element Index + 1로 자동 설정하는 공통 메서드입니다.
+    /// </summary>
+    private void AutoSyncConfigValues<T>(List<T> configList, ref int previousCount, System.Func<T, int, bool> needsUpdate, System.Action<T, int> setValue) where T : class
+    {
+        if (configList == null)
             return;
         
         bool needsSync = false;
         
-        // 리스트 크기가 변경되었거나, 각 항목의 maxItemsInGrid가 올바르지 않은 경우 동기화
-        if (previousScaleConfigsCount != scaleConfigs.Count)
+        // 리스트 크기가 변경되었거나, 각 항목의 값이 올바르지 않은 경우 동기화
+        if (previousCount != configList.Count)
         {
             needsSync = true;
         }
         else
         {
             // 리스트 크기가 동일한 경우에도 각 항목의 값이 올바른지 확인
-            for (int i = 0; i < scaleConfigs.Count; i++)
+            for (int i = 0; i < configList.Count; i++)
             {
-                if (scaleConfigs[i] != null && scaleConfigs[i].maxItemsInGrid != (i + 1))
+                if (configList[i] != null && needsUpdate(configList[i], i))
                 {
                     needsSync = true;
                     break;
@@ -371,16 +333,16 @@ public class RewardLayoutController : MonoBehaviour
         
         if (needsSync)
         {
-            // 각 항목의 maxItemsInGrid를 Element Index + 1로 설정
-            for (int i = 0; i < scaleConfigs.Count; i++)
+            // 각 항목의 값을 Element Index + 1로 설정
+            for (int i = 0; i < configList.Count; i++)
             {
-                if (scaleConfigs[i] != null)
+                if (configList[i] != null)
                 {
-                    scaleConfigs[i].maxItemsInGrid = i + 1;
+                    setValue(configList[i], i);
                 }
             }
             
-            previousScaleConfigsCount = scaleConfigs.Count;
+            previousCount = configList.Count;
             UnityEditor.EditorUtility.SetDirty(this);
         }
     }
@@ -396,8 +358,8 @@ public class RewardLayoutController : MonoBehaviour
     private void InitializeComponent()
     {
         SafeExecute(() =>
-    {
-        containerRectTransform = GetComponent<RectTransform>();
+        {
+            containerRectTransform = GetComponent<RectTransform>();
 
             if (containerRectTransform == null)
             {
@@ -427,13 +389,13 @@ public class RewardLayoutController : MonoBehaviour
         {
             if (grids != null)
             {
-        foreach (var grid in grids)
-        {
-            if (grid != null)
-            {
-                grid.gameObject.SetActive(false);
-            }
-        }
+                foreach (var grid in grids)
+                {
+                    if (grid != null)
+                    {
+                        grid.gameObject.SetActive(false);
+                    }
+                }
             }
         }, "Grid 초기화");
     }
@@ -792,30 +754,6 @@ public class RewardLayoutController : MonoBehaviour
         LayoutRebuilder.ForceRebuildLayoutImmediate(targetGrid.GetComponent<RectTransform>());
         
         LogInfo($"Grid {gridIndex} 활성화 완료 (아이템 {itemsToLoad}개 준비됨)");
-    }
-    
-    /// <summary>
-    /// Grid를 설정하고 아이템을 준비합니다. (즉시 활성화용)
-    /// </summary>
-    private void SetupGrid(GridLayoutGroup targetGrid, int gridIndex, int itemsToLoad)
-    {
-        targetGrid.gameObject.SetActive(true);
-        
-        if (useGridTransformReset)
-        {
-            ResetGridTransform(targetGrid);
-        }
-        
-        if (useSequentialActivation)
-        {
-            PrepareGridForSequentialActivation(gridIndex, itemsToLoad);
-        }
-        else
-        {
-            ActivatePreplacedItems(gridIndex, itemsToLoad);
-        }
-        
-        LayoutRebuilder.ForceRebuildLayoutImmediate(targetGrid.GetComponent<RectTransform>());
     }
     
     /// <summary>
@@ -1179,14 +1117,6 @@ public class RewardLayoutController : MonoBehaviour
         }
         
         return gridData;
-    }
-    
-    /// <summary>
-    /// Grid 프리팹 데이터가 유효한지 검증합니다.
-    /// </summary>
-    private bool ValidateGridPrefabData(int gridIndex)
-    {
-        return GetGridData(gridIndex) != null;
     }
     
     /// <summary>
