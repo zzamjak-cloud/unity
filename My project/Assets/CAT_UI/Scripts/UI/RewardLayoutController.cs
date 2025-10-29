@@ -13,8 +13,7 @@ public class RewardLayoutController : MonoBehaviour
     #region Inspector Fields
     
     [Header("테스트 설정")]
-    [Tooltip("테스트를 위한 보상 개수 (런타임에 변경하여 즉시 테스트 가능)")]
-    [Range(0, 20)]
+    [Tooltip("테스트를 위한 보상 개수 (런타임에 변경하여 즉시 테스트 가능, 최대값은 등록된 프리팹 개수로 자동 제한됨)")]
     [SerializeField] private int testRewardCount = 0;
 
     [Header("Grid 및 프리팹 설정")]
@@ -54,6 +53,9 @@ public class RewardLayoutController : MonoBehaviour
     
     [Tooltip("Grid Transform 초기화 사용 여부")]
     [SerializeField] private bool useGridTransformReset = true;
+    
+    [Tooltip("Grid Constraint Count 자동 설정 사용 여부 (각 Grid의 등록된 프리팹 개수로 자동 설정)")]
+    [SerializeField] private bool autoSetupConstraintCount = true;
 
     #endregion
 
@@ -69,22 +71,58 @@ public class RewardLayoutController : MonoBehaviour
     [Serializable]
     public class LayoutConfig
     {
-        [Tooltip("이 설정이 적용될 총 보상 개수")]
+        [Tooltip("이 설정이 적용될 총 보상 개수 (자동으로 Element Index + 1로 설정됨)")]
         public int rewardCount;
         
         [Tooltip("각 Grid에 들어갈 아이템 개수 목록")]
-        public List<int> itemsPerGrid; 
+        public List<int> itemsPerGrid = new List<int>();
+        
+        /// <summary>
+        /// 기본 생성자 - Unity 인스펙터에서 리스트 항목 추가 시 값이 변경되는 문제를 방지합니다.
+        /// </summary>
+        public LayoutConfig()
+        {
+            rewardCount = 0;
+            itemsPerGrid = new List<int>();
+        }
+        
+        /// <summary>
+        /// 매개변수가 있는 생성자 - 편의를 위한 생성자입니다.
+        /// </summary>
+        public LayoutConfig(int count, List<int> items)
+        {
+            rewardCount = count;
+            itemsPerGrid = items != null ? new List<int>(items) : new List<int>();
+        }
     }
     
     [Serializable]
     public class ScaleConfig
     {
-        [Tooltip("이 스케일이 적용될 Grid 내 최대 아이템 개수")]
+        [Tooltip("이 스케일이 적용될 Grid 내 최대 아이템 개수 (자동으로 Element Index + 1로 설정됨)")]
         public int maxItemsInGrid;
         
         [Tooltip("Reward Container의 Uniform Scale 값")]
         [Range(0.1f, 2.0f)]
         public float containerScale = 1.0f;
+        
+        /// <summary>
+        /// 기본 생성자 - Unity 인스펙터에서 리스트 항목 추가 시 값이 변경되는 문제를 방지합니다.
+        /// </summary>
+        public ScaleConfig()
+        {
+            maxItemsInGrid = 0;
+            containerScale = 1.0f;
+        }
+        
+        /// <summary>
+        /// 매개변수가 있는 생성자 - 편의를 위한 생성자입니다.
+        /// </summary>
+        public ScaleConfig(int maxItems, float scale)
+        {
+            maxItemsInGrid = maxItems;
+            containerScale = scale;
+        }
     }
 
     #endregion
@@ -112,6 +150,12 @@ public class RewardLayoutController : MonoBehaviour
     // 캐싱 시스템
     private Dictionary<int, LayoutConfig> layoutConfigCache = new Dictionary<int, LayoutConfig>();
     private Dictionary<int, ScaleConfig> scaleConfigCache = new Dictionary<int, ScaleConfig>();
+    
+    // 직렬화 값 동기화를 위한 상태 저장 (에디터 전용)
+    #if UNITY_EDITOR
+    private int previousLayoutConfigsCount = 0;
+    private int previousScaleConfigsCount = 0;
+    #endif
 
     #endregion
 
@@ -154,10 +198,193 @@ public class RewardLayoutController : MonoBehaviour
                 return;
             }
             
+            // 런타임에서도 Test Reward Count 제한
+            int maxPrefabCount = GetTotalPrefabCountRuntime();
+            if (testRewardCount > maxPrefabCount)
+            {
+                testRewardCount = maxPrefabCount;
+                LogWarning($"Test Reward Count가 최대값({maxPrefabCount})을 초과하여 제한되었습니다.");
+            }
+            
             lastTestCount = testRewardCount;
             DisplayRewards(CreateTestRewards(testRewardCount));
         }
     }
+    
+    #if UNITY_EDITOR
+    /// <summary>
+    /// 에디터에서 값이 변경될 때 호출됩니다. Reward Count와 Max Items In Grid를 Element Index + 1로 자동 동기화하고, Test Reward Count를 제한합니다.
+    /// </summary>
+    void OnValidate()
+    {
+        if (!UnityEditor.EditorApplication.isPlaying)
+        {
+            if (layoutConfigs != null)
+            {
+                AutoSyncRewardCounts();
+            }
+            
+            if (scaleConfigs != null)
+            {
+                AutoSyncScaleConfigs();
+            }
+            
+            ValidateTestRewardCount();
+        }
+    }
+    
+    /// <summary>
+    /// Test Reward Count를 등록된 프리팹 개수로 제한합니다.
+    /// </summary>
+    private void ValidateTestRewardCount()
+    {
+        if (gridPrefabData == null)
+            return;
+        
+        int maxPrefabCount = GetTotalPrefabCount();
+        
+        if (testRewardCount > maxPrefabCount)
+        {
+            testRewardCount = maxPrefabCount;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+        else if (testRewardCount < 0)
+        {
+            testRewardCount = 0;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+    }
+    
+    /// <summary>
+    /// 모든 Grid에 등록된 총 프리팹 개수를 계산합니다.
+    /// </summary>
+    private int GetTotalPrefabCount()
+    {
+        if (gridPrefabData == null)
+            return 0;
+        
+        int totalCount = 0;
+        foreach (var gridData in gridPrefabData)
+        {
+            if (gridData?.rewardItems != null)
+            {
+                totalCount += GetValidPrefabCount(gridData.rewardItems);
+            }
+        }
+        
+        return totalCount;
+    }
+    
+    /// <summary>
+    /// 모든 Grid에 등록된 총 프리팹 개수를 계산합니다 (런타임용).
+    /// </summary>
+    private int GetTotalPrefabCountRuntime()
+    {
+        if (gridPrefabData == null)
+            return 0;
+        
+        int totalCount = 0;
+        foreach (var gridData in gridPrefabData)
+        {
+            if (gridData?.rewardItems != null)
+            {
+                totalCount += GetValidPrefabCount(gridData.rewardItems);
+            }
+        }
+        
+        return totalCount;
+    }
+    
+    /// <summary>
+    /// LayoutConfig 리스트의 각 항목의 rewardCount를 Element Index + 1로 자동 설정합니다.
+    /// Unity 직렬화 문제로 인한 값 변경을 방지하고 자동으로 올바른 값을 유지합니다.
+    /// </summary>
+    private void AutoSyncRewardCounts()
+    {
+        if (layoutConfigs == null)
+            return;
+        
+        bool needsSync = false;
+        
+        // 리스트 크기가 변경되었거나, 각 항목의 rewardCount가 올바르지 않은 경우 동기화
+        if (previousLayoutConfigsCount != layoutConfigs.Count)
+        {
+            needsSync = true;
+        }
+        else
+        {
+            // 리스트 크기가 동일한 경우에도 각 항목의 값이 올바른지 확인
+            for (int i = 0; i < layoutConfigs.Count; i++)
+            {
+                if (layoutConfigs[i] != null && layoutConfigs[i].rewardCount != (i + 1))
+                {
+                    needsSync = true;
+                    break;
+                }
+            }
+        }
+        
+        if (needsSync)
+        {
+            // 각 항목의 rewardCount를 Element Index + 1로 설정
+            for (int i = 0; i < layoutConfigs.Count; i++)
+            {
+                if (layoutConfigs[i] != null)
+                {
+                    layoutConfigs[i].rewardCount = i + 1;
+                }
+            }
+            
+            previousLayoutConfigsCount = layoutConfigs.Count;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+    }
+    
+    /// <summary>
+    /// ScaleConfig 리스트의 각 항목의 maxItemsInGrid를 Element Index + 1로 자동 설정합니다.
+    /// Unity 직렬화 문제로 인한 값 변경을 방지하고 자동으로 올바른 값을 유지합니다.
+    /// </summary>
+    private void AutoSyncScaleConfigs()
+    {
+        if (scaleConfigs == null)
+            return;
+        
+        bool needsSync = false;
+        
+        // 리스트 크기가 변경되었거나, 각 항목의 maxItemsInGrid가 올바르지 않은 경우 동기화
+        if (previousScaleConfigsCount != scaleConfigs.Count)
+        {
+            needsSync = true;
+        }
+        else
+        {
+            // 리스트 크기가 동일한 경우에도 각 항목의 값이 올바른지 확인
+            for (int i = 0; i < scaleConfigs.Count; i++)
+            {
+                if (scaleConfigs[i] != null && scaleConfigs[i].maxItemsInGrid != (i + 1))
+                {
+                    needsSync = true;
+                    break;
+                }
+            }
+        }
+        
+        if (needsSync)
+        {
+            // 각 항목의 maxItemsInGrid를 Element Index + 1로 설정
+            for (int i = 0; i < scaleConfigs.Count; i++)
+            {
+                if (scaleConfigs[i] != null)
+                {
+                    scaleConfigs[i].maxItemsInGrid = i + 1;
+                }
+            }
+            
+            previousScaleConfigsCount = scaleConfigs.Count;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+    }
+    #endif
 
     #endregion
 
@@ -181,6 +408,11 @@ public class RewardLayoutController : MonoBehaviour
             InitializeGrids();
             InitializeCache();
             InitializePreplacedPrefabs();
+            
+            if (autoSetupConstraintCount)
+            {
+                SetupGridConstraintCounts();
+            }
             
             isInitialized = true;
         }, "컴포넌트 초기화");
@@ -321,6 +553,38 @@ public class RewardLayoutController : MonoBehaviour
         lastRewardsData = null;
         hasStoredRewards = false;
     }
+    
+    /// <summary>
+    /// 모든 Grid의 Constraint Count를 등록된 프리팹 개수로 자동 설정합니다.
+    /// 에디터에서 수동으로 호출할 수 있습니다.
+    /// </summary>
+    public void SetupGridConstraintCounts()
+    {
+        SafeExecute(() =>
+        {
+            if (grids == null || gridPrefabData == null)
+            {
+                LogWarning("Grid 또는 GridPrefabData가 설정되지 않았습니다.");
+                return;
+            }
+            
+            int setupCount = 0;
+            for (int i = 0; i < grids.Count && i < gridPrefabData.Count; i++)
+            {
+                if (grids[i] != null && gridPrefabData[i] != null)
+                {
+                    int prefabCount = GetValidPrefabCount(gridPrefabData[i].rewardItems);
+                    if (prefabCount > 0)
+                    {
+                        SetupSingleGridConstraintCount(grids[i], prefabCount, i);
+                        setupCount++;
+                    }
+                }
+            }
+            
+            LogInfo($"총 {setupCount}개의 Grid Constraint Count를 설정했습니다.");
+        }, "Grid Constraint Count 설정");
+    }
 
     #endregion
 
@@ -446,6 +710,69 @@ public class RewardLayoutController : MonoBehaviour
     #endregion
 
     #region Grid and Item Management
+    
+    /// <summary>
+    /// 단일 Grid의 Constraint Count를 설정합니다.
+    /// Grid의 startAxis에 따라 적절한 Constraint 타입을 선택하고, 프리팹 개수를 Constraint Count로 설정합니다.
+    /// </summary>
+    private void SetupSingleGridConstraintCount(GridLayoutGroup grid, int prefabCount, int gridIndex)
+    {
+        if (grid == null)
+        {
+            LogError($"Grid {gridIndex}가 null입니다.");
+            return;
+        }
+        
+        try
+        {
+            // Grid의 startAxis에 따라 Constraint 타입 결정:
+            // - Horizontal (가로 배치): FixedColumnCount 사용 → 한 행에 들어갈 열 개수 = 프리팹 개수
+            // - Vertical (세로 배치): FixedRowCount 사용 → 한 열에 들어갈 행 개수 = 프리팹 개수
+            if (grid.startAxis == GridLayoutGroup.Axis.Horizontal)
+            {
+                // 가로 배치: 한 행에 들어갈 최대 열 개수를 프리팹 개수로 설정
+                grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                grid.constraintCount = prefabCount;
+            }
+            else if (grid.startAxis == GridLayoutGroup.Axis.Vertical)
+            {
+                // 세로 배치: 한 열에 들어갈 최대 행 개수를 프리팹 개수로 설정
+                grid.constraint = GridLayoutGroup.Constraint.FixedRowCount;
+                grid.constraintCount = prefabCount;
+            }
+            else
+            {
+                // 기본값: Flexible로 설정되어 있으면 가로 배치로 가정
+                grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                grid.constraintCount = prefabCount;
+            }
+            
+            LogInfo($"Grid {gridIndex} Constraint Count 설정 완료 - 프리팹 개수: {prefabCount}, Constraint: {grid.constraint}, ConstraintCount: {grid.constraintCount}");
+        }
+        catch (System.Exception e)
+        {
+            LogError($"Grid {gridIndex} Constraint Count 설정 중 오류 발생: {e.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 리스트에서 유효한 프리팹 개수를 계산합니다 (null이 아닌 항목만 카운트).
+    /// </summary>
+    private int GetValidPrefabCount(List<GameObject> prefabs)
+    {
+        if (prefabs == null)
+            return 0;
+        
+        int count = 0;
+        foreach (var prefab in prefabs)
+        {
+            if (prefab != null)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
     
     /// <summary>
     /// Grid만 활성화하고 아이템은 비활성화 상태로 준비합니다. (레이아웃 안정화용)
