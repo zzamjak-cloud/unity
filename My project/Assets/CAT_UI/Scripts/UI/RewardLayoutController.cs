@@ -15,6 +15,9 @@ public class RewardLayoutController : MonoBehaviour
     [Header("테스트 설정")]
     [Tooltip("테스트를 위한 보상 개수 (런타임에 변경하여 즉시 테스트 가능, 최대값은 등록된 프리팹 개수로 자동 제한됨)")]
     [SerializeField] private int testRewardCount = 0;
+    
+    [Tooltip("true: 일반 Display 상황 (Display Trigger 사용), false: 보상 지급 상황 (Appear Trigger 사용)")]
+    [SerializeField] private bool isDisplay = false;
 
     [Header("Grid 및 프리팹 설정")]
     [Tooltip("Reward Container의 자식 Grid Layout Group들")]
@@ -137,6 +140,10 @@ public class RewardLayoutController : MonoBehaviour
     private const int FRAME_DISTRIBUTION_THRESHOLD = 10;
     private const float MIN_INTERVAL_TIME = 0.05f;
     
+    // Animator State 이름 상수 (None 상태를 거치지 않고 직접 전환하기 위함)
+    private const string ANIMATOR_STATE_DISPLAY = "Display";
+    private const string ANIMATOR_STATE_APPEAR = "Appear";
+    
     private RectTransform containerRectTransform;
     private int lastTestCount = -1;
     private bool isInitialized = false;
@@ -150,6 +157,13 @@ public class RewardLayoutController : MonoBehaviour
     // 캐싱 시스템
     private Dictionary<int, LayoutConfig> layoutConfigCache = new Dictionary<int, LayoutConfig>();
     private Dictionary<int, ScaleConfig> scaleConfigCache = new Dictionary<int, ScaleConfig>();
+    
+    // 컴포넌트 캐싱 시스템 (성능 최적화)
+    private Dictionary<GameObject, Animator> animatorCache = new Dictionary<GameObject, Animator>();
+    private Dictionary<GameObject, RectTransform> rectTransformCache = new Dictionary<GameObject, RectTransform>();
+    
+    // 코루틴 관리 (메모리 누수 방지)
+    private List<Coroutine> activeAnimatorDisableCoroutines = new List<Coroutine>();
     
     // 직렬화 값 동기화를 위한 상태 저장 (에디터 전용)
     #if UNITY_EDITOR
@@ -170,7 +184,23 @@ public class RewardLayoutController : MonoBehaviour
     {
         if (hasStoredRewards && lastRewardsData != null)
         {
-            StartCoroutine(RestoreDisplayAfterEnable());
+            // isDisplay = true이고 useSequentialActivation = false일 때는 즉시 표시 (상점 표시용)
+            if (isDisplay && !useSequentialActivation)
+            {
+                // 프레임 대기 없이 즉시 표시
+                if (lastRewardsData != null)
+                {
+                    LogInfo("저장된 보상 데이터로 표시를 복원합니다 (즉시 표시).");
+                    DisplayRewards(lastRewardsData);
+                    // 캔버스를 강제로 업데이트하여 팝업과 함께 아이템이 즉시 표시되도록 함
+                    Canvas.ForceUpdateCanvases();
+                }
+            }
+            else
+            {
+                // 순차 활성화를 사용할 때는 한 프레임 대기
+                StartCoroutine(RestoreDisplayAfterEnable());
+            }
         }
     }
     
@@ -186,6 +216,10 @@ public class RewardLayoutController : MonoBehaviour
     
     void Update()
     {
+        // 테스트용이 아니면 Update를 비활성화하여 성능 최적화
+        if (testRewardCount == 0)
+            return;
+            
         if (!isInitialized || isUpdatingLayout)
             return;
         
@@ -493,6 +527,14 @@ public class RewardLayoutController : MonoBehaviour
         
         int totalRewards = rewards.Count;
 
+        // isDisplay = true이고 useSequentialActivation = false일 때는 즉시 표시 (상점 표시용)
+        // 프레임 분산 없이 즉시 처리하여 팝업 활성화 시 RewardItem도 함께 표시되도록 함
+        if (isDisplay && !useSequentialActivation)
+        {
+            DisplayRewardsImmediate(rewards);
+            return;
+        }
+
         if (useFrameDistribution && totalRewards > FRAME_DISTRIBUTION_THRESHOLD)
         {
             if (layoutUpdateCoroutine != null)
@@ -562,29 +604,89 @@ public class RewardLayoutController : MonoBehaviour
         
         LogInfo($"레이아웃 처리 시작 - 총 {totalRewards}개 보상");
         
-        // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
-        for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
+        // isDisplay = true이고 useSequentialActivation = false일 때는 최적화된 즉시 활성화
+        if (isDisplay && !useSequentialActivation)
         {
-            if (i >= grids.Count)
+            // 모든 Grid와 아이템을 먼저 활성화한 후 마지막에 한번만 레이아웃 재계산
+            for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
             {
-                LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
-                break;
-            }
-
-            int itemsToLoad = layoutConfig.itemsPerGrid[i];
-            GridLayoutGroup targetGrid = grids[i];
-
-            if (targetGrid != null)
-            {
-                if (itemsToLoad > 0)
+                if (i >= grids.Count)
                 {
-                    // Grid만 활성화하고 아이템은 비활성화 상태로 준비
-                    ActivateGridOnly(targetGrid, i, itemsToLoad);
-                    maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
+                    LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
+                    break;
                 }
-                else
+
+                int itemsToLoad = layoutConfig.itemsPerGrid[i];
+                GridLayoutGroup targetGrid = grids[i];
+
+                if (targetGrid != null)
                 {
-                    targetGrid.gameObject.SetActive(false);
+                    if (itemsToLoad > 0)
+                    {
+                        // Grid와 아이템을 즉시 활성화 (레이아웃 재계산은 나중에)
+                        targetGrid.gameObject.SetActive(true);
+                        
+                        if (useGridTransformReset)
+                        {
+                            ResetGridTransform(targetGrid);
+                        }
+                        
+                        // 아이템들을 즉시 활성화 (레이아웃 재계산 없이)
+                        SetGridItemsActive(gridIndex: i, active: true, count: itemsToLoad, useDisplayTrigger: isDisplay);
+                        
+                        maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
+                    }
+                    else
+                    {
+                        targetGrid.gameObject.SetActive(false);
+                    }
+                }
+            }
+            
+            // 모든 Grid와 아이템 활성화 완료 후 한번만 레이아웃 재계산
+            for (int i = 0; i < layoutConfig.itemsPerGrid.Count && i < grids.Count; i++)
+            {
+                if (layoutConfig.itemsPerGrid[i] > 0 && grids[i] != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(grids[i].GetComponent<RectTransform>());
+                }
+            }
+        }
+        else
+        {
+            // 기존 로직 (순차 활성화용)
+            // 1단계: 모든 Grid를 한번에 활성화 (레이아웃 안정화)
+            for (int i = 0; i < layoutConfig.itemsPerGrid.Count; i++)
+            {
+                if (i >= grids.Count)
+                {
+                    LogError($"Grid {i}가 존재하지 않아 아이템 로드를 중단합니다.");
+                    break;
+                }
+
+                int itemsToLoad = layoutConfig.itemsPerGrid[i];
+                GridLayoutGroup targetGrid = grids[i];
+
+                if (targetGrid != null)
+                {
+                    if (itemsToLoad > 0)
+                    {
+                        if (useSequentialActivation)
+                        {
+                            // Grid만 활성화하고 아이템은 비활성화 상태로 준비 (순차 활성화용)
+                            ActivateGridOnly(targetGrid, i, itemsToLoad);
+                        }
+                        else
+                        {
+                            // 순차 활성화를 사용하지 않으면 즉시 활성화 (상점 표시용)
+                            ActivateGridImmediately(targetGrid, i, itemsToLoad);
+                        }
+                        maxItemsInAnyGrid = Mathf.Max(maxItemsInAnyGrid, itemsToLoad);
+                    }
+                    else
+                    {
+                        targetGrid.gameObject.SetActive(false);
+                    }
                 }
             }
         }
@@ -593,6 +695,16 @@ public class RewardLayoutController : MonoBehaviour
         
         // 2단계: 스케일 적용 (모든 Grid가 활성화된 후)
         ApplyScaleConfig(maxItemsInAnyGrid);
+        
+        // isDisplay = true이고 useSequentialActivation = false일 때는 캔버스를 강제 업데이트하여 즉시 표시
+        if (isDisplay && !useSequentialActivation)
+        {
+            Canvas.ForceUpdateCanvases();
+            if (containerRectTransform != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(containerRectTransform);
+            }
+        }
         
         return maxItemsInAnyGrid;
     }
@@ -620,12 +732,16 @@ public class RewardLayoutController : MonoBehaviour
         // 공통 레이아웃 처리 로직 실행
         ProcessRewardsLayout(rewards, layoutConfig);
         
-        // 3단계: RewardItem만 순차 활성화
+        // 3단계: RewardItem 활성화 처리
         if (useSequentialActivation)
         {
+            // 순차 활성화 (보상 지급 연출용)
+            // ProcessRewardsLayout에서 이미 아이템을 비활성화 상태로 준비했으므로 순차 활성화 진행
             LogInfo("RewardItem 순차 활성화 시작");
             StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
         }
+        // useSequentialActivation = false일 때는 ProcessRewardsLayout에서 이미 ActivateGridImmediately로 
+        // 아이템을 활성화했으므로 추가 작업 불필요
     }
 
     /// <summary>
@@ -655,12 +771,16 @@ public class RewardLayoutController : MonoBehaviour
             // 공통 레이아웃 처리 로직 실행
             ProcessRewardsLayout(rewards, layoutConfig);
             
-            // 3단계: RewardItem만 순차 활성화
+            // 3단계: RewardItem 활성화 처리
             if (useSequentialActivation)
             {
+                // 순차 활성화 (보상 지급 연출용)
+                // ProcessRewardsLayout에서 이미 아이템을 비활성화 상태로 준비했으므로 순차 활성화 진행
                 LogInfo("RewardItem 순차 활성화 시작");
                 yield return StartCoroutine(ActivateAllItemsSequentially(layoutConfig));
             }
+            // useSequentialActivation = false일 때는 ProcessRewardsLayout에서 이미 ActivateGridImmediately로 
+            // 아이템을 활성화했으므로 추가 작업 불필요
         }
         finally
         {
@@ -737,6 +857,27 @@ public class RewardLayoutController : MonoBehaviour
     }
     
     /// <summary>
+    /// Grid를 즉시 활성화하고 아이템도 활성화합니다. (순차 활성화 없이 Display용)
+    /// </summary>
+    private void ActivateGridImmediately(GridLayoutGroup targetGrid, int gridIndex, int itemsToLoad)
+    {
+        targetGrid.gameObject.SetActive(true);
+        
+        if (useGridTransformReset)
+        {
+            ResetGridTransform(targetGrid);
+        }
+        
+        // 아이템들을 즉시 활성화 (순차 활성화 없이)
+        // isDisplay = true일 때 Display Trigger 사용
+        SetGridItemsActive(gridIndex, true, itemsToLoad, isDisplay);
+        
+        LayoutRebuilder.ForceRebuildLayoutImmediate(targetGrid.GetComponent<RectTransform>());
+        
+        LogInfo($"Grid {gridIndex} 즉시 활성화 완료 (아이템 {itemsToLoad}개, 연출 없음)");
+    }
+    
+    /// <summary>
     /// Grid만 활성화하고 아이템은 비활성화 상태로 준비합니다. (레이아웃 안정화용)
     /// </summary>
     private void ActivateGridOnly(GridLayoutGroup targetGrid, int gridIndex, int itemsToLoad)
@@ -759,7 +900,7 @@ public class RewardLayoutController : MonoBehaviour
     /// <summary>
     /// 아이템 리스트를 활성화/비활성화합니다.
     /// </summary>
-    private void SetItemsActive(List<GameObject> items, bool active)
+    private void SetItemsActive(List<GameObject> items, bool active, bool useDisplayTrigger = false)
     {
         if (items == null) return;
         
@@ -771,6 +912,7 @@ public class RewardLayoutController : MonoBehaviour
                 if (active)
                 {
                     ValidateAndFixItemTransform(item);
+                    SetRewardItemAnimatorTrigger(item, useDisplayTrigger);
                 }
             }
         }
@@ -779,7 +921,7 @@ public class RewardLayoutController : MonoBehaviour
     /// <summary>
     /// Grid의 모든 아이템을 활성화/비활성화합니다.
     /// </summary>
-    private void SetGridItemsActive(int gridIndex, bool active, int count = -1)
+    private void SetGridItemsActive(int gridIndex, bool active, int count = -1, bool useDisplayTrigger = false)
     {
         var gridData = GetGridData(gridIndex);
         if (gridData == null) return;
@@ -789,10 +931,16 @@ public class RewardLayoutController : MonoBehaviour
         {
             if (item != null)
             {
-                item.SetActive(active);
                 if (active)
                 {
+                    item.SetActive(true);
                     ValidateAndFixItemTransform(item);
+                    // 활성화 후 즉시 Animator Trigger 설정 및 상태 전환 확정
+                    SetRewardItemAnimatorTrigger(item, useDisplayTrigger);
+                }
+                else
+                {
+                    item.SetActive(false);
                 }
                 processedCount++;
                 
@@ -863,8 +1011,11 @@ public class RewardLayoutController : MonoBehaviour
             {
                 itemsToActivate[i].SetActive(true);
                 ValidateAndFixItemTransform(itemsToActivate[i]);
+                // isDisplay 값에 따라 Trigger 결정: true = 일반 Display (Display), false = 보상 지급 (Appear)
+                SetRewardItemAnimatorTrigger(itemsToActivate[i], isDisplay);
                 
-                LogInfo($"아이템 {i + 1}/{itemsToActivate.Count} 활성화 완료");
+                string triggerType = isDisplay ? "Display" : "Appear";
+                LogInfo($"아이템 {i + 1}/{itemsToActivate.Count} 활성화 완료 ({triggerType} Trigger 호출)");
                 
                 if (i < itemsToActivate.Count - 1)
                 {
@@ -874,6 +1025,46 @@ public class RewardLayoutController : MonoBehaviour
         }
         
         LogInfo("모든 아이템의 순차 활성화가 완료되었습니다.");
+    }
+    
+    /// <summary>
+    /// 모든 아이템들을 즉시 활성화합니다. (순차 활성화 없이 상점 표시용)
+    /// </summary>
+    private void ActivateAllItemsImmediately(LayoutConfig layoutConfig)
+    {
+        if (layoutConfig == null)
+        {
+            LogError("LayoutConfig가 null입니다.");
+            return;
+        }
+        
+        int activatedCount = 0;
+        for (int gridIndex = 0; gridIndex < layoutConfig.itemsPerGrid.Count; gridIndex++)
+        {
+            int itemsToLoad = layoutConfig.itemsPerGrid[gridIndex];
+            
+            if (itemsToLoad > 0 && gridIndex < gridPrefabData.Count && gridPrefabData[gridIndex] != null)
+            {
+                var gridData = gridPrefabData[gridIndex];
+                int addedCount = 0;
+                
+                for (int i = 0; i < gridData.rewardItems.Count && addedCount < itemsToLoad; i++)
+                {
+                    if (gridData.rewardItems[i] != null)
+                    {
+                        gridData.rewardItems[i].SetActive(true);
+                        ValidateAndFixItemTransform(gridData.rewardItems[i]);
+                        // isDisplay 값에 따라 Trigger 결정: true = 일반 Display (Display), false = 보상 지급 (Appear)
+                        SetRewardItemAnimatorTrigger(gridData.rewardItems[i], isDisplay);
+                        addedCount++;
+                        activatedCount++;
+                    }
+                }
+            }
+        }
+        
+        string triggerType = isDisplay ? "Display" : "Appear";
+        LogInfo($"모든 아이템 즉시 활성화 완료 - 총 {activatedCount}개 ({triggerType} Trigger 호출)");
     }
     
     /// <summary>
@@ -894,11 +1085,14 @@ public class RewardLayoutController : MonoBehaviour
     
     /// <summary>
     /// 지정된 Grid에 미리 배치된 프리팹들을 즉시 활성화합니다.
+    /// isDisplay 값에 따라 Trigger를 결정합니다.
     /// </summary>
     private void ActivatePreplacedItems(int gridIndex, int count)
     {
-        SetGridItemsActive(gridIndex, true, count);
-        LogInfo($"Grid {gridIndex}에서 {count}개의 프리팹을 활성화했습니다.");
+        // isDisplay 값에 따라 Trigger 결정: true = 일반 Display (Display), false = 보상 지급 (Appear)
+        SetGridItemsActive(gridIndex, true, count, isDisplay);
+        string triggerType = isDisplay ? "Display" : "Appear";
+        LogInfo($"Grid {gridIndex}에서 {count}개의 프리팹을 활성화했습니다 ({triggerType} Trigger 호출).");
     }
     
     /// <summary>
@@ -954,11 +1148,246 @@ public class RewardLayoutController : MonoBehaviour
     {
         DeactivateAllItems();
         DeactivateAllGrids();
+        
+        // 활성화된 코루틴 정리 (메모리 누수 방지)
+        ClearActiveCoroutines();
+    }
+    
+    /// <summary>
+    /// 활성화된 Animator 비활성화 코루틴들을 정리합니다 (메모리 누수 방지).
+    /// </summary>
+    private void ClearActiveCoroutines()
+    {
+        foreach (var coroutine in activeAnimatorDisableCoroutines)
+        {
+            if (coroutine != null)
+            {
+                StopCoroutine(coroutine);
+            }
+        }
+        activeAnimatorDisableCoroutines.Clear();
     }
 
     #endregion
 
     #region Transform Management
+    
+    /// <summary>
+    /// RewardItem의 Animator에 적절한 상태를 직접 재생합니다.
+    /// None 상태를 거치지 않고 바로 Display/Appear 상태로 전환합니다.
+    /// isDisplay = true일 경우 Display 애니메이션 완료 후 Animator를 비활성화합니다 (성능 최적화).
+    /// </summary>
+    /// <param name="item">RewardItem GameObject</param>
+    /// <param name="useDisplayTrigger">true면 Display 상태 (일반 표시), false면 Appear 상태 (보상 지급 연출)</param>
+    private void SetRewardItemAnimatorTrigger(GameObject item, bool useDisplayTrigger)
+    {
+        if (item == null)
+            return;
+        
+        try
+        {
+            // 컴포넌트 캐싱을 통한 GetComponent 호출 최적화
+            Animator animator = GetCachedAnimator(item);
+            if (animator == null)
+            {
+                // Animator가 없으면 경고만 출력하고 계속 진행
+                LogWarning($"RewardItem {item.name}에 Animator 컴포넌트가 없습니다.");
+                return;
+            }
+            
+            if (!animator.enabled)
+            {
+                // Animator가 비활성화되어 있으면 경고만 출력하고 계속 진행
+                LogWarning($"RewardItem {item.name}의 Animator가 비활성화되어 있습니다.");
+                return;
+            }
+            
+            // None 상태를 거치지 않고 바로 Display/Appear 상태로 전환
+            // Animator.Play()를 사용하여 직접 상태로 전환
+            if (useDisplayTrigger)
+            {
+                // Display 상태로 직접 전환 (None 상태 회피)
+                animator.Play(ANIMATOR_STATE_DISPLAY, 0, 0f);
+                #if DEVELOPMENT_BUILD || UNITY_EDITOR
+                LogInfo($"RewardItem {item.name}에 Display 상태로 직접 전환 (None 상태 회피)");
+                #endif
+                
+                // Display 상태는 정적 표시이므로 애니메이션 완료 후 Animator 비활성화 (성능 최적화)
+                Coroutine coroutine = StartCoroutine(DisableAnimatorAfterDisplayAnimation(item, animator));
+                if (coroutine != null)
+                {
+                    activeAnimatorDisableCoroutines.Add(coroutine);
+                }
+            }
+            else
+            {
+                // Appear 상태로 직접 전환 (None 상태 회피)
+                animator.Play(ANIMATOR_STATE_APPEAR, 0, 0f);
+                #if DEVELOPMENT_BUILD || UNITY_EDITOR
+                LogInfo($"RewardItem {item.name}에 Appear 상태로 직접 전환 (None 상태 회피)");
+                #endif
+                
+                // Appear → Display 자동 트랜지션 후 Display 상태에서 Animator 비활성화 (성능 최적화)
+                Coroutine coroutine = StartCoroutine(DisableAnimatorAfterAppearToDisplayTransition(item, animator));
+                if (coroutine != null)
+                {
+                    activeAnimatorDisableCoroutines.Add(coroutine);
+                }
+            }
+            
+            // 상태 전환을 확정하기 위해 즉시 업데이트
+            animator.Update(0f);
+        }
+        catch (System.Exception e)
+        {
+            LogError($"RewardItem {item.name}의 Animator 상태 설정 중 오류 발생: {e.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Display 애니메이션이 완료된 후 Animator를 비활성화합니다 (성능 최적화).
+    /// Display 상태는 정적 표시이므로 애니메이션 완료 후 Animator가 계속 업데이트될 필요가 없습니다.
+    /// </summary>
+    /// <param name="item">RewardItem GameObject</param>
+    /// <param name="animator">Animator 컴포넌트</param>
+    private IEnumerator DisableAnimatorAfterDisplayAnimation(GameObject item, Animator animator)
+    {
+        if (item == null || animator == null)
+            yield break;
+        
+        // 몇 프레임 대기하여 애니메이션이 제대로 로드되도록 함
+        yield return null;
+        yield return null;
+        
+        // 현재 상태의 애니메이션 정보 가져오기
+        AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+        
+        // 상태가 Display인지 확인
+        if (!stateInfo.IsName(ANIMATOR_STATE_DISPLAY))
+        {
+            LogWarning($"RewardItem {item.name}의 Animator 상태가 Display가 아닙니다. 실제: {stateInfo.fullPathHash}");
+            yield break;
+        }
+        
+        // 애니메이션 길이 확인 (애니메이션이 없거나 길이를 알 수 없으면 기본값 사용)
+        float animationLength = stateInfo.length;
+        
+        // 애니메이션이 로드되지 않았거나 길이가 0인 경우, 기본 대기 시간 사용
+        if (animationLength <= 0f)
+        {
+            // Display 애니메이션은 보통 짧으므로 0.5초 후 비활성화 (여유 시간 확보)
+            animationLength = 0.5f;
+        }
+        
+        // 애니메이션 완료 대기 (애니메이션 길이 + 약간의 여유 시간)
+        yield return new WaitForSeconds(animationLength + 0.1f);
+        
+        // 아이템이 여전히 활성화되어 있고, Animator가 활성화되어 있을 때만 비활성화
+        if (item != null && item.activeSelf && animator != null && animator.enabled)
+        {
+            // 현재 상태가 Display 상태인지 다시 확인
+            AnimatorStateInfo currentStateInfo = animator.GetCurrentAnimatorStateInfo(0);
+            if (currentStateInfo.IsName(ANIMATOR_STATE_DISPLAY))
+            {
+                animator.enabled = false;
+                LogInfo($"RewardItem {item.name}의 Animator를 비활성화했습니다 (성능 최적화, Display 상태 완료).");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Appear → Display 트랜지션 완료 후 Animator를 비활성화합니다 (성능 최적화).
+    /// Appear 애니메이션이 끝나면 Display로 자동 트랜지션되고, Display 상태에서 Animator를 비활성화합니다.
+    /// </summary>
+    /// <param name="item">RewardItem GameObject</param>
+    /// <param name="animator">Animator 컴포넌트</param>
+    private IEnumerator DisableAnimatorAfterAppearToDisplayTransition(GameObject item, Animator animator)
+    {
+        if (item == null || animator == null)
+            yield break;
+        
+        // 몇 프레임 대기하여 Appear 애니메이션이 제대로 시작되도록 함
+        yield return null;
+        yield return null;
+        
+        // Appear 애니메이션 길이 확인
+        AnimatorStateInfo appearStateInfo = animator.GetCurrentAnimatorStateInfo(0);
+        float appearAnimationLength = 0f;
+        
+        if (appearStateInfo.IsName(ANIMATOR_STATE_APPEAR))
+        {
+            appearAnimationLength = appearStateInfo.length;
+        }
+        
+        // Appear 애니메이션 길이를 알 수 없으면 기본값 사용
+        if (appearAnimationLength <= 0f)
+        {
+            appearAnimationLength = 0.5f; // 기본값
+        }
+        
+        // Appear 애니메이션 완료 및 Display 트랜지션 대기
+        // Appear 애니메이션 길이 + 트랜지션 시간 + 여유 시간
+        yield return new WaitForSeconds(appearAnimationLength + 0.2f);
+        
+        // Display 상태로 전환되었는지 확인 (최대 1초 대기)
+        float waitTime = 0f;
+        float maxWaitTime = 1f;
+        float checkInterval = 0.1f;
+        
+        while (waitTime < maxWaitTime)
+        {
+            if (item == null || !item.activeSelf || animator == null || !animator.enabled)
+                yield break;
+            
+            AnimatorStateInfo currentStateInfo = animator.GetCurrentAnimatorStateInfo(0);
+            
+            // Display 상태로 전환되었는지 확인
+            if (currentStateInfo.IsName(ANIMATOR_STATE_DISPLAY))
+            {
+                // Display 상태로 전환됨 - 애니메이션 완료 후 Animator 비활성화
+                float displayAnimationLength = currentStateInfo.length;
+                
+                if (displayAnimationLength <= 0f)
+                {
+                    displayAnimationLength = 0.5f; // 기본값
+                }
+                
+                // Display 애니메이션 완료 대기
+                yield return new WaitForSeconds(displayAnimationLength + 0.1f);
+                
+                // 최종 확인 후 Animator 비활성화
+                if (item != null && item.activeSelf && animator != null && animator.enabled)
+                {
+                    AnimatorStateInfo finalStateInfo = animator.GetCurrentAnimatorStateInfo(0);
+                    if (finalStateInfo.IsName(ANIMATOR_STATE_DISPLAY))
+                    {
+                        animator.enabled = false;
+                        LogInfo($"RewardItem {item.name}의 Animator를 비활성화했습니다 (성능 최적화, Appear→Display 트랜지션 완료).");
+                    }
+                }
+                
+                yield break;
+            }
+            
+            yield return new WaitForSeconds(checkInterval);
+            waitTime += checkInterval;
+        }
+        
+        // 타임아웃: 강제로 Display 상태 확인 및 비활성화
+        if (item != null && item.activeSelf && animator != null && animator.enabled)
+        {
+            AnimatorStateInfo finalStateInfo = animator.GetCurrentAnimatorStateInfo(0);
+            if (finalStateInfo.IsName(ANIMATOR_STATE_DISPLAY))
+            {
+                animator.enabled = false;
+                LogInfo($"RewardItem {item.name}의 Animator를 비활성화했습니다 (성능 최적화, Appear→Display 트랜지션 완료 - 타임아웃).");
+            }
+            else
+            {
+                LogWarning($"RewardItem {item.name}의 Animator가 Display 상태로 전환되지 않았습니다. 현재 상태: {finalStateInfo.fullPathHash}");
+            }
+        }
+    }
     
     /// <summary>
     /// Grid의 Transform을 초기화합니다.
@@ -986,7 +1415,8 @@ public class RewardLayoutController : MonoBehaviour
     {
         try
         {
-            RectTransform rectTransform = item.GetComponent<RectTransform>();
+            // 컴포넌트 캐싱을 통한 GetComponent 호출 최적화
+            RectTransform rectTransform = GetCachedRectTransform(item);
             if (rectTransform != null)
             {
                 ValidateAndFixTransform(rectTransform, $"Item {item.name}");
@@ -996,6 +1426,46 @@ public class RewardLayoutController : MonoBehaviour
         {
             LogError($"아이템 Transform 검증 중 오류 발생: {e.Message}");
         }
+    }
+    
+    /// <summary>
+    /// Animator 컴포넌트를 캐시에서 가져오거나 캐시합니다 (성능 최적화).
+    /// </summary>
+    private Animator GetCachedAnimator(GameObject item)
+    {
+        if (item == null)
+            return null;
+        
+        if (!animatorCache.TryGetValue(item, out Animator animator))
+        {
+            animator = item.GetComponent<Animator>();
+            if (animator != null)
+            {
+                animatorCache[item] = animator;
+            }
+        }
+        
+        return animator;
+    }
+    
+    /// <summary>
+    /// RectTransform 컴포넌트를 캐시에서 가져오거나 캐시합니다 (성능 최적화).
+    /// </summary>
+    private RectTransform GetCachedRectTransform(GameObject item)
+    {
+        if (item == null)
+            return null;
+        
+        if (!rectTransformCache.TryGetValue(item, out RectTransform rectTransform))
+        {
+            rectTransform = item.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransformCache[item] = rectTransform;
+            }
+        }
+        
+        return rectTransform;
     }
 
     #endregion
