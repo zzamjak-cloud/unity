@@ -74,10 +74,10 @@ public class RewardLayoutController : MonoBehaviour
     [Serializable]
     public class LayoutConfig
     {
-        [Tooltip("이 설정이 적용될 총 보상 개수 (자동으로 Element Index + 1로 설정됨)")]
+        [Tooltip("총 지급 보상 개수 (자동으로 Element Index + 1로 설정됨)")]
         public int rewardCount;
         
-        [Tooltip("각 Grid에 들어갈 아이템 개수 목록")]
+        [Tooltip("각 Grid별 아이템 개수 목록")]
         public List<int> itemsPerGrid = new List<int>();
         
         /// <summary>
@@ -102,7 +102,7 @@ public class RewardLayoutController : MonoBehaviour
     [Serializable]
     public class ScaleConfig
     {
-        [Tooltip("이 스케일이 적용될 Grid 내 최대 아이템 개수 (자동으로 Element Index + 1로 설정됨)")]
+        [Tooltip("Grid에서 아이템 개수에 따른 스케일 값 (자동으로 Element Index + 1로 설정됨)")]
         public int maxItemsInGrid;
         
         [Tooltip("Reward Container의 Uniform Scale 값")]
