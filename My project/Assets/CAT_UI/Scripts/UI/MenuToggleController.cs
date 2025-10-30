@@ -8,15 +8,13 @@ using UnityEngine.UI;
 public class MenuToggleController : MonoBehaviour
 {
     public static System.Action<MenuToggleController> OnAnyMenuToggleClicked; // 전역 통지 이벤트
-    public event System.Action<MenuToggleController> OnClicked; // 그룹이 구독할 수 있는 클릭 이벤트
+    public event System.Action<MenuToggleController> OnClicked; // 외부 구독자가 구독할 수 있는 클릭 이벤트
 
     [SerializeField] private InteractiveButton menuButton; // 커스텀 버튼
     [SerializeField] private Button unityUIButton;         // Unity 기본 Button
     [SerializeField] private UISlideTransitionController transition;
-    [SerializeField] private UIMenuToggleGroup group; // 선택: 명시적 그룹 연결
     [SerializeField] private bool setImmediateHiddenOnEnable = false; // 시작을 숨김 상태로 강제할지
     [SerializeField] private bool ignoreInputWhileAnimating = true;   // 애니메이션 중 입력 무시
-    // 그룹 타입에 대한 컴파일 의존성을 줄이기 위해 SendMessage로 상위 그룹에 통지한다.
 
     private void Awake()
     {
@@ -68,18 +66,11 @@ public class MenuToggleController : MonoBehaviour
             return;
         }
 
-        // 외부(그룹) 구독자에게 먼저 통지
+        // 외부 구독자에게 먼저 통지
         OnClicked?.Invoke(this);
 
-        // 명시 그룹이 있으면 그룹에 우선 통지, 없으면 전역 이벤트로 통지
-        if (group != null)
-        {
-            group.NotifyClicked(this);
-        }
-        else
-        {
-            OnAnyMenuToggleClicked?.Invoke(this);
-        }
+        // 전역 이벤트로 통지
+        OnAnyMenuToggleClicked?.Invoke(this);
 
         if (transition.IsShowing)
         {
@@ -125,7 +116,7 @@ public class MenuToggleController : MonoBehaviour
         }
     }
 
-    // 그룹에서 호출: 열려있으면 닫기
+    // 외부에서 호출: 열려있으면 닫기
     public void CloseIfOpen()
     {
         if (transition == null) return;
@@ -142,7 +133,7 @@ public class MenuToggleController : MonoBehaviour
         CloseIfOpen();
     }
 
-    // 그룹/외부에서 참조할 수 있도록 읽기 전용 공개 프로퍼티 제공
+    // 외부에서 참조할 수 있도록 읽기 전용 공개 프로퍼티 제공
     public UISlideTransitionController Transition => transition;
 }
 

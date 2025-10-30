@@ -146,17 +146,39 @@ public class UISlideTransitionController : MonoBehaviour
 
     /// <summary>
     /// 등장 애니메이션 재생 (Start → End).
+    /// 이미 PlayIn 상태(IsShowing=true)이고 애니메이션이 완료된 상태라면 재실행하지 않음.
     /// </summary>
     public void PlayIn()
     {
+        // 이미 PlayIn 상태이고 애니메이션이 완료된 상태라면 재실행하지 않음
+        // (MenuToggleController를 통한 토글 동작은 IsShowing을 체크하므로 정상 동작)
+        if (IsShowing && !IsAnimating)
+        {
+            return;
+        }
+
         Play(show: true);
     }
 
     /// <summary>
     /// 퇴장 애니메이션 재생 (End → Start).
+    /// 이미 비활성화되어 있고 PlayOut 상태라면 아무 동작도 하지 않음.
     /// </summary>
     public void PlayOut()
     {
+        // 이미 비활성화되어 있고 PlayOut 상태라면 아무것도 하지 않음
+        if (!IsShowing && toggleRootActive && rootObject != null && !rootObject.activeSelf)
+        {
+            // 이미 PlayOut 상태이므로 아무것도 하지 않음
+            return;
+        }
+
+        // PlayOut을 실행하기 위해 필요한 경우 rootObject 활성화
+        if (toggleRootActive && rootObject != null && !rootObject.activeSelf)
+        {
+            rootObject.SetActive(true);
+        }
+
         Play(show: false);
     }
 
@@ -165,6 +187,21 @@ public class UISlideTransitionController : MonoBehaviour
     /// </summary>
     public void Play(bool show)
     {
+        // 코루틴을 시작하려면 GameObject가 활성화되어 있어야 함
+        // rootObject가 지정되어 있으면 rootObject의 활성화 상태를 확인, 없으면 현재 GameObject 확인
+        GameObject checkObject = (toggleRootActive && rootObject != null) ? rootObject : gameObject;
+        if (!checkObject.activeSelf)
+        {
+            // 비활성화 상태에서 show=false 요청이면 즉시 상태만 설정하고 종료
+            if (!show)
+            {
+                SetImmediate(false);
+                return;
+            }
+            // show=true인 경우 활성화 후 진행
+            checkObject.SetActive(true);
+        }
+
         if (runningCoroutine != null)
         {
             StopCoroutine(runningCoroutine);
