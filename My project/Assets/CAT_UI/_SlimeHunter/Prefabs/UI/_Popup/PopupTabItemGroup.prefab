@@ -1546,6 +1546,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4891794373196443477}
   - component: {fileID: 47620235659542558}
+  - component: {fileID: 6594079234289526702}
   m_Layer: 5
   m_Name: Content
   m_TagString: Untagged
@@ -1589,6 +1590,73 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
+--- !u!114 &6594079234289526702
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5803733965608721107}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetRect: {fileID: 4891794373196443477}
+  canvasGroupTarget: {fileID: 47620235659542558}
+  rootObject: {fileID: 1018533531406265328}
+  toggleRootActive: 1
+  dimmerCanvasGroup: {fileID: 7576833488529628772}
+  controlDimmerAlpha: 1
+  dimmerMaxAlpha: 1
+  startAnchoredPosition: {x: 0, y: -600}
+  endAnchoredPosition: {x: 0, y: 0}
+  initializeStartFromCurrent: 0
+  initializeEndFromCurrent: 0
+  controlScale: 0
+  startScale: {x: 1, y: 1, z: 1}
+  endScale: {x: 1, y: 1, z: 1}
+  initializeScaleFromCurrent: 0
+  showDuration: 0.3
+  hideDuration: 0.25
+  useUnscaledTime: 1
+  transitionCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 2.127891
+      outSlope: 2.127891
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0.071611255
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  controlCanvasAlpha: 1
+  OnShowStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnShowCompleted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnHideStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnHideCompleted:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &6164992929904464092
 GameObject:
   m_ObjectHideFlags: 0
@@ -3320,6 +3388,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
+--- !u!225 &7576833488529628772 stripped
+CanvasGroup:
+  m_CorrespondingSourceObject: {fileID: 8376057090533050064, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
+  m_PrefabInstance: {fileID: 2097527759533955252}
+  m_PrefabAsset: {fileID: 0}
 --- !u!224 &9152805476769904721 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 7070271482979705061, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
@@ -3954,6 +4027,10 @@ PrefabInstance:
     - target: {fileID: 6118046247383169815, guid: c3871c071ac96574f964758d038473cf, type: 3}
       propertyPath: m_IsActive
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9206135296583853127, guid: c3871c071ac96574f964758d038473cf, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -14.699997
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -4834,6 +4911,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 9206135296583853127, guid: c3871c071ac96574f964758d038473cf, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -14.699997
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -4946,6 +5027,10 @@ PrefabInstance:
     - target: {fileID: 5713701099648132283, guid: c3871c071ac96574f964758d038473cf, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9206135296583853127, guid: c3871c071ac96574f964758d038473cf, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -14.699997
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

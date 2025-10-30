@@ -325,6 +325,7 @@ GameObject:
   - component: {fileID: 4968603770618607115}
   - component: {fileID: 3244549396768060592}
   - component: {fileID: 1060550714239367602}
+  - component: {fileID: 9184712129586918615}
   m_Layer: 5
   m_Name: Content
   m_TagString: Untagged
@@ -435,6 +436,73 @@ MonoBehaviour:
   m_FlexibleWidth: -1
   m_FlexibleHeight: -1
   m_LayoutPriority: 1
+--- !u!114 &9184712129586918615
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4167551922761206061}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetRect: {fileID: 6063938755096085002}
+  canvasGroupTarget: {fileID: 7248003702114323881}
+  rootObject: {fileID: 2513780851040554085}
+  toggleRootActive: 1
+  dimmerCanvasGroup: {fileID: 4682788011939769054}
+  controlDimmerAlpha: 1
+  dimmerMaxAlpha: 1
+  startAnchoredPosition: {x: 0, y: 40}
+  endAnchoredPosition: {x: 0, y: 40}
+  initializeStartFromCurrent: 0
+  initializeEndFromCurrent: 0
+  controlScale: 1
+  startScale: {x: 0.8, y: 0.8, z: 1}
+  endScale: {x: 1, y: 1, z: 1}
+  initializeScaleFromCurrent: 0
+  showDuration: 0.3
+  hideDuration: 0.25
+  useUnscaledTime: 1
+  transitionCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  controlCanvasAlpha: 1
+  OnShowStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnShowCompleted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnHideStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  OnHideCompleted:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &4291667528387792217
 GameObject:
   m_ObjectHideFlags: 0
@@ -1920,6 +1988,34 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 9184712129586918615}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_CallState
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: PlayOut
+      objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_TargetAssemblyTypeName
+      value: UISlideTransitionController, Assembly-CSharp
+      objectReference: {fileID: 0}
+    - target: {fileID: 7613652250209706319, guid: 30aa0cc5c64bc23408467f57c27ebec5, type: 3}
+      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_ObjectArgumentAssemblyTypeName
+      value: UnityEngine.Object, UnityEngine
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -2157,6 +2253,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
+--- !u!225 &4682788011939769054 stripped
+CanvasGroup:
+  m_CorrespondingSourceObject: {fileID: 8376057090533050064, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
+  m_PrefabInstance: {fileID: 3801356296435657742}
+  m_PrefabAsset: {fileID: 0}
 --- !u!224 &6259870567590628587 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 7070271482979705061, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
@@ -2383,6 +2484,10 @@ PrefabInstance:
     - target: {fileID: 3272367671255045205, guid: 893d27dbcee27c344bb918bfe07a8aef, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4237888307597923061, guid: 893d27dbcee27c344bb918bfe07a8aef, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 48.075012
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
