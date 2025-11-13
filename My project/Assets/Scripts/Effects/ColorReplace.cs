@@ -15,6 +15,8 @@ namespace CAT.Effects
 
         // 정적인 머티리얼을 캐싱해서 드로우콜 낮추기
         private static Dictionary<int, Material> materialCache = new Dictionary<int, Material>();
+        // PropertyBlock도 캐싱하여 같은 설정의 오브젝트들이 공유 (배치 렌더링 최적화)
+        private static Dictionary<int, MaterialPropertyBlock> propertyBlockCache = new Dictionary<int, MaterialPropertyBlock>();
 
         [SerializeField] private Color _color = Color.black;
         public Color Color
@@ -67,6 +69,8 @@ namespace CAT.Effects
         private bool isUIComponent = false;
         private bool initialized = false;
         private int materialCacheHash = 0;
+        private Texture cachedTexture = null; // 텍스처도 해시에 포함하기 위해 캐싱
+        private MaterialPropertyBlock propertyBlock = null; // 배치 렌더링을 위한 PropertyBlock
 
         private void Awake()
         {
@@ -133,6 +137,10 @@ namespace CAT.Effects
 
             SetupMaterial(spriteRenderer.sharedMaterial, shader, spriteRenderer.sprite.texture);
             spriteRenderer.sharedMaterial = colorReplaceMaterial;
+            
+            // PropertyBlock 캐싱 및 적용 (배치 렌더링 최적화)
+            SetupPropertyBlock();
+            spriteRenderer.SetPropertyBlock(propertyBlock);
         }
 
         // UI용 셰이더 초기화
@@ -164,7 +172,10 @@ namespace CAT.Effects
 
         private void SetupMaterial(Material currentMaterial, Shader shader, Texture texture)
         {
-            // 머티리얼 캐싱에 대한 해쉬 계산하기
+            // 텍스처 캐싱
+            cachedTexture = texture;
+            
+            // 머티리얼 캐싱에 대한 해쉬 계산하기 (설정값과 텍스처 기반)
             CalculateMaterialHash();
 
             // 캐쉬에 머티리얼이 있는지 체크후 업데이트
@@ -207,7 +218,8 @@ namespace CAT.Effects
 
         private void CalculateMaterialHash()
         {
-            // 현재 세팅을 기준으로 해쉬를 생성, 비슷한 머티리얼을 캐싱하기 위함
+            // 같은 설정값과 텍스처를 가진 오브젝트들은 같은 머티리얼을 공유
+            // 이를 통해 배치 렌더링이 가능해져 드로우콜을 줄일 수 있음
             unchecked
             {
                 int hash = 17;
@@ -216,6 +228,8 @@ namespace CAT.Effects
                 hash = hash * 23 + _hsvRangeMax.GetHashCode();
                 hash = hash * 23 + _hsvAdjust.GetHashCode();
                 hash = hash * 23 + (isUIComponent ? 1 : 0);
+                // 텍스처도 해시에 포함 (같은 설정이지만 다른 텍스처면 다른 머티리얼 필요)
+                hash = hash * 23 + (cachedTexture != null ? cachedTexture.GetInstanceID() : 0);
                 materialCacheHash = hash;
             }
         }
@@ -225,11 +239,29 @@ namespace CAT.Effects
             if (colorReplaceMaterial == null) return;
 
             if (value is Color colorValue)
+            {
                 colorReplaceMaterial.SetColor(propertyName, colorValue);
+                if (propertyBlock != null && !isUIComponent)
+                    propertyBlock.SetColor(propertyName, colorValue);
+            }
             else if (value is float floatValue)
+            {
                 colorReplaceMaterial.SetFloat(propertyName, floatValue);
+                if (propertyBlock != null && !isUIComponent)
+                    propertyBlock.SetFloat(propertyName, floatValue);
+            }
             else if (value is Vector4 vector4Value)
+            {
                 colorReplaceMaterial.SetVector(propertyName, vector4Value);
+                if (propertyBlock != null && !isUIComponent)
+                    propertyBlock.SetVector(propertyName, vector4Value);
+            }
+            
+            // PropertyBlock 업데이트 후 렌더러에 재적용
+            if (propertyBlock != null && !isUIComponent && targetRenderer != null)
+            {
+                targetRenderer.SetPropertyBlock(propertyBlock);
+            }
         }
 
         private void UpdateMaterial()
@@ -240,6 +272,44 @@ namespace CAT.Effects
             colorReplaceMaterial.SetFloat("_HSVRangeMin", _hsvRangeMin);
             colorReplaceMaterial.SetFloat("_HSVRangeMax", _hsvRangeMax);
             colorReplaceMaterial.SetVector("_HSVAAdjust", _hsvAdjust);
+            
+            UpdatePropertyBlock();
+        }
+        
+        private void SetupPropertyBlock()
+        {
+            if (isUIComponent) return;
+            
+            // 같은 설정의 오브젝트들이 같은 PropertyBlock을 공유하도록 캐싱
+            if (propertyBlockCache.TryGetValue(materialCacheHash, out MaterialPropertyBlock cachedBlock))
+            {
+                propertyBlock = cachedBlock;
+            }
+            else
+            {
+                propertyBlock = new MaterialPropertyBlock();
+                propertyBlock.SetColor("_Color", _color);
+                propertyBlock.SetFloat("_HSVRangeMin", _hsvRangeMin);
+                propertyBlock.SetFloat("_HSVRangeMax", _hsvRangeMax);
+                propertyBlock.SetVector("_HSVAAdjust", _hsvAdjust);
+                propertyBlockCache[materialCacheHash] = propertyBlock;
+            }
+        }
+        
+        private void UpdatePropertyBlock()
+        {
+            if (propertyBlock == null || isUIComponent) return;
+            
+            // PropertyBlock에 현재 설정값 적용 (배치 렌더링 최적화)
+            propertyBlock.SetColor("_Color", _color);
+            propertyBlock.SetFloat("_HSVRangeMin", _hsvRangeMin);
+            propertyBlock.SetFloat("_HSVRangeMax", _hsvRangeMax);
+            propertyBlock.SetVector("_HSVAAdjust", _hsvAdjust);
+            
+            if (targetRenderer != null)
+            {
+                targetRenderer.SetPropertyBlock(propertyBlock);
+            }
         }
 
 #if UNITY_EDITOR
@@ -257,7 +327,7 @@ namespace CAT.Effects
                 int oldHash = materialCacheHash;
                 CalculateMaterialHash();
                 
-                // If hash changed, we need to use a different material
+                // If hash changed, we need to use a different material and property block
                 if (oldHash != materialCacheHash)
                 {
                     if (materialCache.TryGetValue(materialCacheHash, out Material cachedMaterial))
@@ -270,6 +340,9 @@ namespace CAT.Effects
                         else if (targetRenderer != null)
                         {
                             targetRenderer.sharedMaterial = colorReplaceMaterial;
+                            // PropertyBlock도 재설정
+                            SetupPropertyBlock();
+                            targetRenderer.SetPropertyBlock(propertyBlock);
                         }
                     }
                     else
@@ -308,21 +381,16 @@ namespace CAT.Effects
                 }
             }
 
-            // 다른 오브젝트에서 사용되는한 캐싱된 머티리얼은 제거되지 않음
-            if (colorReplaceMaterial != null && colorReplaceMaterial != originalMaterial
-                && !materialCache.ContainsValue(colorReplaceMaterial))
-            {
-                if (Application.isPlaying)
-                    Destroy(colorReplaceMaterial);
-                else
-                    DestroyImmediate(colorReplaceMaterial);
-            }
+            // 공유 머티리얼이므로 개별 오브젝트가 파괴될 때 머티리얼을 제거하지 않음
+            // ClearMaterialCache()를 통해 일괄 정리하거나 씬 전환 시 자동 정리됨
+            // colorReplaceMaterial은 다른 오브젝트에서도 사용 중일 수 있으므로 여기서는 정리하지 않음
         }
 
         // 머티리얼 캐시 정리 - 씬 변경시 호출
         public static void ClearMaterialCache()
         {
             materialCache.Clear();
+            propertyBlockCache.Clear();
         }
     }
 }

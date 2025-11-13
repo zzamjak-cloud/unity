@@ -8,7 +8,7 @@ namespace CAT.UI
     /// 라운드 코너가 있는 마스크 컴포넌트 (정적 머티리얼 캐시 최적화)
     /// </summary>
     [RequireComponent(typeof(Image), typeof(Mask))]
-    [AddComponentMenu("CAT/UI/CornerRoundMask")]
+    [AddComponentMenu("CAT/UI/UICornerRoundMask")]
     [ExecuteAlways]
     [DisallowMultipleComponent]
     public class UICornerRoundMask : MonoBehaviour
