@@ -11,7 +11,7 @@ PrefabInstance:
     - target: {fileID: 3712072872096987588, guid: 1148e8442f169574789926871181258e, type: 3}
       propertyPath: m_TargetGraphic
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 1496106043406159185}
     - target: {fileID: 3712072872096987588, guid: 1148e8442f169574789926871181258e, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.size
       value: 5
@@ -232,11 +232,23 @@ PrefabInstance:
       propertyPath: m_Name
       value: LobbyMainBtn_Plaza
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 3712072872096987588, guid: 1148e8442f169574789926871181258e, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1148e8442f169574789926871181258e, type: 3}
+--- !u!114 &1496106043406159185 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8533180975413986665, guid: 1148e8442f169574789926871181258e, type: 3}
+  m_PrefabInstance: {fileID: 7109158957408979000}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!95 &8368689220051568941 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 1624463448273748245, guid: 1148e8442f169574789926871181258e, type: 3}

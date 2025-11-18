@@ -11,7 +11,6 @@ GameObject:
   - component: {fileID: 3640494936989123427}
   - component: {fileID: 4562833349036362592}
   - component: {fileID: 1554502264045316376}
-  - component: {fileID: 2165831198108225045}
   m_Layer: 5
   m_Name: MainButtons
   m_TagString: Untagged
@@ -84,43 +83,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_HorizontalFit: 2
   m_VerticalFit: 0
---- !u!114 &2165831198108225045
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 336608297699583390}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1649b38910ccd049a2a2b1ba4046f07, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  buttons:
-  - button: {fileID: 5169042541848586490}
-    animator: {fileID: 7112466616587554859}
-  - button: {fileID: 1960712761946326951}
-    animator: {fileID: 4484872351181193078}
-  - button: {fileID: 1003243544973210416}
-    animator: {fileID: 2946641452623858657}
-  - button: {fileID: 1834722245651264845}
-    animator: {fileID: 4359080176450932124}
-  - button: {fileID: 8158556770255727580}
-    animator: {fileID: 6066817443344519949}
-  horizontalLayoutGroup: {fileID: 4562833349036362592}
-  activationImage: {fileID: 1151675074785764908}
-  moveDuration: 0.2
-  moveEase: 9
-  activeTrigger: Active
-  deactiveTrigger: Deactive
-  defaultActiveButtonIndex: 2
-  OnButtonActivated:
-    m_PersistentCalls:
-      m_Calls: []
-  OnButtonDeactivated:
-    m_PersistentCalls:
-      m_Calls: []
-  debugCurrentActiveIndex: -1
 --- !u!1 &357773636476262681
 GameObject:
   m_ObjectHideFlags: 0
@@ -552,7 +514,6 @@ GameObject:
   - component: {fileID: 3956623068115247955}
   - component: {fileID: 4399236707052782850}
   - component: {fileID: 7339624281997121590}
-  - component: {fileID: 1535503786458494640}
   m_Layer: 5
   m_Name: MoveTween (Layout)
   m_TagString: Untagged
@@ -619,114 +580,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_HorizontalFit: 2
   m_VerticalFit: 2
---- !u!114 &1535503786458494640
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2067311338912277354}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4d0390bd8b8ffd640b34fe25065ff1df, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  updateType: 0
-  isSpeedBased: 0
-  hasOnStart: 0
-  hasOnPlay: 0
-  hasOnUpdate: 0
-  hasOnStepComplete: 0
-  hasOnComplete: 0
-  hasOnTweenCreated: 0
-  hasOnRewind: 0
-  onStart:
-    m_PersistentCalls:
-      m_Calls: []
-  onPlay:
-    m_PersistentCalls:
-      m_Calls: []
-  onUpdate:
-    m_PersistentCalls:
-      m_Calls: []
-  onStepComplete:
-    m_PersistentCalls:
-      m_Calls: []
-  onComplete:
-    m_PersistentCalls:
-      m_Calls: []
-  onTweenCreated:
-    m_PersistentCalls:
-      m_Calls: []
-  onRewind:
-    m_PersistentCalls:
-      m_Calls: []
-  targetIsSelf: 1
-  targetGO: {fileID: 0}
-  tweenTargetIsTargetGO: 1
-  delay: 0
-  duration: 0.4
-  easeType: 37
-  easeCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  loopType: 0
-  loops: 1
-  id: 
-  isRelative: 0
-  isFrom: 0
-  isIndependentUpdate: 0
-  autoKill: 1
-  autoGenerate: 1
-  isActive: 0
-  isValid: 1
-  target: {fileID: 3956623068115247955}
-  animationType: 2
-  targetType: 11
-  forcedTargetType: 0
-  autoPlay: 1
-  useTargetAsV3: 0
-  endValueFloat: 0
-  endValueV3: {x: 200, y: 0, z: 0}
-  endValueV2: {x: 0, y: 0}
-  endValueColor: {r: 1, g: 1, b: 1, a: 1}
-  endValueString: 
-  endValueRect:
-    serializedVersion: 2
-    x: 0
-    y: 0
-    width: 0
-    height: 0
-  endValueTransform: {fileID: 0}
-  optionalBool0: 0
-  optionalBool1: 0
-  optionalFloat0: 0
-  optionalInt0: 0
-  optionalRotationMode: 0
-  optionalScrambleMode: 0
-  optionalShakeRandomnessMode: 0
-  optionalString: 
 --- !u!1 &2201792905546091042
 GameObject:
   m_ObjectHideFlags: 0
@@ -772,7 +625,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1630140313972571088}
-  - component: {fileID: 4280192511781475264}
   - component: {fileID: 2816241549589666241}
   m_Layer: 5
   m_Name: Slide
@@ -801,73 +653,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 65, y: 56}
   m_Pivot: {x: 1, y: 0.5}
---- !u!114 &4280192511781475264
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2422623510944506875}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRect: {fileID: 1630140313972571088}
-  canvasGroupTarget: {fileID: 0}
-  rootObject: {fileID: 0}
-  toggleRootActive: 1
-  dimmerCanvasGroup: {fileID: 0}
-  controlDimmerAlpha: 0
-  dimmerMaxAlpha: 0.6
-  startAnchoredPosition: {x: 120, y: 0}
-  endAnchoredPosition: {x: 0, y: 0}
-  initializeStartFromCurrent: 0
-  initializeEndFromCurrent: 1
-  controlScale: 0
-  startScale: {x: 1, y: 1, z: 1}
-  endScale: {x: 1, y: 1, z: 1}
-  initializeScaleFromCurrent: 0
-  showDuration: 0.3
-  hideDuration: 0.25
-  useUnscaledTime: 1
-  transitionCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  controlCanvasAlpha: 1
-  OnShowStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnShowCompleted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideCompleted:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!225 &2816241549589666241
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -926,7 +711,6 @@ GameObject:
   m_Component:
   - component: {fileID: 9170120703192214729}
   - component: {fileID: 7364760652164374685}
-  - component: {fileID: 2892911795502867555}
   m_Layer: 5
   m_Name: Slide
   m_TagString: Untagged
@@ -967,73 +751,6 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
---- !u!114 &2892911795502867555
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2733910596804989406}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRect: {fileID: 9170120703192214729}
-  canvasGroupTarget: {fileID: 7364760652164374685}
-  rootObject: {fileID: 0}
-  toggleRootActive: 0
-  dimmerCanvasGroup: {fileID: 0}
-  controlDimmerAlpha: 0
-  dimmerMaxAlpha: 0.6
-  startAnchoredPosition: {x: 0, y: -200}
-  endAnchoredPosition: {x: 0, y: 0}
-  initializeStartFromCurrent: 0
-  initializeEndFromCurrent: 1
-  controlScale: 0
-  startScale: {x: 1, y: 1, z: 1}
-  endScale: {x: 1, y: 1, z: 1}
-  initializeScaleFromCurrent: 0
-  showDuration: 0.3
-  hideDuration: 0.25
-  useUnscaledTime: 1
-  transitionCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  controlCanvasAlpha: 1
-  OnShowStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnShowCompleted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideCompleted:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &2947447873538874143
 GameObject:
   m_ObjectHideFlags: 0
@@ -1310,7 +1027,6 @@ GameObject:
   - component: {fileID: 5650769370359970903}
   - component: {fileID: 523318325099302415}
   - component: {fileID: 3895203115585637182}
-  - component: {fileID: 2463429933343327108}
   m_Layer: 5
   m_Name: Slide
   m_TagString: Untagged
@@ -1392,73 +1108,6 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
---- !u!114 &2463429933343327108
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3244781246699029762}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRect: {fileID: 1082379713466708264}
-  canvasGroupTarget: {fileID: 3895203115585637182}
-  rootObject: {fileID: 0}
-  toggleRootActive: 0
-  dimmerCanvasGroup: {fileID: 0}
-  controlDimmerAlpha: 0
-  dimmerMaxAlpha: 0.6
-  startAnchoredPosition: {x: 0, y: 80}
-  endAnchoredPosition: {x: 0, y: 0}
-  initializeStartFromCurrent: 0
-  initializeEndFromCurrent: 1
-  controlScale: 0
-  startScale: {x: 1, y: 1, z: 1}
-  endScale: {x: 1, y: 1, z: 1}
-  initializeScaleFromCurrent: 0
-  showDuration: 0.3
-  hideDuration: 0.25
-  useUnscaledTime: 1
-  transitionCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  controlCanvasAlpha: 1
-  OnShowStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnShowCompleted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideCompleted:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &4622439825639828743
 GameObject:
   m_ObjectHideFlags: 0
@@ -1840,7 +1489,6 @@ GameObject:
   - component: {fileID: 2715175028434424913}
   - component: {fileID: 2552750944864478679}
   - component: {fileID: 6111050228852925861}
-  - component: {fileID: 6199664109564739256}
   m_Layer: 5
   m_Name: MenuListPop
   m_TagString: Untagged
@@ -1923,73 +1571,6 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
---- !u!114 &6199664109564739256
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5611695935884297751}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRect: {fileID: 5119611309418828341}
-  canvasGroupTarget: {fileID: 6111050228852925861}
-  rootObject: {fileID: 5611695935884297751}
-  toggleRootActive: 1
-  dimmerCanvasGroup: {fileID: 4527565279777869465}
-  controlDimmerAlpha: 1
-  dimmerMaxAlpha: 1
-  startAnchoredPosition: {x: 0, y: 0}
-  endAnchoredPosition: {x: 0, y: 0}
-  initializeStartFromCurrent: 0
-  initializeEndFromCurrent: 0
-  controlScale: 0
-  startScale: {x: 1, y: 1, z: 1}
-  endScale: {x: 1, y: 1, z: 1}
-  initializeScaleFromCurrent: 0
-  showDuration: 0.3
-  hideDuration: 0.25
-  useUnscaledTime: 1
-  transitionCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  controlCanvasAlpha: 1
-  OnShowStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnShowCompleted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideCompleted:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!1 &5670430399848532468
 GameObject:
   m_ObjectHideFlags: 0
@@ -2372,7 +1953,6 @@ GameObject:
   - component: {fileID: 8523512057099894022}
   - component: {fileID: 2838170676048592458}
   - component: {fileID: 8607820435969033841}
-  - component: {fileID: 3331577355498828887}
   m_Layer: 5
   m_Name: MoveTween (Layout)
   m_TagString: Untagged
@@ -2439,114 +2019,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_HorizontalFit: 2
   m_VerticalFit: 2
---- !u!114 &3331577355498828887
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7590705519715901583}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4d0390bd8b8ffd640b34fe25065ff1df, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  updateType: 0
-  isSpeedBased: 0
-  hasOnStart: 0
-  hasOnPlay: 0
-  hasOnUpdate: 0
-  hasOnStepComplete: 0
-  hasOnComplete: 0
-  hasOnTweenCreated: 0
-  hasOnRewind: 0
-  onStart:
-    m_PersistentCalls:
-      m_Calls: []
-  onPlay:
-    m_PersistentCalls:
-      m_Calls: []
-  onUpdate:
-    m_PersistentCalls:
-      m_Calls: []
-  onStepComplete:
-    m_PersistentCalls:
-      m_Calls: []
-  onComplete:
-    m_PersistentCalls:
-      m_Calls: []
-  onTweenCreated:
-    m_PersistentCalls:
-      m_Calls: []
-  onRewind:
-    m_PersistentCalls:
-      m_Calls: []
-  targetIsSelf: 1
-  targetGO: {fileID: 0}
-  tweenTargetIsTargetGO: 1
-  delay: 0
-  duration: 0.4
-  easeType: 37
-  easeCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  loopType: 0
-  loops: 1
-  id: 
-  isRelative: 1
-  isFrom: 0
-  isIndependentUpdate: 0
-  autoKill: 1
-  autoGenerate: 1
-  isActive: 0
-  isValid: 1
-  target: {fileID: 8523512057099894022}
-  animationType: 2
-  targetType: 11
-  forcedTargetType: 0
-  autoPlay: 1
-  useTargetAsV3: 0
-  endValueFloat: 0
-  endValueV3: {x: -200, y: 0, z: 0}
-  endValueV2: {x: 0, y: 0}
-  endValueColor: {r: 1, g: 1, b: 1, a: 1}
-  endValueString: 
-  endValueRect:
-    serializedVersion: 2
-    x: 0
-    y: 0
-    width: 0
-    height: 0
-  endValueTransform: {fileID: 0}
-  optionalBool0: 0
-  optionalBool1: 0
-  optionalFloat0: 0
-  optionalInt0: 0
-  optionalRotationMode: 0
-  optionalScrambleMode: 0
-  optionalShakeRandomnessMode: 0
-  optionalString: 
 --- !u!1 &7690767262611695839
 GameObject:
   m_ObjectHideFlags: 0
@@ -2556,7 +2028,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 5177639744098169967}
-  - component: {fileID: 8170762640073607158}
   - component: {fileID: 8025561309970159936}
   m_Layer: 5
   m_Name: Slide
@@ -2586,73 +2057,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &8170762640073607158
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7690767262611695839}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0c4be42ba28e413bba8021012e54be5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRect: {fileID: 5177639744098169967}
-  canvasGroupTarget: {fileID: 8025561309970159936}
-  rootObject: {fileID: 7690767262611695839}
-  toggleRootActive: 0
-  dimmerCanvasGroup: {fileID: 0}
-  controlDimmerAlpha: 0
-  dimmerMaxAlpha: 0.6
-  startAnchoredPosition: {x: -300, y: 0}
-  endAnchoredPosition: {x: 0, y: 0}
-  initializeStartFromCurrent: 0
-  initializeEndFromCurrent: 1
-  controlScale: 0
-  startScale: {x: 1, y: 1, z: 1}
-  endScale: {x: 1, y: 1, z: 1}
-  initializeScaleFromCurrent: 0
-  showDuration: 0.3
-  hideDuration: 0.25
-  useUnscaledTime: 1
-  transitionCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  controlCanvasAlpha: 1
-  OnShowStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnShowCompleted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  OnHideCompleted:
-    m_PersistentCalls:
-      m_Calls: []
 --- !u!225 &8025561309970159936
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -3154,10 +2558,6 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 4359080176450932124}
     - target: {fileID: 5848804807733834236, guid: ef43a7ef33464e74c942350aeda10f9f, type: 3}
-      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[6].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
-    - target: {fileID: 5848804807733834236, guid: ef43a7ef33464e74c942350aeda10f9f, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[5].m_CallState
       value: 2
       objectReference: {fileID: 0}
@@ -3220,17 +2620,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 5844702031700777347, guid: ef43a7ef33464e74c942350aeda10f9f, type: 3}
   m_PrefabInstance: {fileID: 2310950051333085728}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &8158556770255727580 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5848804807733834236, guid: ef43a7ef33464e74c942350aeda10f9f, type: 3}
-  m_PrefabInstance: {fileID: 2310950051333085728}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1001 &2559902779305506722
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -3379,10 +2768,6 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[4].m_Target
       value: 
       objectReference: {fileID: 6066817443344519949}
-    - target: {fileID: 4247074951817249519, guid: b5a1e310ba83c7d49a2cb3752279ffaf, type: 3}
-      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[6].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
     - target: {fileID: 4247074951817249519, guid: b5a1e310ba83c7d49a2cb3752279ffaf, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_CallState
       value: 2
@@ -3545,17 +2930,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 4235364253790628496, guid: b5a1e310ba83c7d49a2cb3752279ffaf, type: 3}
   m_PrefabInstance: {fileID: 2559902779305506722}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1834722245651264845 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4247074951817249519, guid: b5a1e310ba83c7d49a2cb3752279ffaf, type: 3}
-  m_PrefabInstance: {fileID: 2559902779305506722}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!95 &4359080176450932124 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 2303602552220170814, guid: b5a1e310ba83c7d49a2cb3752279ffaf, type: 3}
@@ -3948,49 +3322,13 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 5252495841723883018, guid: 5afe56165c05e3e4dba69394b7d93c53, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 4718921985055556979}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5afe56165c05e3e4dba69394b7d93c53, type: 3}
---- !u!114 &2228781635496415845 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3169786727829112601, guid: 5afe56165c05e3e4dba69394b7d93c53, type: 3}
-  m_PrefabInstance: {fileID: 3824507345202648444}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9077000690806950774}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7bba7a498f6844bd3a42364f1132b8bb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::InteractiveButton
 --- !u!224 &8080312666578051939 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 4985599848646735391, guid: 5afe56165c05e3e4dba69394b7d93c53, type: 3}
   m_PrefabInstance: {fileID: 3824507345202648444}
   m_PrefabAsset: {fileID: 0}
---- !u!1 &9077000690806950774 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 5252495841723883018, guid: 5afe56165c05e3e4dba69394b7d93c53, type: 3}
-  m_PrefabInstance: {fileID: 3824507345202648444}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &4718921985055556979
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9077000690806950774}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4f8bd9acfe26f491bbc31c308b19ae5f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  menuButton: {fileID: 2228781635496415845}
-  unityUIButton: {fileID: 0}
-  transition: {fileID: 6199664109564739256}
-  setImmediateHiddenOnEnable: 1
-  ignoreInputWhileAnimating: 1
 --- !u!1001 &4150338915413078463
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -4118,10 +3456,6 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 68240787309315130, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
-      propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
-    - target: {fileID: 68240787309315130, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
       propertyPath: OnButtonClicked.m_PersistentCalls.m_Calls.Array.data[0].m_CallState
       value: 2
       objectReference: {fileID: 0}
@@ -4237,11 +3571,6 @@ PrefabInstance:
 --- !u!224 &2951609681099122860 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 7070271482979705061, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
-  m_PrefabInstance: {fileID: 5397739155823265865}
-  m_PrefabAsset: {fileID: 0}
---- !u!225 &4527565279777869465 stripped
-CanvasGroup:
-  m_CorrespondingSourceObject: {fileID: 8376057090533050064, guid: ca47ed480d5c70643aa5ef4d9d5cfd3a, type: 3}
   m_PrefabInstance: {fileID: 5397739155823265865}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6954152327040987947
@@ -4511,10 +3840,6 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 6066817443344519949}
     - target: {fileID: 7056069958275929567, guid: 6f736fc66e637304cadb17f7ef9f43de, type: 3}
-      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[6].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
-    - target: {fileID: 7056069958275929567, guid: 6f736fc66e637304cadb17f7ef9f43de, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_CallState
       value: 2
       objectReference: {fileID: 0}
@@ -4656,17 +3981,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 7051404798687624608, guid: 6f736fc66e637304cadb17f7ef9f43de, type: 3}
   m_PrefabInstance: {fileID: 7782236160688088815}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1003243544973210416 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7056069958275929567, guid: 6f736fc66e637304cadb17f7ef9f43de, type: 3}
-  m_PrefabInstance: {fileID: 7782236160688088815}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!95 &2946641452623858657 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 4964264506551528718, guid: 6f736fc66e637304cadb17f7ef9f43de, type: 3}
@@ -4797,10 +4111,6 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 6066817443344519949}
     - target: {fileID: 7846639164044989884, guid: 3130a5c785beed245b6f7dd9dc9b3873, type: 3}
-      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[6].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
-    - target: {fileID: 7846639164044989884, guid: 3130a5c785beed245b6f7dd9dc9b3873, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[5].m_CallState
       value: 2
       objectReference: {fileID: 0}
@@ -4842,17 +4152,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 7841736501087239619, guid: 3130a5c785beed245b6f7dd9dc9b3873, type: 3}
   m_PrefabInstance: {fileID: 8633687876828336667}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1960712761946326951 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7846639164044989884, guid: 3130a5c785beed245b6f7dd9dc9b3873, type: 3}
-  m_PrefabInstance: {fileID: 8633687876828336667}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!95 &4484872351181193078 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 5326758650995486061, guid: 3130a5c785beed245b6f7dd9dc9b3873, type: 3}
@@ -4898,10 +4197,6 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[4].m_Target
       value: 
       objectReference: {fileID: 6066817443344519949}
-    - target: {fileID: 4593762188170266189, guid: 26105d35cb5498c489d2022e5bc38965, type: 3}
-      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[6].m_Target
-      value: 
-      objectReference: {fileID: 6199664109564739256}
     - target: {fileID: 4593762188170266189, guid: 26105d35cb5498c489d2022e5bc38965, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[5].m_CallState
       value: 2
@@ -5055,17 +4350,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 4609433312049999410, guid: 26105d35cb5498c489d2022e5bc38965, type: 3}
   m_PrefabInstance: {fileID: 8681940148881387191}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &5169042541848586490 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 4593762188170266189, guid: 26105d35cb5498c489d2022e5bc38965, type: 3}
-  m_PrefabInstance: {fileID: 8681940148881387191}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!95 &7112466616587554859 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 1930069677409599132, guid: 26105d35cb5498c489d2022e5bc38965, type: 3}
