@@ -15,8 +15,8 @@ namespace CAT.Utility
 {
     public class EffectLoader : EditorWindow
     {
-        private const string EFFECTS_PATH = "Assets/VFX/Prefabs";       // 이펙트 저장 경로
-        private const int GRID_X_LIMIT = 10;                                // 이펙트 프리팹의 X축 그리드 Max 개수
+        private const string EFFECTS_PATH = "Assets/CAT_VFX/Prefabs";       // 이펙트 저장 경로
+        private const int GRID_X_LIMIT = 5;                                // 이펙트 프리팹의 X축 그리드 Max 개수
         private const float SPACING_3D = 5f;                                // 3D 이펙트 프리팹 간격
         private const float SPACING_UI = 400f;                              // UI 이펙트 프리팹 간격
 
