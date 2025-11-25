@@ -8,6 +8,9 @@ namespace CAT.Utility
 {
     public class CustomShortcuts
     {
+        // 복사된 Transform 컴포넌트를 저장하기 위한 변수
+        private static Component copiedTransform;
+
         // Image 생성 (Mac: Command+Option+I, Windows: Ctrl+Alt+I)
         [MenuItem("GameObject/UI/Custom Image %&i", false, 0)]
         static void CreateImage()
@@ -67,6 +70,106 @@ namespace CAT.Utility
             if(squareGO != null)
             {
                 EditorSceneManager.MarkSceneDirty(squareGO.scene);
+            }
+        }
+
+        // Transform 복사 (F5)
+        [MenuItem("Edit/Copy Transform _f5", false, 200)]
+        static void CopyTransform()
+        {
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("Transform을 복사할 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            // RectTransform이 있으면 RectTransform을, 없으면 Transform을 복사
+            RectTransform rectTransform = selectedObject.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                copiedTransform = rectTransform;
+                Debug.Log($"RectTransform 값이 복사되었습니다: {selectedObject.name}");
+            }
+            else
+            {
+                Transform transform = selectedObject.GetComponent<Transform>();
+                if (transform != null)
+                {
+                    copiedTransform = transform;
+                    Debug.Log($"Transform 값이 복사되었습니다: {selectedObject.name}");
+                }
+                else
+                {
+                    Debug.LogError("선택한 오브젝트에 Transform 컴포넌트가 없습니다.");
+                    copiedTransform = null;
+                }
+            }
+        }
+
+        // Transform 붙여넣기 (Shift+F5)
+        [MenuItem("Edit/Paste Transform #f5", false, 201)]
+        static void PasteTransform()
+        {
+            if (copiedTransform == null)
+            {
+                Debug.LogWarning("복사된 Transform 값이 없습니다. 먼저 F5를 눌러 Transform을 복사하세요.");
+                return;
+            }
+
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("Transform을 붙여넣을 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            // 복사된 컴포넌트의 타입에 따라 처리
+            if (copiedTransform is RectTransform copiedRectTransform)
+            {
+                RectTransform targetRectTransform = selectedObject.GetComponent<RectTransform>();
+                if (targetRectTransform != null)
+                {
+                    // RectTransform 값 복사
+                    Undo.RecordObject(targetRectTransform, "Paste RectTransform");
+                    EditorUtility.CopySerialized(copiedRectTransform, targetRectTransform);
+                    EditorUtility.SetDirty(selectedObject);
+                    EditorSceneManager.MarkSceneDirty(selectedObject.scene);
+                    Debug.Log($"RectTransform 값이 붙여넣기되었습니다: {selectedObject.name}");
+                }
+                else
+                {
+                    Debug.LogWarning($"선택한 오브젝트({selectedObject.name})에 RectTransform이 없습니다. Transform 값만 붙여넣습니다.");
+                    // RectTransform이 없으면 일반 Transform으로 붙여넣기
+                    Transform targetTransform = selectedObject.GetComponent<Transform>();
+                    if (targetTransform != null)
+                    {
+                        Undo.RecordObject(targetTransform, "Paste Transform");
+                        targetTransform.localPosition = copiedRectTransform.localPosition;
+                        targetTransform.localRotation = copiedRectTransform.localRotation;
+                        targetTransform.localScale = copiedRectTransform.localScale;
+                        EditorUtility.SetDirty(selectedObject);
+                        EditorSceneManager.MarkSceneDirty(selectedObject.scene);
+                        Debug.Log($"Transform 값이 붙여넣기되었습니다: {selectedObject.name}");
+                    }
+                }
+            }
+            else if (copiedTransform is Transform copiedTransformComponent)
+            {
+                Transform targetTransform = selectedObject.GetComponent<Transform>();
+                if (targetTransform != null)
+                {
+                    // Transform 값 복사
+                    Undo.RecordObject(targetTransform, "Paste Transform");
+                    EditorUtility.CopySerialized(copiedTransformComponent, targetTransform);
+                    EditorUtility.SetDirty(selectedObject);
+                    EditorSceneManager.MarkSceneDirty(selectedObject.scene);
+                    Debug.Log($"Transform 값이 붙여넣기되었습니다: {selectedObject.name}");
+                }
+                else
+                {
+                    Debug.LogError($"선택한 오브젝트({selectedObject.name})에 Transform 컴포넌트가 없습니다.");
+                }
             }
         }
 

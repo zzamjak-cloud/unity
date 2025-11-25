@@ -100,21 +100,31 @@ namespace CAT.Utility
             GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
             instance.name = prefab.name;
 
+            // 선택된 오브젝트를 우선적으로 부모로 설정
+            GameObject parentObject = Selection.activeGameObject;
+            
             // 프리팹 편집 모드인지 확인
             var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
             if (prefabStage != null)
             {
-                // 프리팹 편집 모드에서는 프리팹의 루트를 부모로 설정
-                instance.transform.SetParent(prefabStage.prefabContentsRoot.transform, false);
+                // 프리팹 편집 모드에서는 선택된 오브젝트가 있으면 그것을 부모로, 없으면 프리팹 루트를 부모로 설정
+                if (parentObject != null && parentObject.scene == prefabStage.scene)
+                {
+                    instance.transform.SetParent(parentObject.transform, false);
+                }
+                else
+                {
+                    instance.transform.SetParent(prefabStage.prefabContentsRoot.transform, false);
+                }
             }
             else
             {
                 // 일반 씬에서는 선택된 오브젝트를 부모로 설정
-                GameObject parentObject = Selection.activeGameObject;
                 if (parentObject != null)
                 {
                     instance.transform.SetParent(parentObject.transform, false);
                 }
+                // 선택된 오브젝트가 없으면 씬 루트에 생성 (부모 설정 안 함)
             }
 
             Undo.RegisterCreatedObjectUndo(instance, $"Create {instance.name}");
