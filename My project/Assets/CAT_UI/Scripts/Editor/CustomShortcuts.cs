@@ -3,6 +3,8 @@ using UnityEngine.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using TMPro;
+using System.Collections.Generic;
+using DG.Tweening;
 
 namespace CAT.Utility
 {
@@ -10,6 +12,12 @@ namespace CAT.Utility
     {
         // 복사된 Transform 컴포넌트를 저장하기 위한 변수
         private static Component copiedTransform;
+        
+        // 복사된 TMP 컴포넌트를 저장하기 위한 변수
+        private static TextMeshProUGUI copiedTMP;
+        
+        // 복사된 DOTween Animation 컴포넌트들을 저장하기 위한 변수
+        private static List<DOTweenAnimation> copiedDOTweenAnimations = new List<DOTweenAnimation>();
 
         // Image 생성 (Mac: Command+Option+I, Windows: Ctrl+Alt+I)
         [MenuItem("GameObject/UI/Custom Image %&i", false, 0)]
@@ -171,6 +179,143 @@ namespace CAT.Utility
                     Debug.LogError($"선택한 오브젝트({selectedObject.name})에 Transform 컴포넌트가 없습니다.");
                 }
             }
+        }
+
+        // TMP 복사 (F6)
+        [MenuItem("Edit/Copy TMP _f6", false, 202)]
+        static void CopyTMP()
+        {
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("TMP를 복사할 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            TextMeshProUGUI tmp = selectedObject.GetComponent<TextMeshProUGUI>();
+            if (tmp == null)
+            {
+                Debug.LogWarning($"선택한 오브젝트({selectedObject.name})에 TextMeshProUGUI 컴포넌트가 없습니다.");
+                copiedTMP = null;
+                return;
+            }
+
+            copiedTMP = tmp;
+            Debug.Log($"TextMeshProUGUI 값이 복사되었습니다: {selectedObject.name}");
+        }
+
+        // TMP 붙여넣기 (Shift+F6)
+        [MenuItem("Edit/Paste TMP #f6", false, 203)]
+        static void PasteTMP()
+        {
+            if (copiedTMP == null)
+            {
+                Debug.LogWarning("복사된 TMP 값이 없습니다. 먼저 F6를 눌러 TMP를 복사하세요.");
+                return;
+            }
+
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("TMP를 붙여넣을 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            TextMeshProUGUI targetTMP = selectedObject.GetComponent<TextMeshProUGUI>();
+            if (targetTMP == null)
+            {
+                // TMP 컴포넌트가 없으면 신규 생성
+                targetTMP = selectedObject.AddComponent<TextMeshProUGUI>();
+                Debug.Log($"TextMeshProUGUI 컴포넌트가 생성되었습니다: {selectedObject.name}");
+            }
+
+            // TMP 값 복사
+            Undo.RecordObject(targetTMP, "Paste TMP");
+            EditorUtility.CopySerialized(copiedTMP, targetTMP);
+            EditorUtility.SetDirty(selectedObject);
+            EditorSceneManager.MarkSceneDirty(selectedObject.scene);
+            Debug.Log($"TextMeshProUGUI 값이 붙여넣기되었습니다: {selectedObject.name}");
+        }
+
+        // DOTween Animation 복사 (F7)
+        [MenuItem("Edit/Copy DOTween Animation _f7", false, 204)]
+        static void CopyDOTweenAnimation()
+        {
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("DOTween Animation을 복사할 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            DOTweenAnimation[] animations = selectedObject.GetComponents<DOTweenAnimation>();
+            if (animations == null || animations.Length == 0)
+            {
+                Debug.LogWarning($"선택한 오브젝트({selectedObject.name})에 DOTweenAnimation 컴포넌트가 없습니다.");
+                copiedDOTweenAnimations.Clear();
+                return;
+            }
+
+            // 모든 DOTweenAnimation 컴포넌트 복사
+            copiedDOTweenAnimations.Clear();
+            foreach (var anim in animations)
+            {
+                copiedDOTweenAnimations.Add(anim);
+            }
+            Debug.Log($"DOTweenAnimation 컴포넌트 {animations.Length}개가 복사되었습니다: {selectedObject.name}");
+        }
+
+        // DOTween Animation 붙여넣기 (Shift+F7)
+        [MenuItem("Edit/Paste DOTween Animation #f7", false, 205)]
+        static void PasteDOTweenAnimation()
+        {
+            if (copiedDOTweenAnimations == null || copiedDOTweenAnimations.Count == 0)
+            {
+                Debug.LogWarning("복사된 DOTween Animation 값이 없습니다. 먼저 F7를 눌러 DOTween Animation을 복사하세요.");
+                return;
+            }
+
+            GameObject selectedObject = Selection.activeGameObject;
+            if (selectedObject == null)
+            {
+                Debug.LogWarning("DOTween Animation을 붙여넣을 오브젝트가 선택되지 않았습니다.");
+                return;
+            }
+
+            // 복사된 각 애니메이션에 대해 처리
+            foreach (var copiedAnim in copiedDOTweenAnimations)
+            {
+                if (copiedAnim == null) continue;
+
+                // 기존 DOTweenAnimation 컴포넌트 찾기 (같은 타입의 애니메이션이 있는지 확인)
+                DOTweenAnimation[] existingAnimations = selectedObject.GetComponents<DOTweenAnimation>();
+                DOTweenAnimation targetAnim = null;
+
+                // 같은 animationType을 가진 컴포넌트가 있는지 확인
+                foreach (var existingAnim in existingAnimations)
+                {
+                    if (existingAnim.animationType == copiedAnim.animationType)
+                    {
+                        targetAnim = existingAnim;
+                        break;
+                    }
+                }
+
+                // 적합한 컴포넌트가 없으면 신규 생성
+                if (targetAnim == null)
+                {
+                    targetAnim = selectedObject.AddComponent<DOTweenAnimation>();
+                    Debug.Log($"DOTweenAnimation 컴포넌트가 생성되었습니다 (Type: {copiedAnim.animationType}): {selectedObject.name}");
+                }
+
+                // DOTweenAnimation 값 복사
+                Undo.RecordObject(targetAnim, "Paste DOTween Animation");
+                EditorUtility.CopySerialized(copiedAnim, targetAnim);
+                EditorUtility.SetDirty(selectedObject);
+            }
+
+            EditorSceneManager.MarkSceneDirty(selectedObject.scene);
+            Debug.Log($"DOTweenAnimation 값이 붙여넣기되었습니다 ({copiedDOTweenAnimations.Count}개): {selectedObject.name}");
         }
 
         // 제네릭 메소드로 UI 요소 생성
