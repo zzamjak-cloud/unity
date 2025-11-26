@@ -64,12 +64,23 @@ public class BezierPathData : ScriptableObject
         }
         isLoop = path.IsLoop;
         
-        // Transform 정보 저장
+        // Transform 정보 저장 (부모가 있으면 로컬 좌표, 없으면 월드 좌표)
         if (path.transform != null)
         {
-            savedPosition = path.transform.position;
-            savedRotation = path.transform.rotation;
-            savedScale = path.transform.localScale;
+            // 부모가 있으면 로컬 좌표를 저장 (부모 이동 시에도 상대 위치 유지)
+            if (path.transform.parent != null)
+            {
+                savedPosition = path.transform.localPosition;
+                savedRotation = path.transform.localRotation;
+                savedScale = path.transform.localScale;
+            }
+            else
+            {
+                // 부모가 없으면 월드 좌표를 저장
+                savedPosition = path.transform.position;
+                savedRotation = path.transform.rotation;
+                savedScale = path.transform.localScale;
+            }
         }
     }
 

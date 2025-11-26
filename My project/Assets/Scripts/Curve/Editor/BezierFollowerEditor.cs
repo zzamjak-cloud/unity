@@ -188,8 +188,11 @@ public class BezierFollowerEditor : Editor
         }
 
         Undo.RecordObject(follower.transform, "Update Test Position");
+        // 부모 Transform 변경 감지를 위해 UpdatePosition() 전에 강제로 캐시 무효화
+        // (Editor 모드에서는 Update()가 호출되지 않으므로 수동으로 처리)
+        follower.TransformDirty = true;
         follower.UpdatePosition();
-        
+
         // SceneView와 Inspector 갱신
         SceneView.RepaintAll();
         Repaint();
