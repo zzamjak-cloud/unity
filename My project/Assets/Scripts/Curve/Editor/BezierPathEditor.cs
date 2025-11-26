@@ -1,14 +1,73 @@
 using UnityEditor;
 using UnityEngine;
+using System.Collections.Generic;
 
 [CustomEditor(typeof(BezierPath))]
 public class BezierPathEditor : Editor
 {
+    #region Constants
+    private const float CLICK_RADIUS = 20f;                 // 정점/핸들 클릭 반경
+    private const float EPSILON = 0.001f;                   // 거의 0인 값
+    private const float SELECTED_POINT_RADIUS = 0.25f;      // 선택된 정점 반경
+    private const float HANDLE_LENGTH_FACTOR = 0.3f;        // 핸들 길이 계수
+    private const float CIRCLE_HANDLE_FACTOR = 0.552f;      // 4/3 * tan(π/8)    // 원 핸들 계수
+    private const float HANDLE_SIZE = 0.1f;                 // 핸들 크기
+    private const float POINT_HANDLE_SIZE = 0.2f;           // 정점 핸들 크기
+    private const float CURVE_LINE_WIDTH = 3f;              // 곡선 선 너비
+    private const float DEFAULT_RADIUS = 5f;                // 기본 반경
+    private const int SPIRAL_POINT_COUNT = 10;              // 나선 정점 개수
+    private const int MIN_POINTS_REQUIRED = 2;              // 최소 정점 개수
+    #endregion
+
+    #region Enums
+    private enum DraggingElementType
+    {
+        None = 0,
+        Point = 1,
+        HandleIn = 2,
+        HandleOut = 3
+    }
+
+    private enum AlignDirection
+    {
+        Left,
+        Right,
+        Top,
+        Bottom
+    }
+    #endregion
+
+    #region Private Fields
     private BezierPath path;
     private Transform handleTransform;
     private Quaternion handleRotation;
-    private int selectedPointIndex = -1; // 선택된 정점 인덱스
-    private bool isEditingPosition = false; // 위치 편집 모드
+    private int selectedPointIndex = -1;
+    private bool isEditingPosition = false;
+    
+    // Shift 키 축 고정을 위한 변수
+    private Vector3 dragStartPosition = Vector3.zero;
+    private Vector3 dragStartHandleIn = Vector3.zero;
+    private Vector3 dragStartHandleOut = Vector3.zero;
+    private bool isDragging = false;
+    private DraggingElementType draggingElementType = DraggingElementType.None;
+    
+    // 다중 선택 정점 이동을 위한 변수
+    private Dictionary<int, Vector3> selectedPointsStartPositions = new Dictionary<int, Vector3>();
+    
+    // 여러 정점 선택을 위한 변수
+    private HashSet<int> selectedPointIndices = new HashSet<int>();
+    private bool isBoxSelecting = false;
+    private Vector2 boxSelectStart = Vector2.zero;
+    private Vector2 boxSelectEnd = Vector2.zero;
+    private bool isBoxSelectAddMode = false;
+    private bool isBoxSelectSubtractMode = false;
+    
+    // UI 상태
+    private int _polygonSides = 4;
+    private bool _useHandles = true;
+    #endregion
+
+    #region Unity Lifecycle
 
     private void OnEnable()
     {
@@ -16,21 +75,21 @@ public class BezierPathEditor : Editor
         EnsureInitialized();
     }
 
+    // 초기화 확인 (SerializedProperty가 없으면 초기화)
     private void EnsureInitialized()
     {
         if (path == null) return;
 
-        // SerializedProperty를 사용하여 직접 접근
         SerializedProperty pointsProp = serializedObject.FindProperty("points");
-        
+
         if (pointsProp == null || !pointsProp.isArray || pointsProp.arraySize == 0)
         {
             serializedObject.Update();
             path.Initialize();
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(path);
+            SaveChanges();
         }
     }
+    #endregion
 
     public override void OnInspectorGUI()
     {
@@ -41,11 +100,60 @@ public class BezierPathEditor : Editor
 
         DrawDefaultInspector();
 
+        // isLoop 체크박스 표시
+        SerializedProperty isLoopProp = serializedObject.FindProperty("isLoop");
+        if (isLoopProp != null)
+        {
+            EditorGUI.BeginChangeCheck();
+            bool newIsLoop = EditorGUILayout.Toggle("Is Loop", path.IsLoop);
+            if (EditorGUI.EndChangeCheck())
+            {
+                path.IsLoop = newIsLoop;
+                SaveChanges("Toggle Is Loop");
+            }
+        }
+
         // 현재 포인트 개수 표시 (디버깅용)
         SerializedProperty pointsProp = serializedObject.FindProperty("points");
         if (pointsProp != null)
         {
             EditorGUILayout.HelpBox($"Points Count: {pointsProp.arraySize}", MessageType.Info);
+        }
+
+        // ScriptableObject 관리 (필수)
+        GUILayout.Space(10);
+        EditorGUILayout.LabelField("ScriptableObject", EditorStyles.boldLabel);
+        
+        SerializedProperty pathDataProp = serializedObject.FindProperty("pathData");
+        
+        // 현재 연결 상태 표시
+        if (pathDataProp != null && pathDataProp.objectReferenceValue != null)
+        {
+            EditorGUILayout.HelpBox($"✓ ScriptableObject 연결됨: {pathDataProp.objectReferenceValue.name}\n✓ Update 버튼 클릭 시 동기화됩니다.\n✓ 런타임에서 최적화된 성능으로 사용됩니다.", MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("⚠ ScriptableObject가 필요합니다!\n\n에디터에서 편집한 데이터는 ScriptableObject에 저장되며,\n런타임에서는 ScriptableObject만 사용하여 최적화된 성능을 제공합니다.", MessageType.Warning);
+        }
+        
+        EditorGUILayout.BeginHorizontal();
+        bool initClicked = GUILayout.Button("Init", GUILayout.Height(30));
+        bool updateClicked = GUILayout.Button("Update", GUILayout.Height(30));
+        bool exportClicked = GUILayout.Button("Export", GUILayout.Height(30));
+        EditorGUILayout.EndHorizontal();
+        
+        // 버튼 클릭은 레이아웃이 끝난 후에 처리
+        if (initClicked)
+        {
+            InitFromScriptableObject();
+        }
+        if (updateClicked)
+        {
+            CreateOrUpdateScriptableObject();
+        }
+        if (exportClicked)
+        {
+            ExportToScriptableObject();
         }
 
         // 선택된 정점의 위치 편집 UI
@@ -55,7 +163,6 @@ public class BezierPathEditor : Editor
         
         if (GUILayout.Button("Add Point", GUILayout.Height(30)))
         {
-            Undo.RecordObject(path, "Add Point");
             serializedObject.Update();
             
             // pointsProp는 이미 위에서 선언되었으므로 재사용
@@ -89,32 +196,106 @@ public class BezierPathEditor : Editor
                 selectedPointIndex = pointsProp.arraySize - 1;
             }
             
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(path);
-            PrefabUtility.RecordPrefabInstancePropertyModifications(path);
-            Repaint(); // Inspector 갱신
+            SaveChanges();
+            Repaint();
         }
 
         GUI.backgroundColor = Color.red;
         if (GUILayout.Button("Reset Path", GUILayout.Height(20)))
         {
-            Undo.RecordObject(path, "Reset Path");
             serializedObject.Update();
             path.Initialize();
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(path);
-            PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+            SaveChanges("Reset Path");
         }
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(10);
         DrawPresetShapes(pointsProp);
         
+        GUILayout.Space(10);
+        DrawArraySection(pointsProp);
+        
         serializedObject.ApplyModifiedProperties();
     }
 
-    private int _polygonSides = 4;
-    private bool _useHandles = true;
+    #region Helper Methods
+    
+    /// <summary>
+    /// 변경사항을 저장하는 헬퍼 메서드
+    /// </summary>
+    private void SaveChanges(string undoName = null)
+    {
+        if (!string.IsNullOrEmpty(undoName))
+        {
+            Undo.RecordObject(path, undoName);
+        }
+        serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(path);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+    }
+    
+
+    /// <summary>
+    /// 정점 인덱스가 유효한지 확인
+    /// </summary>
+    private bool IsValidPointIndex(int index, SerializedProperty pointsProp)
+    {
+        return pointsProp != null && index >= 0 && index < pointsProp.arraySize;
+    }
+
+    /// <summary>
+    /// 정점과 핸들을 함께 이동
+    /// </summary>
+    private void MovePointWithHandles(SerializedProperty pointProp, Vector3 newPosition, Vector3 delta)
+    {
+        pointProp.FindPropertyRelative("position").vector3Value = newPosition;
+        
+        Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+        Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+        pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn + delta;
+        pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut + delta;
+    }
+
+    /// <summary>
+    /// Shift 키 축 고정 적용
+    /// </summary>
+    private Vector3 ApplyAxisLock(Vector3 newPos, Vector3 startPos, Vector3 delta)
+    {
+        float absDeltaX = Mathf.Abs(delta.x);
+        float absDeltaY = Mathf.Abs(delta.y);
+        
+        if (absDeltaX > absDeltaY)
+        {
+            // 수평 이동이 더 크면 Y축 고정
+            newPos.y = startPos.y;
+        }
+        else
+        {
+            // 수직 이동이 더 크면 X축 고정
+            newPos.x = startPos.x;
+        }
+        
+        return newPos;
+    }
+
+    /// <summary>
+    /// GUI 좌표로 변환된 정점 위치 가져오기
+    /// </summary>
+    private Vector2 GetGUIPosition(Vector3 worldPosition)
+    {
+        return HandleUtility.WorldToGUIPoint(worldPosition);
+    }
+
+    /// <summary>
+    /// 마우스가 정점/핸들 근처에 있는지 확인
+    /// </summary>
+    private bool IsNearPointOrHandle(Vector2 mousePos, Vector2 guiPos, Vector2 guiHandleIn, Vector2 guiHandleOut)
+    {
+        return Vector2.Distance(mousePos, guiPos) < CLICK_RADIUS ||
+               Vector2.Distance(mousePos, guiHandleIn) < CLICK_RADIUS ||
+               Vector2.Distance(mousePos, guiHandleOut) < CLICK_RADIUS;
+    }
+    #endregion
 
     /// <summary>
     /// 선택된 정점의 위치를 편집할 수 있는 UI를 표시합니다.
@@ -164,24 +345,40 @@ public class BezierPathEditor : Editor
                 handleInProp.vector3Value = handleInProp.vector3Value + delta;
                 handleOutProp.vector3Value = handleOutProp.vector3Value + delta;
                 
-                serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(path);
-                PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+                SaveChanges("Edit Point Position");
                 SceneView.RepaintAll();
             }
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Clear Selection"))
-            {
-                selectedPointIndex = -1;
-            }
-            if (selectedPointIndex > 0 && GUILayout.Button("◀ Previous", GUILayout.Width(100)))
+            // 우측 정렬을 위한 빈 공간
+            GUILayout.FlexibleSpace();
+            // Previous 버튼: 순환 구조 (0 -> 마지막 인덱스)
+            if (GUILayout.Button("◀ Previous", GUILayout.Width(100)))
             {
                 selectedPointIndex--;
+                if (selectedPointIndex < 0)
+                {
+                    selectedPointIndex = pointsProp.arraySize - 1; // 마지막 인덱스로 순환
+                }
+                // 현재 선택된 정점만 표시하도록 다중 선택 초기화
+                selectedPointIndices.Clear();
+                selectedPointIndices.Add(selectedPointIndex);
+                Repaint();
+                SceneView.RepaintAll();
             }
-            if (selectedPointIndex < pointsProp.arraySize - 1 && GUILayout.Button("Next ▶", GUILayout.Width(100)))
+            // Next 버튼: 순환 구조 (마지막 인덱스 -> 0)
+            if (GUILayout.Button("Next ▶", GUILayout.Width(100)))
             {
                 selectedPointIndex++;
+                if (selectedPointIndex >= pointsProp.arraySize)
+                {
+                    selectedPointIndex = 0; // 첫 번째 인덱스로 순환
+                }
+                // 현재 선택된 정점만 표시하도록 다중 선택 초기화
+                selectedPointIndices.Clear();
+                selectedPointIndices.Add(selectedPointIndex);
+                Repaint();
+                SceneView.RepaintAll();
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -213,37 +410,30 @@ public class BezierPathEditor : Editor
 
         GUILayout.Space(5);
 
-        // 원 프리셋
-        if (GUILayout.Button("Circle 생성"))
+        // 원, 별, 나선 프리셋을 한 줄에 배치
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("Circle"))
         {
             CreateCircle(pointsProp, _useHandles);
         }
-
-        GUILayout.Space(5);
-
-        // 별 프리셋
-        if (GUILayout.Button("Star 생성"))
+        if (GUILayout.Button("Star"))
         {
             CreateStar(pointsProp, _useHandles);
         }
-
-        GUILayout.Space(5);
-
-        // 나선 프리셋
-        if (GUILayout.Button("나선 생성"))
+        if (GUILayout.Button("Spiral"))
         {
             CreateSpiral(pointsProp, _useHandles);
         }
+        EditorGUILayout.EndHorizontal();
     }
 
     private void CreatePolygon(SerializedProperty pointsProp, int sides, bool useHandles)
     {
-        Undo.RecordObject(path, $"Create {sides}-sided Polygon");
         serializedObject.Update();
 
         pointsProp.arraySize = 0;
 
-        float radius = 5f;
+        float radius = DEFAULT_RADIUS;
         float angleStep = 360f / sides;
 
         for (int i = 0; i < sides; i++)
@@ -274,7 +464,7 @@ public class BezierPathEditor : Editor
                 // 핸들 길이는 이전-현재 또는 현재-다음 거리의 평균
                 float distToPrev = Vector3.Distance(position, prevPos);
                 float distToNext = Vector3.Distance(position, nextPos);
-                float handleLength = (distToPrev + distToNext) * 0.3f;
+                float handleLength = (distToPrev + distToNext) * HANDLE_LENGTH_FACTOR;
                 
                 point.FindPropertyRelative("handleOut").vector3Value = position + direction * handleLength;
                 point.FindPropertyRelative("handleIn").vector3Value = position - direction * handleLength;
@@ -288,20 +478,17 @@ public class BezierPathEditor : Editor
             point.FindPropertyRelative("isBroken").boolValue = false;
         }
 
-        path.isLoop = true;
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        path.IsLoop = true;
+        SaveChanges($"Create {sides}-sided Polygon");
     }
 
     private void CreateCircle(SerializedProperty pointsProp, bool useHandles)
     {
-        Undo.RecordObject(path, "Create Circle");
         serializedObject.Update();
 
         pointsProp.arraySize = 0;
 
-        float radius = 5f;
+        float radius = DEFAULT_RADIUS;
         int pointCount = 4; // 4개의 정점
 
         for (int i = 0; i < pointCount; i++)
@@ -316,26 +503,17 @@ public class BezierPathEditor : Editor
             
             if (useHandles)
             {
-                // 이전 정점과 다음 정점 사이를 보간하는 형태로 핸들 설정
-                int prevIndex = (i - 1 + pointCount) % pointCount; // Loop 처리
-                int nextIndex = (i + 1) % pointCount; // Loop 처리
+                // 원의 접선 방향으로 핸들 설정 (완벽한 원을 위한 표준 방법)
+                // 접선 벡터: (-sin(angle), cos(angle), 0)
+                Vector3 tangent = new Vector3(-Mathf.Sin(angle), Mathf.Cos(angle), 0f);
                 
-                float prevAngle = (prevIndex * 90f - 90f) * Mathf.Deg2Rad;
-                float nextAngle = (nextIndex * 90f - 90f) * Mathf.Deg2Rad;
+                // 베지어 곡선이 원에 가깝게 만들기 위한 핸들 길이
+                // 공식: 4/3 * tan(π/2n) * radius, 여기서 n은 정점 개수
+                // 4개 정점의 경우: 4/3 * tan(π/8) * radius ≈ 0.552 * radius
+                float handleLength = radius * CIRCLE_HANDLE_FACTOR;
                 
-                Vector3 prevPos = new Vector3(Mathf.Cos(prevAngle) * radius, Mathf.Sin(prevAngle) * radius, 0f);
-                Vector3 nextPos = new Vector3(Mathf.Cos(nextAngle) * radius, Mathf.Sin(nextAngle) * radius, 0f);
-                
-                // 이전 정점과 다음 정점 사이의 방향
-                Vector3 direction = (nextPos - prevPos).normalized;
-                
-                // 핸들 길이는 이전-현재 또는 현재-다음 거리의 평균
-                float distToPrev = Vector3.Distance(position, prevPos);
-                float distToNext = Vector3.Distance(position, nextPos);
-                float handleLength = (distToPrev + distToNext) * 0.3f;
-                
-                point.FindPropertyRelative("handleOut").vector3Value = position + direction * handleLength;
-                point.FindPropertyRelative("handleIn").vector3Value = position - direction * handleLength;
+                point.FindPropertyRelative("handleOut").vector3Value = position + tangent * handleLength;
+                point.FindPropertyRelative("handleIn").vector3Value = position - tangent * handleLength;
             }
             else
             {
@@ -346,15 +524,12 @@ public class BezierPathEditor : Editor
             point.FindPropertyRelative("isBroken").boolValue = false;
         }
 
-        path.isLoop = true;
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        path.IsLoop = true;
+        SaveChanges("Create Circle");
     }
 
     private void CreateStar(SerializedProperty pointsProp, bool useHandles)
     {
-        Undo.RecordObject(path, "Create Star");
         serializedObject.Update();
 
         pointsProp.arraySize = 0;
@@ -395,7 +570,7 @@ public class BezierPathEditor : Editor
                 // 핸들 길이는 이전-현재 또는 현재-다음 거리의 평균
                 float distToPrev = Vector3.Distance(position, prevPos);
                 float distToNext = Vector3.Distance(position, nextPos);
-                float handleLength = (distToPrev + distToNext) * 0.3f;
+                float handleLength = (distToPrev + distToNext) * HANDLE_LENGTH_FACTOR;
                 
                 point.FindPropertyRelative("handleOut").vector3Value = position + direction * handleLength;
                 point.FindPropertyRelative("handleIn").vector3Value = position - direction * handleLength;
@@ -409,15 +584,12 @@ public class BezierPathEditor : Editor
             point.FindPropertyRelative("isBroken").boolValue = false;
         }
 
-        path.isLoop = true;
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        path.IsLoop = true;
+        SaveChanges("Create Star");
     }
 
     private void CreateSpiral(SerializedProperty pointsProp, bool useHandles)
     {
-        Undo.RecordObject(path, "Create Spiral");
         serializedObject.Update();
 
         pointsProp.arraySize = 0;
@@ -485,7 +657,7 @@ public class BezierPathEditor : Editor
                 // 핸들 길이는 이전-현재 또는 현재-다음 거리의 평균
                 float distToPrev = Vector3.Distance(position, prevPos);
                 float distToNext = Vector3.Distance(position, nextPos);
-                float handleLength = (distToPrev + distToNext) * 0.3f;
+                float handleLength = (distToPrev + distToNext) * HANDLE_LENGTH_FACTOR;
                 
                 point.FindPropertyRelative("handleOut").vector3Value = position + direction * handleLength;
                 point.FindPropertyRelative("handleIn").vector3Value = position - direction * handleLength;
@@ -499,10 +671,8 @@ public class BezierPathEditor : Editor
             point.FindPropertyRelative("isBroken").boolValue = false;
         }
 
-        path.isLoop = false; // 나선은 열린 경로
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        path.IsLoop = false; // 나선은 열린 경로
+        SaveChanges("Create Spiral");
     }
 
     private void OnSceneGUI()
@@ -510,11 +680,49 @@ public class BezierPathEditor : Editor
         path = (BezierPath)target;
         if (path == null) return;
         
+        // 최신 데이터 가져오기
+        serializedObject.Update();
+        
         SerializedProperty pointsProp = serializedObject.FindProperty("points");
         if (pointsProp == null || pointsProp.arraySize == 0) return;
         
         handleTransform = path.transform;
         handleRotation = Tools.pivotRotation == PivotRotation.Local ? handleTransform.rotation : Quaternion.identity;
+
+        // 드래그 종료 감지 (전역)
+        if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
+        {
+            bool wasDragging = isDragging;
+            DraggingElementType wasDraggingType = draggingElementType;
+            
+            isDragging = false;
+            draggingElementType = DraggingElementType.None;
+            
+            // 다중 선택 정점 이동 초기화
+            selectedPointsStartPositions.Clear();
+            
+            // 드래그가 끝났을 때만 SaveChanges 호출 (성능 최적화)
+            if (wasDragging)
+            {
+                string undoName = wasDraggingType == DraggingElementType.Point ? 
+                    (selectedPointIndices.Count > 1 ? "Move Points" : "Move Point") :
+                                 wasDraggingType == DraggingElementType.HandleIn ? "Move Handle In" :
+                                 wasDraggingType == DraggingElementType.HandleOut ? "Move Handle Out" : null;
+                if (!string.IsNullOrEmpty(undoName))
+                {
+                    SaveChanges(undoName);
+                }
+                Repaint();
+            }
+            
+            // 박스 선택 종료
+            if (isBoxSelecting)
+            {
+                isBoxSelecting = false;
+                HandleBoxSelection(pointsProp);
+                Event.current.Use();
+            }
+        }
 
         // Enter 키 전역 처리 (편집 모드 전환)
         if (Event.current.type == EventType.KeyDown)
@@ -527,8 +735,14 @@ public class BezierPathEditor : Editor
             }
         }
 
-        // Ctrl + 왼쪽 클릭으로 커브에 정점 추가
+        // Alt + 왼쪽 클릭으로 커브에 정점 추가 (박스 선택보다 먼저 처리)
         HandleCurveClick(pointsProp);
+
+        // 박스 선택 처리
+        HandleBoxSelectionInput(pointsProp);
+
+        // 여러 정점 선택 시 우클릭 메뉴 처리
+        HandleMultiSelectionContextMenu(pointsProp);
 
         // 1. 정점 및 핸들 그리기 및 조작
         for (int i = 0; i < pointsProp.arraySize; i++)
@@ -540,10 +754,10 @@ public class BezierPathEditor : Editor
         Handles.color = Color.white;
         for (int i = 0; i < pointsProp.arraySize; i++)
         {
-            if (!path.isLoop && i == pointsProp.arraySize - 1) break;
+            if (!path.IsLoop && i == pointsProp.arraySize - 1) break;
 
             SerializedProperty p0Prop = pointsProp.GetArrayElementAtIndex(i);
-            SerializedProperty p1Prop = (path.isLoop && i == pointsProp.arraySize - 1) 
+            SerializedProperty p1Prop = (path.IsLoop && i == pointsProp.arraySize - 1) 
                 ? pointsProp.GetArrayElementAtIndex(0) 
                 : pointsProp.GetArrayElementAtIndex(i + 1);
             
@@ -555,7 +769,7 @@ public class BezierPathEditor : Editor
             Vector3 p1In = handleTransform.TransformPoint(p1.handleIn);
             Vector3 p1Pos = handleTransform.TransformPoint(p1.position);
 
-            Handles.DrawBezier(p0Pos, p1Pos, p0Out, p1In, Color.white, null, 3f);
+            Handles.DrawBezier(p0Pos, p1Pos, p0Out, p1In, Color.white, null, CURVE_LINE_WIDTH);
         }
     }
 
@@ -569,6 +783,8 @@ public class BezierPathEditor : Editor
         };
     }
 
+    #region Scene GUI - Point Rendering and Interaction
+    
     private void ShowPoint(int index, SerializedProperty pointsProp)
     {
         SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(index);
@@ -579,195 +795,361 @@ public class BezierPathEditor : Editor
         bool isBroken = pointProp.FindPropertyRelative("isBroken").boolValue;
 
         // 좌표 변환 (Local -> World)
-        Vector3 p = handleTransform.TransformPoint(position);
-        Vector3 hIn = handleTransform.TransformPoint(handleIn);
-        Vector3 hOut = handleTransform.TransformPoint(handleOut);
+        Vector3 worldPoint = handleTransform.TransformPoint(position);
+        Vector3 worldHandleIn = handleTransform.TransformPoint(handleIn);
+        Vector3 worldHandleOut = handleTransform.TransformPoint(handleOut);
 
-        // --------------------------
-        // 1. 메인 정점(Anchor) 제어
-        // --------------------------
+        // 핸들 그리기
+        DrawHandles(worldPoint, worldHandleIn, worldHandleOut);
+
+        // 핸들 제어 (정점보다 먼저 처리하여 우선순위 확보)
+        HandleHandleDrag(pointProp, index, position, handleIn, handleOut, worldHandleIn, 
+                        DraggingElementType.HandleIn, isBroken, ref isBroken);
+        HandleHandleDrag(pointProp, index, position, handleIn, handleOut, worldHandleOut, 
+                        DraggingElementType.HandleOut, isBroken, ref isBroken);
+
+        // 정점 제어
+        DrawSelectedPointHighlight(worldPoint, index);
+        HandlePointDrag(pointProp, index, position, handleIn, handleOut, worldPoint, 
+                       worldHandleIn, worldHandleOut, isBroken);
+        HandlePointContextMenu(index, pointProp, position, handleIn, handleOut, worldPoint, isBroken);
+    }
+
+    /// <summary>
+    /// 핸들 그리기
+    /// </summary>
+    private void DrawHandles(Vector3 point, Vector3 handleIn, Vector3 handleOut)
+    {
+        Handles.color = Color.grey;
+        Handles.DrawLine(point, handleIn);
+        Handles.DrawLine(point, handleOut);
+    }
+
+    /// <summary>
+    /// 선택된 정점 강조 표시
+    /// </summary>
+    private void DrawSelectedPointHighlight(Vector3 worldPoint, int index)
+    {
+        // 드래그 중일 때는 하이라이트 표시하지 않음 (성능 및 시각적 혼란 방지)
+        if (isDragging) return;
         
-        // 선택된 정점 강조 표시
-        if (selectedPointIndex == index)
+        if (selectedPointIndex == index || selectedPointIndices.Contains(index))
         {
-            Handles.color = Color.yellow;
-            Handles.DrawWireDisc(p, handleTransform.forward, 0.25f);
+            Handles.color = Color.green;
+            Handles.DrawWireDisc(worldPoint, handleTransform.forward, SELECTED_POINT_RADIUS);
             Handles.color = Color.white;
         }
-        
-        // 정점 이동 및 선택 처리
-        EditorGUI.BeginChangeCheck();
-        p = Handles.FreeMoveHandle(p, 0.2f, Vector3.zero, Handles.DotHandleCap);
-        
-        // 정점이 이동되었거나 클릭되었을 때 선택 처리
-        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
-        {
-            Vector3 guiPos = HandleUtility.WorldToGUIPoint(p);
-            Vector2 mousePos = Event.current.mousePosition;
-            
-            // 포인트 근처에서 클릭했는지 확인 (반경 20픽셀)
-            if (Vector2.Distance(mousePos, guiPos) < 20f)
-            {
-                // Ctrl/Cmd 키가 눌려있지 않으면 선택 수행
-                if (!Event.current.control && !Event.current.command)
-                {
-                    selectedPointIndex = index;
-                    isEditingPosition = false;
-                    Repaint(); // Inspector 갱신
-                }
-            }
-        }
-        
-        if (EditorGUI.EndChangeCheck())
-        {
-            Undo.RecordObject(path, "Move Point");
-            serializedObject.Update();
-            Vector3 delta = p - handleTransform.TransformPoint(position); // 이동량 계산
-            
-            Vector3 newPos = handleTransform.InverseTransformPoint(p);
-            pointProp.FindPropertyRelative("position").vector3Value = newPos;
-            pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn + handleTransform.InverseTransformVector(delta);
-            pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut + handleTransform.InverseTransformVector(delta);
-            
-            // 이동 시에도 선택 상태 유지
-            selectedPointIndex = index;
-            
-            serializedObject.ApplyModifiedProperties();
-            EditorUtility.SetDirty(path);
-        }
-        
-        // Enter 키 입력 처리 (편집 모드 전환)
-        if (Event.current.type == EventType.KeyDown)
-        {
-            if (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter)
-            {
-                if (selectedPointIndex == index)
-                {
-                    isEditingPosition = !isEditingPosition;
-                    Event.current.Use();
-                    Repaint(); // Inspector 갱신
-                }
-            }
-        }
+    }
 
-        // 우클릭 컨텍스트 메뉴 처리
-        if (Event.current.type == EventType.MouseDown && Event.current.button == 1)
-        {
-            Vector3 guiPos = HandleUtility.WorldToGUIPoint(p);
-            Vector2 mousePos = Event.current.mousePosition;
-            
-            // 포인트 근처에서 우클릭했는지 확인 (반경 20픽셀)
-            if (Vector2.Distance(mousePos, guiPos) < 20f)
-            {
-                Event.current.Use();
-                ShowPointContextMenu(index, pointProp, position, handleIn, handleOut, isBroken);
-            }
-        }
-
-        // --------------------------
-        // 2. 핸들(In/Out) 제어
-        // --------------------------
-        Handles.color = Color.grey;
-        Handles.DrawLine(p, hIn);
-        Handles.DrawLine(p, hOut);
-
-        // Handle In 제어
-        // 핸들 이동 전에 Alt 키 상태 확인
+    /// <summary>
+    /// 핸들 드래그 처리 (공통 로직)
+    /// </summary>
+    private void HandleHandleDrag(SerializedProperty pointProp, int index, Vector3 position, 
+                                  Vector3 handleIn, Vector3 handleOut, Vector3 worldHandle,
+                                  DraggingElementType elementType, bool isBroken, ref bool isBrokenRef)
+    {
         bool isAltPressedBefore = Event.current.alt;
         
+        // 드래그 시작 감지
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+        {
+            Vector2 guiHandle = GetGUIPosition(worldHandle);
+            Vector2 mousePos = Event.current.mousePosition;
+            if (Vector2.Distance(mousePos, guiHandle) < CLICK_RADIUS)
+            {
+                isDragging = true;
+                draggingElementType = elementType;
+                if (elementType == DraggingElementType.HandleIn)
+                    dragStartHandleIn = handleIn;
+                else
+                    dragStartHandleOut = handleOut;
+            }
+        }
+        
         EditorGUI.BeginChangeCheck();
-        hIn = Handles.FreeMoveHandle(hIn, 0.1f, Vector3.zero, Handles.CircleHandleCap);
+        worldHandle = Handles.FreeMoveHandle(worldHandle, HANDLE_SIZE, Vector3.zero, Handles.CircleHandleCap);
         if (EditorGUI.EndChangeCheck())
         {
-            Undo.RecordObject(path, "Move Handle In");
             serializedObject.Update();
-            Vector3 newHandleIn = handleTransform.InverseTransformPoint(hIn);
-            pointProp.FindPropertyRelative("handleIn").vector3Value = newHandleIn;
+            Vector3 newHandle = handleTransform.InverseTransformPoint(worldHandle);
+            Vector3 startHandle = (elementType == DraggingElementType.HandleIn) ? dragStartHandleIn : dragStartHandleOut;
+            
+            // Shift 키가 눌려있으면 축 고정
+            if (Event.current.shift && isDragging && draggingElementType == elementType)
+            {
+                Vector3 delta = newHandle - startHandle;
+                newHandle = ApplyAxisLock(newHandle, startHandle, delta);
+            }
+            
+            // 핸들 업데이트
+            string handleProperty = (elementType == DraggingElementType.HandleIn) ? "handleIn" : "handleOut";
+            pointProp.FindPropertyRelative(handleProperty).vector3Value = newHandle;
             
             // Alt 키를 누른 상태에서 핸들을 이동하면 자동으로 Break 활성화
             bool isAltPressed = Event.current.alt || isAltPressedBefore;
             if (isAltPressed && !isBroken)
             {
                 pointProp.FindPropertyRelative("isBroken").boolValue = true;
-                isBroken = true; // 로컬 변수 업데이트
+                isBrokenRef = true;
             }
             
-            // Break가 아닐 경우, 반대쪽 핸들(Out)을 맞은편으로 자동 이동 (미러링)
+            // Break가 아닐 경우, 반대쪽 핸들을 맞은편으로 자동 이동 (미러링)
             if (!isBroken && !isAltPressed)
             {
                 Vector3 localP = position;
-                Vector3 dir = localP - newHandleIn;
-                pointProp.FindPropertyRelative("handleOut").vector3Value = localP + dir;
+                Vector3 dir = localP - newHandle;
+                string oppositeHandle = (elementType == DraggingElementType.HandleIn) ? "handleOut" : "handleIn";
+                pointProp.FindPropertyRelative(oppositeHandle).vector3Value = localP + dir;
             }
+            
+            // 드래그 중에는 SaveChanges 호출하지 않음 (성능 최적화)
+            // 드래그 종료 시 OnSceneGUI의 MouseUp에서 처리
             serializedObject.ApplyModifiedProperties();
             EditorUtility.SetDirty(path);
         }
+    }
 
-        // Handle Out 제어
-        // 핸들 이동 전에 Alt 키 상태 확인
-        bool isAltPressedBeforeOut = Event.current.alt;
+    /// <summary>
+    /// 정점 드래그 처리
+    /// </summary>
+    private void HandlePointDrag(SerializedProperty pointProp, int index, Vector3 position, 
+                                 Vector3 handleIn, Vector3 handleOut, Vector3 worldPoint,
+                                 Vector3 worldHandleIn, Vector3 worldHandleOut, bool isBroken)
+    {
+        // 드래그 시작 감지 (정점) - Handles.FreeMoveHandle 전에 처리해야 함
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+        {
+            Vector2 guiPos = GetGUIPosition(worldPoint);
+            Vector2 mousePos = Event.current.mousePosition;
+            
+            Vector2 guiHandleIn = GetGUIPosition(worldHandleIn);
+            Vector2 guiHandleOut = GetGUIPosition(worldHandleOut);
+            bool isNearHandle = IsNearPointOrHandle(mousePos, guiPos, guiHandleIn, guiHandleOut);
+            
+            if (Vector2.Distance(mousePos, guiPos) < CLICK_RADIUS && !isNearHandle)
+            {
+                // Alt 키가 눌려있으면 정점 추가 기능을 위해 이벤트를 사용하지 않음
+                if (!Event.current.alt)
+                {
+                    // 선택된 정점이 없거나, 클릭한 정점이 선택되지 않은 경우 단일 선택
+                    if (selectedPointIndices.Count == 0 || !selectedPointIndices.Contains(index))
+                    {
+                        selectedPointIndex = index;
+                        selectedPointIndices.Clear();
+                        selectedPointIndices.Add(index);
+                    }
+                    // 클릭한 정점이 이미 선택되어 있으면 그대로 유지 (다중 선택 유지)
+                    
+                    isEditingPosition = false;
+                    isDragging = true;
+                    draggingElementType = DraggingElementType.Point;
+                    dragStartPosition = position;
+                    dragStartHandleIn = handleIn;
+                    dragStartHandleOut = handleOut;
+                    
+                    // 다중 선택된 모든 정점의 초기 위치 저장 (드래그 시작 시점의 위치)
+                    selectedPointsStartPositions.Clear();
+                    SerializedProperty pointsProp = serializedObject.FindProperty("points");
+                    if (pointsProp != null && selectedPointIndices.Count > 0)
+                    {
+                        foreach (int selectedIdx in selectedPointIndices)
+                        {
+                            if (selectedIdx >= 0 && selectedIdx < pointsProp.arraySize)
+                            {
+                                SerializedProperty selectedPointProp = pointsProp.GetArrayElementAtIndex(selectedIdx);
+                                Vector3 startPos = selectedPointProp.FindPropertyRelative("position").vector3Value;
+                                selectedPointsStartPositions[selectedIdx] = startPos;
+                            }
+                        }
+                    }
+                    // 드래그 시작 시에는 Repaint 불필요 (SceneView만 업데이트)
+                }
+            }
+        }
+        
+        // Handles.FreeMoveHandle 전에 드래그 상태 확인 및 초기 위치 저장
+        bool wasDraggingBefore = isDragging;
+        
+        // 다중 선택된 경우, MouseDown 이벤트에서 초기 위치 미리 저장 (Handles가 이벤트를 소비하기 전에)
+        if (!wasDraggingBefore && selectedPointIndices.Count > 1 && selectedPointsStartPositions.Count == 0 && 
+            Event.current.type == EventType.MouseDown && Event.current.button == 0)
+        {
+            Vector2 guiPos = GetGUIPosition(worldPoint);
+            Vector2 mousePos = Event.current.mousePosition;
+            if (Vector2.Distance(mousePos, guiPos) < CLICK_RADIUS)
+            {
+                selectedPointsStartPositions.Clear();
+                SerializedProperty pointsProp = serializedObject.FindProperty("points");
+                if (pointsProp != null)
+                {
+                    serializedObject.Update(); // 최신 데이터 가져오기
+                    foreach (int selectedIdx in selectedPointIndices)
+                    {
+                        if (selectedIdx >= 0 && selectedIdx < pointsProp.arraySize)
+                        {
+                            SerializedProperty selectedPointProp = pointsProp.GetArrayElementAtIndex(selectedIdx);
+                            Vector3 startPos = selectedPointProp.FindPropertyRelative("position").vector3Value;
+                            selectedPointsStartPositions[selectedIdx] = startPos;
+                        }
+                    }
+                }
+            }
+        }
         
         EditorGUI.BeginChangeCheck();
-        hOut = Handles.FreeMoveHandle(hOut, 0.1f, Vector3.zero, Handles.CircleHandleCap);
-        if (EditorGUI.EndChangeCheck())
+        worldPoint = Handles.FreeMoveHandle(worldPoint, POINT_HANDLE_SIZE, Vector3.zero, Handles.DotHandleCap);
+        bool handleChanged = EditorGUI.EndChangeCheck();
+        
+        // Handles가 드래그를 시작했지만 아직 초기 위치가 저장되지 않은 경우 (백업)
+        if (handleChanged && !wasDraggingBefore && selectedPointIndices.Count > 1 && selectedPointsStartPositions.Count == 0)
         {
-            Undo.RecordObject(path, "Move Handle Out");
+            selectedPointsStartPositions.Clear();
+            SerializedProperty pointsProp = serializedObject.FindProperty("points");
+            if (pointsProp != null)
+            {
+                serializedObject.Update();
+                foreach (int selectedIdx in selectedPointIndices)
+                {
+                    if (selectedIdx >= 0 && selectedIdx < pointsProp.arraySize)
+                    {
+                        SerializedProperty selectedPointProp = pointsProp.GetArrayElementAtIndex(selectedIdx);
+                        Vector3 startPos = selectedPointProp.FindPropertyRelative("position").vector3Value;
+                        selectedPointsStartPositions[selectedIdx] = startPos;
+                    }
+                }
+            }
+        }
+        
+        if (handleChanged)
+        {
             serializedObject.Update();
-            Vector3 newHandleOut = handleTransform.InverseTransformPoint(hOut);
-            pointProp.FindPropertyRelative("handleOut").vector3Value = newHandleOut;
-
-            // Alt 키를 누른 상태에서 핸들을 이동하면 자동으로 Break 활성화
-            bool isAltPressed = Event.current.alt || isAltPressedBeforeOut;
-            if (isAltPressed && !isBroken)
+            
+            Vector3 newPos = handleTransform.InverseTransformPoint(worldPoint);
+            
+            // 드래그 중인 정점의 초기 위치 가져오기
+            Vector3 dragStartPos = position; // 기본값: 현재 위치
+            if (selectedPointsStartPositions.TryGetValue(index, out Vector3 savedStartPos))
             {
-                pointProp.FindPropertyRelative("isBroken").boolValue = true;
-                isBroken = true; // 로컬 변수 업데이트
+                dragStartPos = savedStartPos;
             }
-
-            // Break가 아닐 경우, 반대쪽 핸들(In)을 맞은편으로 자동 이동 (미러링)
-            if (!isBroken && !isAltPressed)
+            
+            // 드래그 중인 정점이 이동한 offset 계산
+            Vector3 delta = newPos - dragStartPos;
+            
+            // Shift 키가 눌려있으면 축 고정
+            if (Event.current.shift && isDragging && draggingElementType == DraggingElementType.Point)
             {
-                Vector3 localP = position;
-                Vector3 dir = localP - newHandleOut;
-                pointProp.FindPropertyRelative("handleIn").vector3Value = localP + dir;
+                Vector3 shiftDelta = newPos - dragStartPos;
+                newPos = ApplyAxisLock(newPos, dragStartPos, shiftDelta);
+                delta = newPos - dragStartPos; // 축 고정 후 델타 재계산
             }
+            
+            // 다중 선택된 정점들을 동시에 이동
+            SerializedProperty pointsProp = serializedObject.FindProperty("points");
+            
+            if (pointsProp != null && selectedPointIndices.Count > 1 && selectedPointsStartPositions.Count > 0)
+            {
+                // 모든 선택된 정점에 동일한 offset 적용
+                foreach (int selectedIdx in selectedPointIndices)
+                {
+                    if (selectedIdx >= 0 && selectedIdx < pointsProp.arraySize)
+                    {
+                        SerializedProperty selectedPointProp = pointsProp.GetArrayElementAtIndex(selectedIdx);
+                        
+                        // 초기 위치에서 델타만큼 이동
+                        if (selectedPointsStartPositions.TryGetValue(selectedIdx, out Vector3 startPos))
+                        {
+                            Vector3 targetPos = startPos + delta;
+                            
+                            // Shift 키가 눌려있으면 축 고정 적용
+                            if (Event.current.shift)
+                            {
+                                Vector3 shiftDelta = targetPos - startPos;
+                                targetPos = ApplyAxisLock(targetPos, startPos, shiftDelta);
+                            }
+                            
+                            Vector3 currentPos = selectedPointProp.FindPropertyRelative("position").vector3Value;
+                            Vector3 pointDelta = targetPos - currentPos;
+                            MovePointWithHandles(selectedPointProp, targetPos, pointDelta);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // 단일 정점 이동
+                MovePointWithHandles(pointProp, newPos, delta);
+            }
+            
+            // 이동 시에도 선택 상태 유지
+            selectedPointIndex = index;
+            
+            // 드래그 중에는 SaveChanges 호출하지 않음 (성능 최적화)
+            // 드래그 종료 시 OnSceneGUI의 MouseUp에서 처리
             serializedObject.ApplyModifiedProperties();
             EditorUtility.SetDirty(path);
         }
 
+        // Enter 키 입력 처리 (편집 모드 전환)
+        if (Event.current.type == EventType.KeyDown)
+        {
+            if ((Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter) 
+                && selectedPointIndex == index)
+            {
+                isEditingPosition = !isEditingPosition;
+                Event.current.Use();
+                Repaint();
+            }
+        }
     }
+
+    /// <summary>
+    /// 정점 우클릭 컨텍스트 메뉴 처리
+    /// </summary>
+    private void HandlePointContextMenu(int index, SerializedProperty pointProp, Vector3 position,
+                                       Vector3 handleIn, Vector3 handleOut, Vector3 worldPoint, bool isBroken)
+    {
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 1)
+        {
+            Vector2 guiPos = GetGUIPosition(worldPoint);
+            Vector2 mousePos = Event.current.mousePosition;
+            
+            if (Vector2.Distance(mousePos, guiPos) < CLICK_RADIUS)
+            {
+                Event.current.Use();
+                ShowPointContextMenu(index, pointProp, position, handleIn, handleOut, isBroken);
+            }
+        }
+    }
+    #endregion
 
     private void ShowPointContextMenu(int pointIndex, SerializedProperty pointProp, Vector3 position, Vector3 handleIn, Vector3 handleOut, bool isBroken)
     {
         GenericMenu menu = new GenericMenu();
         
         SerializedProperty pointsProp = serializedObject.FindProperty("points");
-        bool canDelete = pointsProp != null && pointsProp.arraySize > 2; // 최소 2개는 유지
+        bool canDelete = pointsProp != null && pointsProp.arraySize > MIN_POINTS_REQUIRED;
         
         if (isBroken)
         {
             menu.AddItem(new GUIContent("Link Handles"), false, () => {
-                Undo.RecordObject(path, "Link Handles");
                 serializedObject.Update();
                 pointProp.FindPropertyRelative("isBroken").boolValue = false;
-                
-                // Link(연결)할 때 핸들을 직선으로 정렬 (현재 HandleOut 기준으로 정렬)
+            
+            // Link(연결)할 때 핸들을 직선으로 정렬 (현재 HandleOut 기준으로 정렬)
                 Vector3 localP = position;
                 Vector3 dir = handleOut - localP;
                 pointProp.FindPropertyRelative("handleIn").vector3Value = localP - dir;
                 
-                serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(path);
+                SaveChanges();
             });
         }
         else
         {
             menu.AddItem(new GUIContent("Break Handles"), false, () => {
-                Undo.RecordObject(path, "Break Handles");
                 serializedObject.Update();
                 pointProp.FindPropertyRelative("isBroken").boolValue = true;
-                serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(path);
+                SaveChanges("Break Handles");
             });
         }
         
@@ -815,7 +1197,7 @@ public class BezierPathEditor : Editor
         bool hasPrev = false;
         bool hasNext = false;
         
-        if (path.isLoop)
+        if (path.IsLoop)
         {
             // Loop인 경우
             int prevIndex = (pointIndex - 1 + pointsProp.arraySize) % pointsProp.arraySize;
@@ -879,7 +1261,6 @@ public class BezierPathEditor : Editor
     /// </summary>
     private void ApplyXFlat(SerializedProperty pointProp, Vector3 position, Vector3 handleIn, Vector3 handleOut, Vector3 curveDirection)
     {
-        Undo.RecordObject(path, "X flat Handles");
         serializedObject.Update();
         
         Vector3 localP = position;
@@ -887,71 +1268,60 @@ public class BezierPathEditor : Editor
         // 진행 방향이 주로 수평인지 확인 (X 성분이 Y 성분보다 큼)
         bool isHorizontal = Mathf.Abs(curveDirection.x) > Mathf.Abs(curveDirection.y);
         
-        // Handle In 처리
+        // Handle In과 Handle Out의 방향 결정
         Vector3 dirIn = handleIn - localP;
+        Vector3 dirOut = handleOut - localP;
         float lengthIn = dirIn.magnitude;
-        if (lengthIn > 0.001f)
+        float lengthOut = dirOut.magnitude;
+        
+        Vector3 horizontalDir;
+        if (isHorizontal)
         {
-            Vector3 newHandleIn;
-            if (isHorizontal)
+            // 진행 방향이 수평이면: 진행 방향 사용
+            horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
+        }
+        else
+        {
+            // 진행 방향이 수직이면: Handle Out의 X 방향 사용 (없으면 Handle In의 X 방향)
+            if (Mathf.Abs(dirOut.x) > EPSILON)
             {
-                // 진행 방향이 수평이면: Y를 정점과 동일하게, X 방향 유지
-                Vector3 horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
-                newHandleIn = localP + horizontalDir * lengthIn;
-                newHandleIn.y = localP.y;
+                horizontalDir = new Vector3(Mathf.Sign(dirOut.x), 0f, 0f);
+            }
+            else if (Mathf.Abs(dirIn.x) > EPSILON)
+            {
+                horizontalDir = new Vector3(Mathf.Sign(dirIn.x), 0f, 0f);
             }
             else
             {
-                // 진행 방향이 수직이면: 역방향으로 수평 조정
-                Vector3 horizontalDir = new Vector3(Mathf.Sign(dirIn.x), 0f, 0f);
-                if (Mathf.Abs(dirIn.x) < 0.001f)
-                {
-                    horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
-                }
-                newHandleIn = localP + horizontalDir * lengthIn;
-                newHandleIn.y = localP.y;
+                horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
             }
+        }
+        
+        // Handle In 처리 (정점으로 들어오는 방향이므로 반대 방향)
+        if (lengthIn > EPSILON)
+        {
+            Vector3 newHandleIn = localP - horizontalDir * lengthIn;
+            newHandleIn.y = localP.y;
             pointProp.FindPropertyRelative("handleIn").vector3Value = newHandleIn;
         }
         else
         {
-            pointProp.FindPropertyRelative("handleIn").vector3Value = localP + Vector3.left;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = localP - horizontalDir;
         }
         
-        // Handle Out 처리
-        Vector3 dirOut = handleOut - localP;
-        float lengthOut = dirOut.magnitude;
-        if (lengthOut > 0.001f)
+        // Handle Out 처리 (정점에서 나가는 방향)
+        if (lengthOut > EPSILON)
         {
-            Vector3 newHandleOut;
-            if (isHorizontal)
-            {
-                // 진행 방향이 수평이면: Y를 정점과 동일하게, X 방향 유지
-                Vector3 horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
-                newHandleOut = localP + horizontalDir * lengthOut;
-                newHandleOut.y = localP.y;
-            }
-            else
-            {
-                // 진행 방향이 수직이면: 역방향으로 수평 조정
-                Vector3 horizontalDir = new Vector3(Mathf.Sign(dirOut.x), 0f, 0f);
-                if (Mathf.Abs(dirOut.x) < 0.001f)
-                {
-                    horizontalDir = new Vector3(Mathf.Sign(curveDirection.x), 0f, 0f);
-                }
-                newHandleOut = localP + horizontalDir * lengthOut;
-                newHandleOut.y = localP.y;
-            }
+            Vector3 newHandleOut = localP + horizontalDir * lengthOut;
+            newHandleOut.y = localP.y;
             pointProp.FindPropertyRelative("handleOut").vector3Value = newHandleOut;
         }
         else
         {
-            pointProp.FindPropertyRelative("handleOut").vector3Value = localP + Vector3.right;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = localP + horizontalDir;
         }
         
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        SaveChanges("X flat Handles");
     }
 
     /// <summary>
@@ -959,7 +1329,6 @@ public class BezierPathEditor : Editor
     /// </summary>
     private void ApplyYFlat(SerializedProperty pointProp, Vector3 position, Vector3 handleIn, Vector3 handleOut, Vector3 curveDirection)
     {
-        Undo.RecordObject(path, "Y flat Handles");
         serializedObject.Update();
         
         Vector3 localP = position;
@@ -967,85 +1336,74 @@ public class BezierPathEditor : Editor
         // 진행 방향이 주로 수직인지 확인 (Y 성분이 X 성분보다 큼)
         bool isVertical = Mathf.Abs(curveDirection.y) > Mathf.Abs(curveDirection.x);
         
-        // Handle In 처리
+        // Handle In과 Handle Out의 방향 결정
         Vector3 dirIn = handleIn - localP;
+        Vector3 dirOut = handleOut - localP;
         float lengthIn = dirIn.magnitude;
-        if (lengthIn > 0.001f)
+        float lengthOut = dirOut.magnitude;
+        
+        Vector3 verticalDir;
+        if (isVertical)
         {
-            Vector3 newHandleIn;
-            if (isVertical)
+            // 진행 방향이 수직이면: 진행 방향 사용
+            verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
+        }
+        else
+        {
+            // 진행 방향이 수평이면: Handle Out의 Y 방향 사용 (없으면 Handle In의 Y 방향)
+            if (Mathf.Abs(dirOut.y) > EPSILON)
             {
-                // 진행 방향이 수직이면: X를 정점과 동일하게, Y 방향 유지
-                Vector3 verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
-                newHandleIn = localP + verticalDir * lengthIn;
-                newHandleIn.x = localP.x;
+                verticalDir = new Vector3(0f, Mathf.Sign(dirOut.y), 0f);
+            }
+            else if (Mathf.Abs(dirIn.y) > EPSILON)
+            {
+                verticalDir = new Vector3(0f, Mathf.Sign(dirIn.y), 0f);
             }
             else
             {
-                // 진행 방향이 수평이면: 역방향으로 수직 조정
-                Vector3 verticalDir = new Vector3(0f, Mathf.Sign(dirIn.y), 0f);
-                if (Mathf.Abs(dirIn.y) < 0.001f)
-                {
-                    verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
-                }
-                newHandleIn = localP + verticalDir * lengthIn;
-                newHandleIn.x = localP.x;
+                verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
             }
+        }
+        
+        // Handle In 처리 (정점으로 들어오는 방향이므로 반대 방향)
+        if (lengthIn > EPSILON)
+        {
+            Vector3 newHandleIn = localP - verticalDir * lengthIn;
+            newHandleIn.x = localP.x;
             pointProp.FindPropertyRelative("handleIn").vector3Value = newHandleIn;
         }
         else
         {
-            pointProp.FindPropertyRelative("handleIn").vector3Value = localP + Vector3.down;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = localP - verticalDir;
         }
         
-        // Handle Out 처리
-        Vector3 dirOut = handleOut - localP;
-        float lengthOut = dirOut.magnitude;
-        if (lengthOut > 0.001f)
+        // Handle Out 처리 (정점에서 나가는 방향)
+        if (lengthOut > EPSILON)
         {
-            Vector3 newHandleOut;
-            if (isVertical)
-            {
-                // 진행 방향이 수직이면: X를 정점과 동일하게, Y 방향 유지
-                Vector3 verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
-                newHandleOut = localP + verticalDir * lengthOut;
-                newHandleOut.x = localP.x;
-            }
-            else
-            {
-                // 진행 방향이 수평이면: 역방향으로 수직 조정
-                Vector3 verticalDir = new Vector3(0f, Mathf.Sign(dirOut.y), 0f);
-                if (Mathf.Abs(dirOut.y) < 0.001f)
-                {
-                    verticalDir = new Vector3(0f, Mathf.Sign(curveDirection.y), 0f);
-                }
-                newHandleOut = localP + verticalDir * lengthOut;
-                newHandleOut.x = localP.x;
-            }
+            Vector3 newHandleOut = localP + verticalDir * lengthOut;
+            newHandleOut.x = localP.x;
             pointProp.FindPropertyRelative("handleOut").vector3Value = newHandleOut;
         }
         else
         {
-            pointProp.FindPropertyRelative("handleOut").vector3Value = localP + Vector3.up;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = localP + verticalDir;
         }
         
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        SaveChanges("Y flat Handles");
     }
 
     /// <summary>
-    /// Ctrl + 왼쪽 클릭으로 커브에 정점 추가 처리
+    /// Alt + 왼쪽 클릭으로 커브에 정점 추가 처리
     /// </summary>
     private void HandleCurveClick(SerializedProperty pointsProp)
     {
         Event e = Event.current;
         
-        // Ctrl (또는 Cmd) + 왼쪽 클릭 체크
-        bool isCtrlPressed = e.control || e.command;
+        // Alt + 왼쪽 클릭 체크
+        bool isAltPressed = e.alt;
         bool isLeftClick = e.type == EventType.MouseDown && e.button == 0;
         
-        if (!isCtrlPressed || !isLeftClick) return;
+        if (!isAltPressed || !isLeftClick) return;
         
         // 핸들이나 정점 근처를 클릭했는지 확인 (더 정교한 클릭 처리)
         if (IsClickNearHandleOrPoint(pointsProp, e.mousePosition))
@@ -1077,7 +1435,7 @@ public class BezierPathEditor : Editor
     /// </summary>
     private bool IsClickNearHandleOrPoint(SerializedProperty pointsProp, Vector2 mousePosition)
     {
-        float clickRadius = 20f; // 픽셀 단위 클릭 반경
+        float clickRadius = CLICK_RADIUS;
         
         for (int i = 0; i < pointsProp.arraySize; i++)
         {
@@ -1126,12 +1484,12 @@ public class BezierPathEditor : Editor
         closestT = 0f;
         float minDistance = float.MaxValue;
         
-        int numSegments = path.isLoop ? pointsProp.arraySize : pointsProp.arraySize - 1;
+        int numSegments = path.IsLoop ? pointsProp.arraySize : pointsProp.arraySize - 1;
         
         for (int i = 0; i < numSegments; i++)
         {
             SerializedProperty p0Prop = pointsProp.GetArrayElementAtIndex(i);
-            SerializedProperty p1Prop = (path.isLoop && i == pointsProp.arraySize - 1) 
+            SerializedProperty p1Prop = (path.IsLoop && i == pointsProp.arraySize - 1) 
                 ? pointsProp.GetArrayElementAtIndex(0) 
                 : pointsProp.GetArrayElementAtIndex(i + 1);
             
@@ -1231,11 +1589,10 @@ public class BezierPathEditor : Editor
     /// </summary>
     private void AddPointOnCurve(SerializedProperty pointsProp, int segmentIndex, float t)
     {
-        Undo.RecordObject(path, "Add Point on Curve");
         serializedObject.Update();
         
         SerializedProperty p0Prop = pointsProp.GetArrayElementAtIndex(segmentIndex);
-        SerializedProperty p1Prop = (path.isLoop && segmentIndex == pointsProp.arraySize - 1) 
+        SerializedProperty p1Prop = (path.IsLoop && segmentIndex == pointsProp.arraySize - 1) 
             ? pointsProp.GetArrayElementAtIndex(0) 
             : pointsProp.GetArrayElementAtIndex(segmentIndex + 1);
         
@@ -1249,8 +1606,8 @@ public class BezierPathEditor : Editor
         Vector3 tangent = GetBezierTangentLocal(p0, p1, t);
         float handleLength = CalculateHandleLength(p0, p1, t);
         
-        Vector3 newHandleIn = newPosition - tangent.normalized * handleLength * 0.3f;
-        Vector3 newHandleOut = newPosition + tangent.normalized * handleLength * 0.3f;
+        Vector3 newHandleIn = newPosition - tangent.normalized * handleLength * HANDLE_LENGTH_FACTOR;
+        Vector3 newHandleOut = newPosition + tangent.normalized * handleLength * HANDLE_LENGTH_FACTOR;
         
         // 정점 삽입
         int insertIndex = segmentIndex + 1;
@@ -1265,10 +1622,8 @@ public class BezierPathEditor : Editor
         // 새로 추가된 정점 선택
         selectedPointIndex = insertIndex;
         
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
-        Repaint(); // Inspector 갱신
+        SaveChanges("Add Point on Curve");
+        Repaint();
     }
 
     /// <summary>
@@ -1319,7 +1674,6 @@ public class BezierPathEditor : Editor
             return;
         }
 
-        Undo.RecordObject(path, "Delete Point");
         serializedObject.Update();
 
         // 제거할 정점의 정보 가져오기
@@ -1330,7 +1684,7 @@ public class BezierPathEditor : Editor
         int prevIndex = -1;
         int nextIndex = -1;
 
-        if (path.isLoop)
+        if (path.IsLoop)
         {
             prevIndex = (pointIndex - 1 + pointsProp.arraySize) % pointsProp.arraySize;
             nextIndex = (pointIndex + 1) % pointsProp.arraySize;
@@ -1389,9 +1743,7 @@ public class BezierPathEditor : Editor
             selectedPointIndex--; // 인덱스 조정
         }
 
-        serializedObject.ApplyModifiedProperties();
-        EditorUtility.SetDirty(path);
-        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        SaveChanges("Delete Point");
     }
 
     /// <summary>
@@ -1430,4 +1782,730 @@ public class BezierPathEditor : Editor
         Vector3 newNextHandleIn = nextPoint.position + nextHandleDir * nextHandleLength;
         nextPointProp.FindPropertyRelative("handleIn").vector3Value = newNextHandleIn;
     }
+
+    /// <summary>
+    /// 박스 선택 입력 처리
+    /// </summary>
+    private void HandleBoxSelectionInput(SerializedProperty pointsProp)
+    {
+        Event e = Event.current;
+        
+        // Ctrl/Cmd + 왼쪽 마우스 드래그로 박스 선택 시작
+        bool isCtrlPressed = e.control || e.command;
+        bool isShiftPressed = e.shift;
+        bool isAltPressed = e.alt;
+        
+        // 정점 추가 기능이 이미 이벤트를 사용했는지 확인
+        // (HandleCurveClick이 먼저 실행되므로, 정점 추가가 성공하면 이벤트가 이미 사용됨)
+        if (e.type == EventType.Used) return;
+        
+        // Ctrl + Shift + Alt + 드래그: 제외 선택 모드
+        if (e.type == EventType.MouseDown && e.button == 0 && isCtrlPressed && isShiftPressed && isAltPressed)
+        {
+            isBoxSelecting = true;
+            isBoxSelectAddMode = false;
+            isBoxSelectSubtractMode = true; // 제외 모드
+            boxSelectStart = e.mousePosition;
+            boxSelectEnd = e.mousePosition;
+            e.Use();
+        }
+        // Ctrl + Shift + 드래그: 추가 선택 모드
+        else if (e.type == EventType.MouseDown && e.button == 0 && isCtrlPressed && isShiftPressed && !isAltPressed)
+        {
+            isBoxSelecting = true;
+            isBoxSelectAddMode = true;
+            isBoxSelectSubtractMode = false;
+            boxSelectStart = e.mousePosition;
+            boxSelectEnd = e.mousePosition;
+            e.Use();
+        }
+        // Ctrl + 드래그: 일반 선택 모드
+        else if (e.type == EventType.MouseDown && e.button == 0 && isCtrlPressed && !isShiftPressed && !isAltPressed)
+        {
+            isBoxSelecting = true;
+            isBoxSelectAddMode = false;
+            isBoxSelectSubtractMode = false;
+            boxSelectStart = e.mousePosition;
+            boxSelectEnd = e.mousePosition;
+            e.Use();
+        }
+        
+        // 박스 선택 중 - 키 상태 업데이트
+        if (isBoxSelecting && e.type == EventType.MouseDrag)
+        {
+            // 드래그 중에 키 상태 업데이트
+            isBoxSelectAddMode = e.shift && !e.alt;
+            isBoxSelectSubtractMode = e.shift && e.alt;
+            boxSelectEnd = e.mousePosition;
+            e.Use();
+            // 박스 선택 중에는 Repaint 필요
+            SceneView.RepaintAll();
+        }
+        
+        // 박스 선택 그리기
+        if (isBoxSelecting)
+        {
+            Rect selectionRect = new Rect(
+                Mathf.Min(boxSelectStart.x, boxSelectEnd.x),
+                Mathf.Min(boxSelectStart.y, boxSelectEnd.y),
+                Mathf.Abs(boxSelectEnd.x - boxSelectStart.x),
+                Mathf.Abs(boxSelectEnd.y - boxSelectStart.y)
+            );
+            
+            Handles.BeginGUI();
+            // 제외 모드: 붉은색, 추가 모드: 초록색, 일반 모드: 파란색
+            if (isBoxSelectSubtractMode)
+            {
+                GUI.color = new Color(1f, 0.5f, 0.5f, 0.2f); // 붉은색
+            }
+            else if (isBoxSelectAddMode)
+            {
+                GUI.color = new Color(0.5f, 1f, 0.5f, 0.2f); // 초록색
+            }
+            else
+            {
+                GUI.color = new Color(0.5f, 0.5f, 1f, 0.2f); // 파란색
+            }
+            GUI.DrawTexture(selectionRect, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        Handles.EndGUI();
+    }
+    }
+
+    /// <summary>
+    /// 박스 선택으로 정점 선택 처리
+    /// </summary>
+    private void HandleBoxSelection(SerializedProperty pointsProp)
+    {
+        if (pointsProp == null) return;
+        
+        Rect selectionRect = new Rect(
+            Mathf.Min(boxSelectStart.x, boxSelectEnd.x),
+            Mathf.Min(boxSelectStart.y, boxSelectEnd.y),
+            Mathf.Abs(boxSelectEnd.x - boxSelectStart.x),
+            Mathf.Abs(boxSelectEnd.y - boxSelectStart.y)
+        );
+        
+        // 제외 모드: 선택 영역 내의 정점들을 선택에서 제거
+        if (isBoxSelectSubtractMode)
+        {
+            for (int i = 0; i < pointsProp.arraySize; i++)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
+                Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
+                
+                if (selectionRect.Contains(guiPos))
+                {
+                    selectedPointIndices.Remove(i);
+                    if (selectedPointIndex == i)
+                    {
+                        selectedPointIndex = -1;
+                    }
+                }
+            }
+        }
+        // 추가 모드: 선택 영역 내의 정점들을 선택에 추가
+        else if (isBoxSelectAddMode)
+        {
+            for (int i = 0; i < pointsProp.arraySize; i++)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
+                Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
+                
+                if (selectionRect.Contains(guiPos))
+                {
+                    selectedPointIndices.Add(i);
+                }
+            }
+        }
+        // 일반 모드: 기존 선택 초기화 후 새로 선택
+        else
+        {
+            selectedPointIndices.Clear();
+            
+            for (int i = 0; i < pointsProp.arraySize; i++)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
+                Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
+                
+                if (selectionRect.Contains(guiPos))
+                {
+                    selectedPointIndices.Add(i);
+                }
+            }
+        }
+        
+        if (selectedPointIndices.Count > 0)
+        {
+            // 첫 번째 선택된 정점을 메인 선택으로 설정
+            foreach (int idx in selectedPointIndices)
+            {
+                selectedPointIndex = idx;
+                break;
+            }
+        }
+        else
+        {
+            selectedPointIndex = -1;
+        }
+        
+        Repaint();
+    }
+
+    /// <summary>
+    /// Array 섹션 UI 그리기
+    /// </summary>
+    private void DrawArraySection(SerializedProperty pointsProp)
+    {
+        EditorGUILayout.LabelField("Array", EditorStyles.boldLabel);
+        
+        // 선택된 정점 개수 표시
+        int selectedCount = selectedPointIndices.Count;
+        if (selectedCount > 0)
+        {
+            EditorGUILayout.HelpBox($"Selected: {selectedCount} point(s)", MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("Select points in Scene view (Ctrl+Click or Ctrl+Drag)", MessageType.None);
+        }
+        
+        EditorGUI.BeginDisabledGroup(selectedCount < 2);
+        
+        // 첫 번째 줄: Left, Right, Top, Bottom
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("L", GUILayout.Height(25)))
+        {
+            AlignPoints(pointsProp, AlignDirection.Left);
+        }
+        if (GUILayout.Button("R", GUILayout.Height(25)))
+        {
+            AlignPoints(pointsProp, AlignDirection.Right);
+        }
+        if (GUILayout.Button("T", GUILayout.Height(25)))
+        {
+            AlignPoints(pointsProp, AlignDirection.Top);
+        }
+        if (GUILayout.Button("B", GUILayout.Height(25)))
+        {
+            AlignPoints(pointsProp, AlignDirection.Bottom);
+        }
+        EditorGUILayout.EndHorizontal();
+        
+        // 두 번째 줄: X Distribute, Y Distribute
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("X dist", GUILayout.Height(25)))
+        {
+            DistributePointsX(pointsProp);
+        }
+        if (GUILayout.Button("Y dist", GUILayout.Height(25)))
+        {
+            DistributePointsY(pointsProp);
+        }
+        EditorGUILayout.EndHorizontal();
+        
+        EditorGUI.EndDisabledGroup();
+    }
+
+    /// <summary>
+    /// 선택된 정점들을 정렬 (Left, Right, Top, Bottom)
+    /// </summary>
+    private void AlignPoints(SerializedProperty pointsProp, AlignDirection direction)
+    {
+        if (selectedPointIndices.Count < 2) return;
+        
+        serializedObject.Update();
+        
+        float targetValue;
+        bool useX = (direction == AlignDirection.Left || direction == AlignDirection.Right);
+        bool findMin = (direction == AlignDirection.Left || direction == AlignDirection.Bottom);
+        
+        // 최소/최대값 찾기
+        if (findMin)
+        {
+            targetValue = useX ? float.MaxValue : float.MaxValue;
+            foreach (int idx in selectedPointIndices)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(idx);
+                Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+                float value = useX ? pos.x : pos.y;
+                if (value < targetValue) targetValue = value;
+            }
+        }
+        else
+        {
+            targetValue = useX ? float.MinValue : float.MinValue;
+            foreach (int idx in selectedPointIndices)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(idx);
+                Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+                float value = useX ? pos.x : pos.y;
+                if (value > targetValue) targetValue = value;
+            }
+        }
+        
+        // 정렬 적용
+        foreach (int idx in selectedPointIndices)
+        {
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(idx);
+            Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+            Vector3 delta;
+            
+            if (useX)
+            {
+                delta = new Vector3(targetValue - pos.x, 0f, 0f);
+                pos.x = targetValue;
+            }
+            else
+            {
+                delta = new Vector3(0f, targetValue - pos.y, 0f);
+                pos.y = targetValue;
+            }
+            
+            pointProp.FindPropertyRelative("position").vector3Value = pos;
+            
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn + delta;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut + delta;
+        }
+        
+        string undoName = $"Align Points {direction}";
+        SaveChanges(undoName);
+    }
+
+    /// <summary>
+    /// 선택된 정점들을 X축으로 균등 분배
+    /// 첫 번째와 마지막 정점의 위치는 유지하고, 그 사이의 정점들을 균일한 간격으로 배치
+    /// </summary>
+    private void DistributePointsX(SerializedProperty pointsProp)
+    {
+        if (selectedPointIndices.Count < 2) return;
+        
+        serializedObject.Update();
+        
+        // 선택된 정점들을 X 좌표로 정렬
+        List<int> sortedIndices = new List<int>(selectedPointIndices);
+        sortedIndices.Sort((a, b) =>
+        {
+            Vector3 posA = pointsProp.GetArrayElementAtIndex(a).FindPropertyRelative("position").vector3Value;
+            Vector3 posB = pointsProp.GetArrayElementAtIndex(b).FindPropertyRelative("position").vector3Value;
+            return posA.x.CompareTo(posB.x);
+        });
+        
+        if (sortedIndices.Count < 2) return;
+        
+        // 첫 번째와 마지막 정점의 X 좌표 (이 위치는 유지)
+        float firstX = pointsProp.GetArrayElementAtIndex(sortedIndices[0]).FindPropertyRelative("position").vector3Value.x;
+        float lastX = pointsProp.GetArrayElementAtIndex(sortedIndices[sortedIndices.Count - 1]).FindPropertyRelative("position").vector3Value.x;
+        
+        // 첫 번째와 마지막 사이의 거리
+        float totalDistance = lastX - firstX;
+        
+        // 정점이 2개인 경우는 이미 첫 번째와 마지막만 있으므로 처리할 필요 없음
+        if (sortedIndices.Count == 2)
+        {
+            SaveChanges("Distribute Points X");
+            return;
+        }
+        
+        // 중간 정점들 사이의 간격 계산
+        float step = totalDistance / (sortedIndices.Count - 1);
+        
+        // 모든 정점을 균일한 간격으로 배치
+        for (int i = 0; i < sortedIndices.Count; i++)
+        {
+            int idx = sortedIndices[i];
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(idx);
+            Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+            
+            // 첫 번째와 마지막은 원래 위치 유지, 중간 정점들은 균일한 간격으로 배치
+            float newX = firstX + step * i;
+            Vector3 delta = new Vector3(newX - pos.x, 0f, 0f);
+            
+            pos.x = newX;
+            pointProp.FindPropertyRelative("position").vector3Value = pos;
+            
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn + delta;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut + delta;
+        }
+        
+        SaveChanges("Distribute Points X");
+    }
+
+    /// <summary>
+    /// 선택된 정점들을 Y축으로 균등 분배
+    /// 첫 번째와 마지막 정점의 위치는 유지하고, 그 사이의 정점들을 균일한 간격으로 배치
+    /// </summary>
+    private void DistributePointsY(SerializedProperty pointsProp)
+    {
+        if (selectedPointIndices.Count < 2) return;
+        
+        serializedObject.Update();
+        
+        // 선택된 정점들을 Y 좌표로 정렬
+        List<int> sortedIndices = new List<int>(selectedPointIndices);
+        sortedIndices.Sort((a, b) =>
+        {
+            Vector3 posA = pointsProp.GetArrayElementAtIndex(a).FindPropertyRelative("position").vector3Value;
+            Vector3 posB = pointsProp.GetArrayElementAtIndex(b).FindPropertyRelative("position").vector3Value;
+            return posA.y.CompareTo(posB.y);
+        });
+        
+        if (sortedIndices.Count < 2) return;
+        
+        // 첫 번째와 마지막 정점의 Y 좌표 (이 위치는 유지)
+        float firstY = pointsProp.GetArrayElementAtIndex(sortedIndices[0]).FindPropertyRelative("position").vector3Value.y;
+        float lastY = pointsProp.GetArrayElementAtIndex(sortedIndices[sortedIndices.Count - 1]).FindPropertyRelative("position").vector3Value.y;
+        
+        // 첫 번째와 마지막 사이의 거리
+        float totalDistance = lastY - firstY;
+        
+        // 정점이 2개인 경우는 이미 첫 번째와 마지막만 있으므로 처리할 필요 없음
+        if (sortedIndices.Count == 2)
+        {
+            SaveChanges("Distribute Points Y");
+            return;
+        }
+        
+        // 중간 정점들 사이의 간격 계산
+        float step = totalDistance / (sortedIndices.Count - 1);
+        
+        // 모든 정점을 균일한 간격으로 배치
+        for (int i = 0; i < sortedIndices.Count; i++)
+        {
+            int idx = sortedIndices[i];
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(idx);
+            Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+            
+            // 첫 번째와 마지막은 원래 위치 유지, 중간 정점들은 균일한 간격으로 배치
+            float newY = firstY + step * i;
+            Vector3 delta = new Vector3(0f, newY - pos.y, 0f);
+            
+            pos.y = newY;
+            pointProp.FindPropertyRelative("position").vector3Value = pos;
+            
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn + delta;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut + delta;
+        }
+        
+        SaveChanges("Distribute Points Y");
+    }
+
+    /// <summary>
+    /// 여러 정점 선택 시 우클릭 메뉴 처리
+    /// </summary>
+    private void HandleMultiSelectionContextMenu(SerializedProperty pointsProp)
+    {
+        Event e = Event.current;
+        
+        // 우클릭 이벤트이고 여러 정점이 선택된 경우
+        if (e.type == EventType.MouseDown && e.button == 1 && selectedPointIndices.Count > 1)
+        {
+            // 정점이나 핸들 근처를 클릭했는지 확인
+            bool isNearPointOrHandle = false;
+            for (int i = 0; i < pointsProp.arraySize; i++)
+            {
+                SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
+                Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+                Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+                Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+                
+                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector3 worldHandleIn = handleTransform.TransformPoint(handleIn);
+                Vector3 worldHandleOut = handleTransform.TransformPoint(handleOut);
+                
+                Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
+                Vector2 guiHandleIn = HandleUtility.WorldToGUIPoint(worldHandleIn);
+                Vector2 guiHandleOut = HandleUtility.WorldToGUIPoint(worldHandleOut);
+                
+                if (Vector2.Distance(e.mousePosition, guiPos) < 20f ||
+                    Vector2.Distance(e.mousePosition, guiHandleIn) < 20f ||
+                    Vector2.Distance(e.mousePosition, guiHandleOut) < 20f)
+                {
+                    isNearPointOrHandle = true;
+                    break;
+                }
+            }
+            
+            // 정점이나 핸들 근처가 아닌 곳을 우클릭한 경우에만 메뉴 표시
+            if (!isNearPointOrHandle)
+            {
+                ShowMultiSelectionContextMenu(pointsProp);
+                e.Use();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 여러 정점 선택 시 우클릭 메뉴 표시
+    /// </summary>
+    private void ShowMultiSelectionContextMenu(SerializedProperty pointsProp)
+    {
+        GenericMenu menu = new GenericMenu();
+        
+        // X Flat: 선택된 모든 정점에 적용
+        menu.AddItem(new GUIContent("X Flat (All Selected)"), false, () => {
+            ApplyXFlatToSelected(pointsProp);
+        });
+        
+        // Y Flat: 선택된 모든 정점에 적용
+        menu.AddItem(new GUIContent("Y Flat (All Selected)"), false, () => {
+            ApplyYFlatToSelected(pointsProp);
+        });
+        
+        menu.ShowAsContext();
+    }
+
+    /// <summary>
+    /// 선택된 모든 정점에 X Flat 적용
+    /// </summary>
+    private void ApplyXFlatToSelected(SerializedProperty pointsProp)
+    {
+        if (selectedPointIndices.Count == 0) return;
+        
+        serializedObject.Update();
+        
+        foreach (int index in selectedPointIndices)
+        {
+            if (!IsValidPointIndex(index, pointsProp)) continue;
+            
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(index);
+            Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            
+            // 커브의 진행 방향 계산
+            Vector3 curveDirection = GetCurveDirection(pointsProp, index, position);
+            
+            // X Flat 적용
+            ApplyXFlat(pointProp, position, handleIn, handleOut, curveDirection);
+        }
+        
+        SaveChanges("X Flat (All Selected)");
+    }
+
+    /// <summary>
+    /// 선택된 모든 정점에 Y Flat 적용
+    /// </summary>
+    private void ApplyYFlatToSelected(SerializedProperty pointsProp)
+    {
+        if (selectedPointIndices.Count == 0) return;
+        
+        serializedObject.Update();
+        
+        foreach (int index in selectedPointIndices)
+        {
+            if (!IsValidPointIndex(index, pointsProp)) continue;
+            
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(index);
+            Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            
+            // 커브의 진행 방향 계산
+            Vector3 curveDirection = GetCurveDirection(pointsProp, index, position);
+            
+            // Y Flat 적용
+            ApplyYFlat(pointProp, position, handleIn, handleOut, curveDirection);
+        }
+        
+        SaveChanges("Y Flat (All Selected)");
+    }
+
+    #region Runtime Component & ScriptableObject Management
+    
+    /// <summary>
+    /// ScriptableObject의 데이터를 에디터의 points로 초기화
+    /// </summary>
+    private void InitFromScriptableObject()
+    {
+        if (path == null)
+        {
+            EditorUtility.DisplayDialog("Init Failed", "BezierPath 컴포넌트를 찾을 수 없습니다.", "OK");
+            return;
+        }
+
+        // 현재 연결 상태 확인
+        serializedObject.Update();
+        SerializedProperty pathDataProp = serializedObject.FindProperty("pathData");
+        BezierPathData pathData = null;
+        
+        if (pathDataProp != null && pathDataProp.objectReferenceValue != null)
+        {
+            pathData = pathDataProp.objectReferenceValue as BezierPathData;
+        }
+        
+        // ScriptableObject가 없으면 오류 메시지
+        if (pathData == null || !pathData.IsValid())
+        {
+            EditorUtility.DisplayDialog("Init Failed", 
+                "ScriptableObject가 연결되지 않았거나 유효하지 않습니다.\n\n" +
+                "먼저 Export 버튼을 사용하여 ScriptableObject를 생성하거나,\n" +
+                "유효한 ScriptableObject를 연결해주세요.", 
+                "OK");
+            return;
+        }
+
+        // ScriptableObject의 데이터를 points로 복사
+        Undo.RecordObject(path, "Init Path from ScriptableObject");
+        
+        serializedObject.Update();
+        SerializedProperty pointsProp = serializedObject.FindProperty("points");
+        SerializedProperty isLoopProp = serializedObject.FindProperty("isLoop");
+        
+        if (pointsProp != null)
+        {
+            pointsProp.ClearArray();
+            
+            foreach (var point in pathData.Points)
+            {
+                int index = pointsProp.arraySize;
+                pointsProp.InsertArrayElementAtIndex(index);
+                SerializedProperty newPointProp = pointsProp.GetArrayElementAtIndex(index);
+                
+                newPointProp.FindPropertyRelative("position").vector3Value = point.position;
+                newPointProp.FindPropertyRelative("handleIn").vector3Value = point.handleIn;
+                newPointProp.FindPropertyRelative("handleOut").vector3Value = point.handleOut;
+                newPointProp.FindPropertyRelative("isBroken").boolValue = point.isBroken;
+            }
+        }
+        
+        if (isLoopProp != null)
+        {
+            isLoopProp.boolValue = pathData.IsLoop;
+        }
+        
+        serializedObject.ApplyModifiedProperties();
+        
+        // path.IsLoop도 직접 설정 (프로퍼티 동기화)
+        path.IsLoop = pathData.IsLoop;
+        
+        EditorUtility.SetDirty(path);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(path);
+        
+        // 선택 초기화
+        selectedPointIndex = -1;
+        selectedPointIndices.Clear();
+        
+        // SceneView 및 Inspector 갱신
+        SceneView.RepaintAll();
+        Repaint();
+        
+        EditorUtility.DisplayDialog("Init Success", 
+            $"ScriptableObject의 데이터가 성공적으로 초기화되었습니다!\n\n" +
+            $"✓ ScriptableObject: {pathData.name}\n" +
+            $"✓ 정점 개수: {pathData.Points.Count}\n" +
+            $"✓ Is Loop: {pathData.IsLoop}", 
+            "OK");
+    }
+    
+    /// <summary>
+    /// ScriptableObject 업데이트
+    /// </summary>
+    private void CreateOrUpdateScriptableObject()
+    {
+        if (path == null || path.Points == null || path.Points.Count < 2)
+        {
+            EditorUtility.DisplayDialog("Update Failed", "경로 데이터가 유효하지 않습니다. 최소 2개의 정점이 필요합니다.", "OK");
+            return;
+        }
+
+        // 현재 연결 상태 확인
+        serializedObject.Update();
+        SerializedProperty pathDataProp = serializedObject.FindProperty("pathData");
+        BezierPathData pathData = null;
+        
+        if (pathDataProp != null && pathDataProp.objectReferenceValue != null)
+        {
+            pathData = pathDataProp.objectReferenceValue as BezierPathData;
+        }
+        
+        // ScriptableObject가 없으면 오류 메시지
+        if (pathData == null)
+        {
+            EditorUtility.DisplayDialog("Update Failed", "ScriptableObject가 연결되지 않았습니다.\n\n먼저 Export 버튼을 사용하여 ScriptableObject를 생성하세요.", "OK");
+            return;
+        }
+
+        // 기존 ScriptableObject 업데이트
+        Undo.RecordObject(pathData, "Update Path Data");
+        pathData.CopyFrom(path);
+        EditorUtility.SetDirty(pathData);
+        AssetDatabase.SaveAssets();
+
+        EditorUtility.DisplayDialog("Update Success", 
+            $"ScriptableObject가 성공적으로 업데이트되었습니다!\n\n" +
+            $"✓ ScriptableObject 업데이트: {pathData.name}\n" +
+            $"✓ 런타임에서 최적화된 성능 제공", 
+            "OK");
+
+        // 업데이트된 에셋 선택
+        EditorUtility.FocusProjectWindow();
+        Selection.activeObject = pathData;
+    }
+    
+    /// <summary>
+    /// BezierPath 데이터를 ScriptableObject로 내보내기
+    /// </summary>
+    private void ExportToScriptableObject()
+    {
+        if (path == null || path.Points == null || path.Points.Count < 2)
+        {
+            EditorUtility.DisplayDialog("Export Failed", "경로 데이터가 유효하지 않습니다. 최소 2개의 정점이 필요합니다.", "OK");
+            return;
+        }
+
+        string pathName = path.name;
+        string assetPath = EditorUtility.SaveFilePanelInProject(
+            "Export Bezier Path Data",
+            pathName + "_PathData",
+            "asset",
+            "ScriptableObject로 저장할 경로를 선택하세요."
+        );
+
+        if (string.IsNullOrEmpty(assetPath))
+        {
+            return; // 사용자가 취소
+        }
+
+        // ScriptableObject 생성
+        BezierPathData pathData = ScriptableObject.CreateInstance<BezierPathData>();
+        pathData.CopyFrom(path);
+
+        // 에셋 저장
+        AssetDatabase.CreateAsset(pathData, assetPath);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        // 자동으로 ScriptableObject 연결
+        serializedObject.Update();
+        SerializedProperty pathDataProp = serializedObject.FindProperty("pathData");
+        if (pathDataProp != null)
+        {
+            pathDataProp.objectReferenceValue = pathData;
+            serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(path);
+        }
+
+        EditorUtility.DisplayDialog("Export Success", 
+            $"경로 데이터가 성공적으로 내보내졌습니다!\n\n경로: {assetPath}\n\nScriptableObject가 자동으로 연결되었습니다.", 
+            "OK");
+
+        // 생성된 에셋을 선택
+        EditorUtility.FocusProjectWindow();
+        Selection.activeObject = pathData;
+    }
+    
+    #endregion
 }
