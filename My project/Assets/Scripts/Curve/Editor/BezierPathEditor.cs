@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
 using System.Collections.Generic;
 
 [CustomEditor(typeof(BezierPath))]
@@ -11,10 +12,15 @@ public class BezierPathEditor : Editor
     private const float SELECTED_POINT_RADIUS = 0.25f;      // 선택된 정점 반경
     private const float HANDLE_LENGTH_FACTOR = 0.3f;        // 핸들 길이 계수
     private const float CIRCLE_HANDLE_FACTOR = 0.552f;      // 4/3 * tan(π/8)    // 원 핸들 계수
-    private const float HANDLE_SIZE = 0.1f;                 // 핸들 크기
-    private const float POINT_HANDLE_SIZE = 0.2f;           // 정점 핸들 크기
+    private const float HANDLE_SIZE = 0.1f;                 // 핸들 크기 (월드 모드)
+    private const float POINT_HANDLE_SIZE = 0.2f;           // 정점 핸들 크기 (월드 모드)
+    private const float HANDLE_SIZE_UI = 10f;                // 핸들 크기 (UI 모드, 픽셀)
+    private const float POINT_HANDLE_SIZE_UI = 15f;         // 정점 핸들 크기 (UI 모드, 픽셀)
     private const float CURVE_LINE_WIDTH = 3f;              // 곡선 선 너비
-    private const float DEFAULT_RADIUS = 5f;                // 기본 반경
+    private const float DEFAULT_RADIUS = 5f;                // 기본 반경 (월드 모드)
+    private const float DEFAULT_RADIUS_UI = 500f;           // 기본 반경 (UI 모드, 픽셀)
+    private const float INITIAL_DISTANCE = 5f;              // 초기 정점 간 거리 (월드 모드)
+    private const float INITIAL_DISTANCE_UI = 500f;         // 초기 정점 간 거리 (UI 모드, 픽셀)
     private const int SPIRAL_POINT_COUNT = 10;              // 나선 정점 개수
     private const int MIN_POINTS_REQUIRED = 2;              // 최소 정점 개수
     #endregion
@@ -40,9 +46,18 @@ public class BezierPathEditor : Editor
     #region Private Fields
     private BezierPath path;
     private Transform handleTransform;
+    private RectTransform handleRectTransform; // UI 모드용
     private Quaternion handleRotation;
     private int selectedPointIndex = -1;
     private bool isEditingPosition = false;
+    
+    // UI 모드 지원
+    private bool _isUIMode = false;
+    private Canvas _canvas;
+    
+    // UI 모드 캐싱 (성능 최적화)
+    private int _lastPathInstanceID = -1;
+    private bool _uiModeChecked = false;
     
     // Shift 키 축 고정을 위한 변수
     private Vector3 dragStartPosition = Vector3.zero;
@@ -73,6 +88,37 @@ public class BezierPathEditor : Editor
     {
         path = (BezierPath)target;
         EnsureInitialized();
+        CheckUIMode();
+        _lastPathInstanceID = path != null ? path.GetInstanceID() : -1;
+        _uiModeChecked = true;
+    }
+    
+    /// <summary>
+    /// UI 모드 확인 (RectTransform이 있으면 UI 모드)
+    /// </summary>
+    private void CheckUIMode()
+    {
+        if (path == null) return;
+        
+        RectTransform rectTransform = path.GetComponent<RectTransform>();
+        _isUIMode = (rectTransform != null);
+        
+        if (_isUIMode)
+        {
+            handleRectTransform = rectTransform;
+            _canvas = path.GetComponentInParent<Canvas>();
+            
+            if (_canvas == null)
+            {
+                Debug.LogWarning($"BezierPath on {path.name}: UI 모드이지만 Canvas를 찾을 수 없습니다.");
+                _isUIMode = false;
+            }
+        }
+        else
+        {
+            handleRectTransform = null;
+            _canvas = null;
+        }
     }
 
     // 초기화 확인 (SerializedProperty가 없으면 초기화)
@@ -86,7 +132,36 @@ public class BezierPathEditor : Editor
         {
             serializedObject.Update();
             path.Initialize();
+            
+            // UI 모드면 초기 스케일 조정
+            if (_isUIMode)
+            {
+                AdjustInitialScaleForUI(pointsProp);
+            }
+            
             SaveChanges();
+        }
+    }
+    
+    /// <summary>
+    /// UI 모드를 위한 초기 스케일 조정
+    /// </summary>
+    private void AdjustInitialScaleForUI(SerializedProperty pointsProp)
+    {
+        if (pointsProp == null || pointsProp.arraySize < 2) return;
+        
+        float scaleFactor = INITIAL_DISTANCE_UI / INITIAL_DISTANCE; // 500 / 5 = 100
+        
+        for (int i = 0; i < pointsProp.arraySize; i++)
+        {
+            SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
+            Vector3 pos = pointProp.FindPropertyRelative("position").vector3Value;
+            Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
+            Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
+            
+            pointProp.FindPropertyRelative("position").vector3Value = pos * scaleFactor;
+            pointProp.FindPropertyRelative("handleIn").vector3Value = handleIn * scaleFactor;
+            pointProp.FindPropertyRelative("handleOut").vector3Value = handleOut * scaleFactor;
         }
     }
     #endregion
@@ -97,6 +172,13 @@ public class BezierPathEditor : Editor
         path = (BezierPath)target;
         
         EnsureInitialized();
+        CheckUIMode();
+        
+        // UI 모드 표시
+        if (_isUIMode)
+        {
+            EditorGUILayout.HelpBox("UI 모드: RectTransform을 사용하여 UI 좌표계로 편집됩니다.", MessageType.Info);
+        }
 
         DrawDefaultInspector();
 
@@ -185,11 +267,13 @@ public class BezierPathEditor : Editor
                 // 새 포인트 추가
                 pointsProp.arraySize++;
                 SerializedProperty newPoint = pointsProp.GetArrayElementAtIndex(pointsProp.arraySize - 1);
-                Vector3 newPos = lastPosition + Vector3.right * 2 + Vector3.up * 1;
+                float offsetScale = _isUIMode ? (INITIAL_DISTANCE_UI / INITIAL_DISTANCE) : 1f; // UI 모드면 100배
+                Vector3 newPos = lastPosition + Vector3.right * 2 * offsetScale + Vector3.up * 1 * offsetScale;
                 
                 newPoint.FindPropertyRelative("position").vector3Value = newPos;
-                newPoint.FindPropertyRelative("handleIn").vector3Value = newPos + Vector3.left;
-                newPoint.FindPropertyRelative("handleOut").vector3Value = newPos + Vector3.right;
+                float handleOffset = _isUIMode ? 200f : 1f; // UI 모드면 200 픽셀, 월드 모드면 1 단위
+                newPoint.FindPropertyRelative("handleIn").vector3Value = newPos + Vector3.left * handleOffset;
+                newPoint.FindPropertyRelative("handleOut").vector3Value = newPos + Vector3.right * handleOffset;
                 newPoint.FindPropertyRelative("isBroken").boolValue = false;
                 
                 // 새로 추가된 정점 선택
@@ -205,6 +289,14 @@ public class BezierPathEditor : Editor
         {
             serializedObject.Update();
             path.Initialize();
+            
+            // UI 모드면 초기 스케일 조정
+            SerializedProperty pointsPropAfterReset = serializedObject.FindProperty("points");
+            if (_isUIMode && pointsPropAfterReset != null)
+            {
+                AdjustInitialScaleForUI(pointsPropAfterReset);
+            }
+            
             SaveChanges("Reset Path");
         }
         GUI.backgroundColor = Color.white;
@@ -284,6 +376,39 @@ public class BezierPathEditor : Editor
     private Vector2 GetGUIPosition(Vector3 worldPosition)
     {
         return HandleUtility.WorldToGUIPoint(worldPosition);
+    }
+    
+    /// <summary>
+    /// UI 좌표를 월드 좌표로 변환 (Scene View 표시용)
+    /// </summary>
+    private Vector3 TransformUIPointToWorld(Vector3 uiPoint)
+    {
+        if (_isUIMode && handleRectTransform != null)
+        {
+            // UI 모드: RectTransform을 사용하여 월드 좌표로 변환
+            // uiPoint는 이미 UI 좌표계 (anchoredPosition 기준 상대 좌표)
+            // RectTransform.TransformPoint는 로컬 좌표를 월드 좌표로 변환
+            return handleRectTransform.TransformPoint(uiPoint);
+        }
+        
+        // 월드 모드: 기존 방식
+        return handleTransform.TransformPoint(uiPoint);
+    }
+    
+    /// <summary>
+    /// 월드 좌표를 UI 좌표로 변환 (드래그 시 저장용)
+    /// </summary>
+    private Vector3 TransformWorldPointToUI(Vector3 worldPoint)
+    {
+        if (_isUIMode && handleRectTransform != null)
+        {
+            // UI 모드: RectTransform을 사용하여 UI 좌표로 변환
+            // InverseTransformPoint는 월드 좌표를 로컬 좌표(UI 좌표)로 변환
+            return handleRectTransform.InverseTransformPoint(worldPoint);
+        }
+        
+        // 월드 모드: 기존 방식
+        return handleTransform.InverseTransformPoint(worldPoint);
     }
 
     /// <summary>
@@ -433,7 +558,7 @@ public class BezierPathEditor : Editor
 
         pointsProp.arraySize = 0;
 
-        float radius = DEFAULT_RADIUS;
+        float radius = _isUIMode ? DEFAULT_RADIUS_UI : DEFAULT_RADIUS;
         float angleStep = 360f / sides;
 
         for (int i = 0; i < sides; i++)
@@ -488,7 +613,7 @@ public class BezierPathEditor : Editor
 
         pointsProp.arraySize = 0;
 
-        float radius = DEFAULT_RADIUS;
+        float radius = _isUIMode ? DEFAULT_RADIUS_UI : DEFAULT_RADIUS;
         int pointCount = 4; // 4개의 정점
 
         for (int i = 0; i < pointCount; i++)
@@ -534,8 +659,9 @@ public class BezierPathEditor : Editor
 
         pointsProp.arraySize = 0;
 
-        float outerRadius = 5f;
-        float innerRadius = 2.5f;
+        float scaleFactor = _isUIMode ? (DEFAULT_RADIUS_UI / DEFAULT_RADIUS) : 1f; // UI 모드면 100배
+        float outerRadius = 5f * scaleFactor;
+        float innerRadius = 2.5f * scaleFactor;
         int points = 5; // 5개의 외부 정점
 
         for (int i = 0; i < points * 2; i++)
@@ -595,8 +721,9 @@ public class BezierPathEditor : Editor
         pointsProp.arraySize = 0;
 
         int pointCount = 10; // 나선 포인트 개수
-        float startRadius = 1f; // 시작 반지름
-        float endRadius = 8f; // 끝 반지름
+        float scaleFactor = _isUIMode ? (DEFAULT_RADIUS_UI / DEFAULT_RADIUS) : 1f; // UI 모드면 100배
+        float startRadius = 1f * scaleFactor; // 시작 반지름
+        float endRadius = 8f * scaleFactor; // 끝 반지름
         float totalTurns = 3f; // 총 회전 수
         float startAngle = -90f * Mathf.Deg2Rad; // 시작 각도 (위쪽부터)
 
@@ -680,14 +807,32 @@ public class BezierPathEditor : Editor
         path = (BezierPath)target;
         if (path == null) return;
         
+        // UI 모드 재확인 (GameObject가 변경되었을 때만)
+        int currentInstanceID = path.GetInstanceID();
+        if (!_uiModeChecked || currentInstanceID != _lastPathInstanceID)
+        {
+            CheckUIMode();
+            _lastPathInstanceID = currentInstanceID;
+            _uiModeChecked = true;
+        }
+        
         // 최신 데이터 가져오기
         serializedObject.Update();
         
         SerializedProperty pointsProp = serializedObject.FindProperty("points");
         if (pointsProp == null || pointsProp.arraySize == 0) return;
         
+        // Transform 설정 (UI 모드면 RectTransform 사용)
+        if (_isUIMode && handleRectTransform != null)
+        {
+            handleTransform = handleRectTransform;
+            handleRotation = Quaternion.identity; // UI는 항상 identity
+        }
+        else
+        {
         handleTransform = path.transform;
         handleRotation = Tools.pivotRotation == PivotRotation.Local ? handleTransform.rotation : Quaternion.identity;
+        }
 
         // 드래그 종료 감지 (전역)
         if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
@@ -764,10 +909,10 @@ public class BezierPathEditor : Editor
             BezierPoint p0 = GetBezierPointFromProperty(p0Prop);
             BezierPoint p1 = GetBezierPointFromProperty(p1Prop);
 
-            Vector3 p0Pos = handleTransform.TransformPoint(p0.position);
-            Vector3 p0Out = handleTransform.TransformPoint(p0.handleOut);
-            Vector3 p1In = handleTransform.TransformPoint(p1.handleIn);
-            Vector3 p1Pos = handleTransform.TransformPoint(p1.position);
+            Vector3 p0Pos = TransformUIPointToWorld(p0.position);
+            Vector3 p0Out = TransformUIPointToWorld(p0.handleOut);
+            Vector3 p1In = TransformUIPointToWorld(p1.handleIn);
+            Vector3 p1Pos = TransformUIPointToWorld(p1.position);
 
             Handles.DrawBezier(p0Pos, p1Pos, p0Out, p1In, Color.white, null, CURVE_LINE_WIDTH);
         }
@@ -794,10 +939,10 @@ public class BezierPathEditor : Editor
         Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
         bool isBroken = pointProp.FindPropertyRelative("isBroken").boolValue;
 
-        // 좌표 변환 (Local -> World)
-        Vector3 worldPoint = handleTransform.TransformPoint(position);
-        Vector3 worldHandleIn = handleTransform.TransformPoint(handleIn);
-        Vector3 worldHandleOut = handleTransform.TransformPoint(handleOut);
+        // 좌표 변환 (Local -> World 또는 UI -> World)
+        Vector3 worldPoint = TransformUIPointToWorld(position);
+        Vector3 worldHandleIn = TransformUIPointToWorld(handleIn);
+        Vector3 worldHandleOut = TransformUIPointToWorld(handleOut);
 
         // 핸들 그리기
         DrawHandles(worldPoint, worldHandleIn, worldHandleOut);
@@ -867,11 +1012,14 @@ public class BezierPathEditor : Editor
         }
         
         EditorGUI.BeginChangeCheck();
-        worldHandle = Handles.FreeMoveHandle(worldHandle, HANDLE_SIZE, Vector3.zero, Handles.CircleHandleCap);
+        float handleSize = _isUIMode ? 
+            HandleUtility.GetHandleSize(worldHandle) * (HANDLE_SIZE_UI / 100f) : // UI 모드: 화면 크기에 비례
+            HANDLE_SIZE; // 월드 모드: 고정 크기
+        worldHandle = Handles.FreeMoveHandle(worldHandle, handleSize, Vector3.zero, Handles.CircleHandleCap);
         if (EditorGUI.EndChangeCheck())
         {
             serializedObject.Update();
-            Vector3 newHandle = handleTransform.InverseTransformPoint(worldHandle);
+            Vector3 newHandle = TransformWorldPointToUI(worldHandle);
             Vector3 startHandle = (elementType == DraggingElementType.HandleIn) ? dragStartHandleIn : dragStartHandleOut;
             
             // Shift 키가 눌려있으면 축 고정
@@ -997,7 +1145,10 @@ public class BezierPathEditor : Editor
         }
         
         EditorGUI.BeginChangeCheck();
-        worldPoint = Handles.FreeMoveHandle(worldPoint, POINT_HANDLE_SIZE, Vector3.zero, Handles.DotHandleCap);
+        float pointHandleSize = _isUIMode ? 
+            HandleUtility.GetHandleSize(worldPoint) * (POINT_HANDLE_SIZE_UI / 100f) : // UI 모드: 화면 크기에 비례
+            POINT_HANDLE_SIZE; // 월드 모드: 고정 크기
+        worldPoint = Handles.FreeMoveHandle(worldPoint, pointHandleSize, Vector3.zero, Handles.DotHandleCap);
         bool handleChanged = EditorGUI.EndChangeCheck();
         
         // Handles가 드래그를 시작했지만 아직 초기 위치가 저장되지 않은 경우 (백업)
@@ -1024,7 +1175,7 @@ public class BezierPathEditor : Editor
         {
             serializedObject.Update();
             
-            Vector3 newPos = handleTransform.InverseTransformPoint(worldPoint);
+            Vector3 newPos = TransformWorldPointToUI(worldPoint);
             
             // 드래그 중인 정점의 초기 위치 가져오기
             Vector3 dragStartPos = position; // 기본값: 현재 위치
@@ -1411,21 +1562,35 @@ public class BezierPathEditor : Editor
             return; // 핸들이나 정점 근처를 클릭한 경우 정점 추가하지 않음
         }
         
-        // 클릭한 위치를 월드 좌표로 변환
-        Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
-        Plane plane = new Plane(handleTransform.forward, handleTransform.position);
-        
-        if (plane.Raycast(ray, out float distance))
+        // UI 모드와 월드 모드에 따라 다른 방식으로 처리
+        if (_isUIMode)
         {
-            Vector3 worldClickPos = ray.GetPoint(distance);
-            Vector3 localClickPos = handleTransform.InverseTransformPoint(worldClickPos);
-            
-            // 가장 가까운 세그먼트와 t 값 찾기
-            if (FindClosestSegmentAndT(pointsProp, localClickPos, out int segmentIndex, out float t))
+            // UI 모드: GUI 좌표를 직접 사용하여 가장 가까운 세그먼트 찾기
+            if (FindClosestSegmentAndTFromGUI(pointsProp, e.mousePosition, out int segmentIndex, out float t))
             {
                 // 정점 추가
                 AddPointOnCurve(pointsProp, segmentIndex, t);
                 e.Use();
+            }
+        }
+        else
+        {
+            // 월드 모드: 기존 방식
+            Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+            Plane plane = new Plane(handleTransform.forward, handleTransform.position);
+            
+            if (plane.Raycast(ray, out float distance))
+            {
+                Vector3 worldClickPos = ray.GetPoint(distance);
+                Vector3 localClickPos = TransformWorldPointToUI(worldClickPos);
+                
+                // 가장 가까운 세그먼트와 t 값 찾기
+                if (FindClosestSegmentAndT(pointsProp, localClickPos, out int segmentIndex, out float t))
+                {
+                    // 정점 추가
+                    AddPointOnCurve(pointsProp, segmentIndex, t);
+                    e.Use();
+                }
             }
         }
     }
@@ -1445,9 +1610,9 @@ public class BezierPathEditor : Editor
             Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
             
             // 월드 좌표로 변환
-            Vector3 worldPos = handleTransform.TransformPoint(position);
-            Vector3 worldHandleIn = handleTransform.TransformPoint(handleIn);
-            Vector3 worldHandleOut = handleTransform.TransformPoint(handleOut);
+            Vector3 worldPos = TransformUIPointToWorld(position);
+            Vector3 worldHandleIn = TransformUIPointToWorld(handleIn);
+            Vector3 worldHandleOut = TransformUIPointToWorld(handleOut);
             
             // GUI 좌표로 변환
             Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
@@ -1509,7 +1674,7 @@ public class BezierPathEditor : Editor
         }
         
         // 최대 허용 거리 체크 (화면 픽셀 기준 약 20픽셀)
-        float maxDistance = HandleUtility.GetHandleSize(handleTransform.TransformPoint(clickPos)) * 0.5f;
+        float maxDistance = HandleUtility.GetHandleSize(TransformUIPointToWorld(clickPos)) * 0.5f;
         return segmentIndex >= 0 && minDistance < maxDistance;
     }
 
@@ -1550,6 +1715,107 @@ public class BezierPathEditor : Editor
                 float t = Mathf.Lerp(startT, endT, (float)i / refineSamples);
                 Vector3 pointOnCurve = GetCubicBezierPointLocal(p0, p1, t);
                 float distance = Vector3.Distance(clickPos, pointOnCurve);
+                
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestT = t;
+                }
+            }
+            
+            refineRange *= 0.5f;
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// GUI 좌표를 사용하여 가장 가까운 세그먼트와 t 값을 찾습니다 (UI 모드용)
+    /// </summary>
+    private bool FindClosestSegmentAndTFromGUI(SerializedProperty pointsProp, Vector2 mousePosition, out int segmentIndex, out float closestT)
+    {
+        segmentIndex = -1;
+        closestT = 0f;
+        float minDistance = float.MaxValue;
+        
+        int numSegments = path.IsLoop ? pointsProp.arraySize : pointsProp.arraySize - 1;
+        
+        for (int i = 0; i < numSegments; i++)
+        {
+            SerializedProperty p0Prop = pointsProp.GetArrayElementAtIndex(i);
+            SerializedProperty p1Prop = (path.IsLoop && i == pointsProp.arraySize - 1) 
+                ? pointsProp.GetArrayElementAtIndex(0) 
+                : pointsProp.GetArrayElementAtIndex(i + 1);
+            
+            BezierPoint p0 = GetBezierPointFromProperty(p0Prop);
+            BezierPoint p1 = GetBezierPointFromProperty(p1Prop);
+            
+            // 베지어 커브에서 가장 가까운 t 값 찾기 (GUI 좌표 기준)
+            if (FindClosestTOnBezierSegmentFromGUI(p0, p1, mousePosition, out float t, out float distance))
+            {
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    segmentIndex = i;
+                    closestT = t;
+                }
+            }
+        }
+        
+        // 최대 허용 거리 체크 (GUI 픽셀 기준)
+        float maxDistance = CLICK_RADIUS * 2f; // 더 넓은 허용 범위
+        return segmentIndex >= 0 && minDistance < maxDistance;
+    }
+
+    /// <summary>
+    /// GUI 좌표를 사용하여 베지어 세그먼트에서 가장 가까운 t 값을 찾습니다 (UI 모드용)
+    /// </summary>
+    private bool FindClosestTOnBezierSegmentFromGUI(BezierPoint p0, BezierPoint p1, Vector2 mousePosition, out float closestT, out float minDistance)
+    {
+        closestT = 0f;
+        minDistance = float.MaxValue;
+        
+        // 샘플링을 통해 가장 가까운 점 찾기 (성능 최적화: 100 → 80)
+        int samples = 80; // 정확도와 성능의 균형
+        
+        for (int i = 0; i <= samples; i++)
+        {
+            float t = (float)i / samples;
+            Vector3 pointOnCurve = GetCubicBezierPointLocal(p0, p1, t);
+            
+            // 월드 좌표로 변환 후 GUI 좌표로 변환
+            Vector3 worldPoint = TransformUIPointToWorld(pointOnCurve);
+            Vector2 guiPoint = HandleUtility.WorldToGUIPoint(worldPoint);
+            
+            // GUI 좌표에서 거리 계산
+            float distance = Vector2.Distance(mousePosition, guiPoint);
+            
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestT = t;
+            }
+        }
+        
+        // 더 정밀한 검색 (이분법으로 근사) (성능 최적화: 5 → 4, 30 → 25)
+        float refineRange = 1f / samples;
+        for (int refine = 0; refine < 4; refine++) // 정확도와 성능의 균형
+        {
+            float startT = Mathf.Clamp01(closestT - refineRange);
+            float endT = Mathf.Clamp01(closestT + refineRange);
+            int refineSamples = 25; // 정확도와 성능의 균형
+            
+            for (int i = 0; i <= refineSamples; i++)
+            {
+                float t = Mathf.Lerp(startT, endT, (float)i / refineSamples);
+                Vector3 pointOnCurve = GetCubicBezierPointLocal(p0, p1, t);
+                
+                // 월드 좌표로 변환 후 GUI 좌표로 변환
+                Vector3 worldPoint = TransformUIPointToWorld(pointOnCurve);
+                Vector2 guiPoint = HandleUtility.WorldToGUIPoint(worldPoint);
+                
+                // GUI 좌표에서 거리 계산
+                float distance = Vector2.Distance(mousePosition, guiPoint);
                 
                 if (distance < minDistance)
                 {
@@ -1893,7 +2159,7 @@ public class BezierPathEditor : Editor
             {
                 SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
                 Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
-                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector3 worldPos = TransformUIPointToWorld(position);
                 Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
                 
                 if (selectionRect.Contains(guiPos))
@@ -1913,7 +2179,7 @@ public class BezierPathEditor : Editor
             {
                 SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
                 Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
-                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector3 worldPos = TransformUIPointToWorld(position);
                 Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
                 
                 if (selectionRect.Contains(guiPos))
@@ -1931,7 +2197,7 @@ public class BezierPathEditor : Editor
             {
                 SerializedProperty pointProp = pointsProp.GetArrayElementAtIndex(i);
                 Vector3 position = pointProp.FindPropertyRelative("position").vector3Value;
-                Vector3 worldPos = handleTransform.TransformPoint(position);
+                Vector3 worldPos = TransformUIPointToWorld(position);
                 Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
                 
                 if (selectionRect.Contains(guiPos))
@@ -2221,9 +2487,9 @@ public class BezierPathEditor : Editor
                 Vector3 handleIn = pointProp.FindPropertyRelative("handleIn").vector3Value;
                 Vector3 handleOut = pointProp.FindPropertyRelative("handleOut").vector3Value;
                 
-                Vector3 worldPos = handleTransform.TransformPoint(position);
-                Vector3 worldHandleIn = handleTransform.TransformPoint(handleIn);
-                Vector3 worldHandleOut = handleTransform.TransformPoint(handleOut);
+                Vector3 worldPos = TransformUIPointToWorld(position);
+                Vector3 worldHandleIn = TransformUIPointToWorld(handleIn);
+                Vector3 worldHandleOut = TransformUIPointToWorld(handleOut);
                 
                 Vector2 guiPos = HandleUtility.WorldToGUIPoint(worldPos);
                 Vector2 guiHandleIn = HandleUtility.WorldToGUIPoint(worldHandleIn);
