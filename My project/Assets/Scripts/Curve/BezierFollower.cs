@@ -11,10 +11,6 @@ public class BezierFollower : MonoBehaviour
     [Header("Path Settings")]
     [Tooltip("BezierPathData ScriptableObject (필수) - 런타임에서 변경 가능")]
     public BezierPathData pathData;
-
-    [Header("Transform Reference")]
-    [Tooltip("경로의 Transform (ScriptableObject가 있으면 ScriptableObject의 Transform 정보가 우선 사용됩니다)")]
-    public Transform pathTransform;
     
     [Header("Movement Settings")]
     public float duration = 5f; // 이동에 걸리는 시간
@@ -85,27 +81,20 @@ public class BezierFollower : MonoBehaviour
     }
 
     /// <summary>
-    /// Transform 초기화 (ScriptableObject의 Transform 정보가 최우선, 없으면 pathTransform 사용)
+    /// Transform 초기화 (ScriptableObject의 Transform 정보가 최우선, 없으면 자기 자신의 Transform 사용)
     /// </summary>
     private void InitializeTransform()
     {
-        // 월드 모드: ScriptableObject의 Transform 정보가 최우선
+        // ScriptableObject의 Transform 정보가 최우선
         if (pathData != null && pathData.IsValid())
         {
-            // ScriptableObject가 있으면 무조건 ScriptableObject의 Transform 정보 사용 (최우선)
+            // ScriptableObject가 있으면 ScriptableObject의 Transform 정보 사용
             _useSavedTransform = true;
             UpdateSavedTransformMatrix();
         }
-        else if (pathTransform != null)
-        {
-            // ScriptableObject가 없고 pathTransform이 지정되어 있으면 사용
-            _cachedPathTransform = pathTransform;
-            _lastTransformHash = _cachedPathTransform.GetHashCode();
-            _useSavedTransform = false;
-        }
         else
         {
-            // 둘 다 없으면 자기 자신의 Transform 사용
+            // ScriptableObject가 없으면 자기 자신의 Transform 사용
             _cachedPathTransform = transform;
             _lastTransformHash = _cachedPathTransform.GetHashCode();
             _useSavedTransform = false;
@@ -150,7 +139,7 @@ public class BezierFollower : MonoBehaviour
 
     private void OnValidate()
     {
-        // pathData가 변경되었거나 pathTransform이 변경되었을 수 있으므로 재초기화
+        // pathData가 변경되었을 수 있으므로 재초기화
         if (_lastPathData != pathData)
         {
             _lastPathData = pathData;
@@ -256,14 +245,7 @@ public class BezierFollower : MonoBehaviour
             return;
         }
 
-        // pathTransform이 변경되었는지 확인
-        if (pathTransform != _cachedPathTransform)
-        {
-            InitializeTransform();
-            _transformDirty = true;
-            return;
-        }
-
+        // _cachedPathTransform이 null인지 확인
         if (_cachedPathTransform == null)
         {
             InitializeTransform();
