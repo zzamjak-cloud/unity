@@ -8,6 +8,15 @@ namespace CAT.UI
     /// <summary>
     /// 16-Slice 이미지 컴포넌트 (최대 4개의 Vertical/Horizontal Cuts 지원)
     ///
+    /// Unity Image 컴포넌트 호환 기능:
+    /// - Sprite: 렌더링할 스프라이트
+    /// - Color: MaskableGraphic의 color 프로퍼티 사용 (Tint Color)
+    /// - Material: MaskableGraphic의 material 프로퍼티 사용
+    /// - Raycast Target: MaskableGraphic의 raycastTarget 프로퍼티 사용 (RectTransform 전체 영역)
+    /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
+    /// - Maskable: MaskableGraphic 상속으로 자동 지원
+    /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
+    ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
     /// - 타일링 최적화: 1픽셀 단위 대신 최대 32픽셀 단위로 타일링 (버텍스 수 대폭 감소)
@@ -23,6 +32,7 @@ namespace CAT.UI
         private const int MAX_TILE_SIZE = 32; // 타일 최대 크기 (픽셀) - 성능 최적화: 1픽셀보다 큰 타일로 버텍스 수 감소
 
         [SerializeField] private Sprite m_Sprite;
+        [SerializeField] private bool m_PreserveAspect = false;
 
         // 0.0 ~ 1.0 정규화된 좌표값 (최대 4개)
         public List<float> verticalCuts = new List<float>();
@@ -62,6 +72,23 @@ namespace CAT.UI
         public override Texture mainTexture => m_Sprite == null ? s_WhiteTexture : m_Sprite.texture;
 
         /// <summary>
+        /// 종횡비 유지 여부
+        /// true인 경우 RectTransform 크기에 맞춰 종횡비를 유지하며 이미지를 렌더링합니다.
+        /// </summary>
+        public bool preserveAspect
+        {
+            get { return m_PreserveAspect; }
+            set
+            {
+                if (m_PreserveAspect != value)
+                {
+                    m_PreserveAspect = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary>
         /// 스프라이트의 원본 크기를 RectTransform에 적용합니다.
         /// Unity Image 컴포넌트의 SetNativeSize()와 동일한 기능입니다.
         /// </summary>
@@ -75,10 +102,10 @@ namespace CAT.UI
             SetVerticesDirty();
         }
 
-        private new void OnValidate()
+        protected override void OnValidate()
         {
             base.OnValidate();
-            
+
             // 에디터에서 값이 변경될 때 컷 수 제한 적용
             bool changed = false;
             if (verticalCuts.Count > MAX_CUTS)
@@ -91,7 +118,7 @@ namespace CAT.UI
                 horizontalCuts.RemoveRange(MAX_CUTS, horizontalCuts.Count - MAX_CUTS);
                 changed = true;
             }
-            
+
             if (changed)
             {
                 stopsDirty = true;
@@ -105,6 +132,30 @@ namespace CAT.UI
             if (m_Sprite == null) return;
 
             Rect rect = GetPixelAdjustedRect();
+
+            // Preserve Aspect 처리
+            if (m_PreserveAspect && m_Sprite != null)
+            {
+                float aspectW = m_Sprite.rect.width;
+                float aspectH = m_Sprite.rect.height;
+                float spriteRatio = aspectW / aspectH;
+                float rectRatio = rect.width / rect.height;
+
+                if (spriteRatio > rectRatio)
+                {
+                    // 스프라이트가 더 넓음 -> 세로를 줄임
+                    float height = rect.width / spriteRatio;
+                    rect.y += (rect.height - height) * 0.5f;
+                    rect.height = height;
+                }
+                else
+                {
+                    // 스프라이트가 더 높음 -> 가로를 줄임
+                    float width = rect.height * spriteRatio;
+                    rect.x += (rect.width - width) * 0.5f;
+                    rect.width = width;
+                }
+            }
             
             // 컷 리스트 변경 감지 (Editor에서 즉시 반영을 위해)
             int currentVCutsHash = GetListHash(verticalCuts);
@@ -464,7 +515,7 @@ namespace CAT.UI
         private int GetListHash(List<float> list)
         {
             if (list == null || list.Count == 0) return 0;
-            
+
             int hash = list.Count;
             for (int i = 0; i < list.Count; i++)
             {

@@ -11,6 +11,7 @@ using CAT.UI;
 public class MultiSliceImageInspector : GraphicEditor
 {
     SerializedProperty m_Sprite;
+    SerializedProperty m_PreserveAspect;
     SerializedProperty m_VerticalCuts;
     SerializedProperty m_HorizontalCuts;
 
@@ -18,6 +19,7 @@ public class MultiSliceImageInspector : GraphicEditor
     {
         base.OnEnable();
         m_Sprite = serializedObject.FindProperty("m_Sprite");
+        m_PreserveAspect = serializedObject.FindProperty("m_PreserveAspect");
         m_VerticalCuts = serializedObject.FindProperty("verticalCuts");
         m_HorizontalCuts = serializedObject.FindProperty("horizontalCuts");
     }
@@ -26,19 +28,41 @@ public class MultiSliceImageInspector : GraphicEditor
     {
         serializedObject.Update();
 
+        // Sprite 필드 표시
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(m_Sprite);
-        
+        bool spriteChanged = EditorGUI.EndChangeCheck();
+
+        // Sprite 변경 시 즉시 적용
+        if (spriteChanged)
+        {
+            serializedObject.ApplyModifiedProperties();
+            MultiSliceImage img = (MultiSliceImage)target;
+            if (img != null)
+            {
+                // sprite setter가 stopsDirty를 설정하므로 직접 호출
+                img.sprite = img.sprite; // setter를 통해 stopsDirty 설정
+                UpdateImageImmediately(img);
+            }
+        }
+
+        // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)
+        base.OnInspectorGUI();
+
+        EditorGUILayout.Space(3);
+
+        // Preserve Aspect 표시
+        EditorGUILayout.PropertyField(m_PreserveAspect, new GUIContent("Preserve Aspect", "종횡비 유지"));
+
         // Vertical, Horizontal Cuts는 Inspector에서 숨김 (Editor Window에서만 수정 가능)
         // EditorGUILayout.PropertyField(m_VerticalCuts, new GUIContent("Vertical Cuts", "최대 4개까지 가능"), true);
         // EditorGUILayout.PropertyField(m_HorizontalCuts, new GUIContent("Horizontal Cuts", "최대 4개까지 가능"), true);
-        
-        bool propertyChanged = EditorGUI.EndChangeCheck();
+
+        MultiSliceImage targetImage = (MultiSliceImage)target;
 
         EditorGUILayout.Space(5);
 
         // Set Native Size 버튼
-        MultiSliceImage targetImage = (MultiSliceImage)target;
         EditorGUI.BeginDisabledGroup(targetImage.sprite == null);
         if (GUILayout.Button("Set Native Size", GUILayout.Height(25)))
         {
@@ -60,10 +84,14 @@ public class MultiSliceImageInspector : GraphicEditor
             MultiSliceEditorWindow.Open((MultiSliceImage)target);
         }
 
-        serializedObject.ApplyModifiedProperties();
-        
-        // 스프라이트나 타입이 변경되면 열려있는 Editor 창 갱신
-        if (propertyChanged)
+        // Sprite 변경 시 이미 ApplyModifiedProperties를 호출했으므로 조건부 호출
+        if (!spriteChanged)
+        {
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        // 열려있는 Editor 창 갱신
+        if (spriteChanged)
         {
             MultiSliceEditorWindow window = EditorWindow.GetWindow<MultiSliceEditorWindow>(false, null, false);
             if (window != null)
@@ -71,11 +99,29 @@ public class MultiSliceImageInspector : GraphicEditor
                 // targetImage가 null이거나 다른 오브젝트를 가리키는 경우 다시 설정
                 if (window.TargetImage == null || window.TargetImage != target)
                 {
-                    window.SetTarget((MultiSliceImage)target);
+                    window.SetTarget(targetImage);
                 }
                 window.Repaint();
             }
         }
+    }
+
+    private void UpdateImageImmediately(MultiSliceImage targetImage)
+    {
+        if (targetImage == null) return;
+
+        // 메시와 머티리얼 갱신
+        targetImage.SetVerticesDirty();
+        targetImage.SetMaterialDirty();
+
+        // Editor에서 변경사항을 즉시 반영
+        EditorUtility.SetDirty(targetImage);
+
+        // 씬 뷰와 게임 뷰를 즉시 리페인트
+        SceneView.RepaintAll();
+
+        // Inspector도 리페인트
+        Repaint();
     }
 }
 #endif
