@@ -12,6 +12,7 @@ public class MultiSliceImageInspector : GraphicEditor
 {
     SerializedProperty m_Sprite;
     SerializedProperty m_PreserveAspect;
+    SerializedProperty m_ImageType;
     SerializedProperty m_VerticalCuts;
     SerializedProperty m_HorizontalCuts;
 
@@ -20,6 +21,7 @@ public class MultiSliceImageInspector : GraphicEditor
         base.OnEnable();
         m_Sprite = serializedObject.FindProperty("m_Sprite");
         m_PreserveAspect = serializedObject.FindProperty("m_PreserveAspect");
+        m_ImageType = serializedObject.FindProperty("m_ImageType");
         m_VerticalCuts = serializedObject.FindProperty("verticalCuts");
         m_HorizontalCuts = serializedObject.FindProperty("horizontalCuts");
     }
@@ -44,6 +46,22 @@ public class MultiSliceImageInspector : GraphicEditor
                 img.sprite = img.sprite; // setter를 통해 stopsDirty 설정
                 UpdateImageImmediately(img);
             }
+        }
+
+        // Image Type 선택
+        EditorGUI.BeginChangeCheck();
+        MultiSliceImage targetImg = (MultiSliceImage)target;
+        ImageType newImageType = (ImageType)EditorGUILayout.EnumPopup(
+            new GUIContent("Image Type", "렌더링 모드: Sliced (가장자리 픽셀 타일링) / Tiled (조건부 타일링)"),
+            targetImg.imageType
+        );
+        bool imageTypeChanged = EditorGUI.EndChangeCheck();
+
+        if (imageTypeChanged)
+        {
+            Undo.RecordObject(targetImg, "Change Image Type");
+            targetImg.imageType = newImageType;
+            EditorUtility.SetDirty(targetImg);
         }
 
         // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)

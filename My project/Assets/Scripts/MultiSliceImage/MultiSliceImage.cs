@@ -6,6 +6,24 @@ using UnityEngine.UI;
 namespace CAT.UI
 {
     /// <summary>
+    /// 이미지 렌더링 타입
+    /// </summary>
+    public enum ImageType
+    {
+        /// <summary>
+        /// Sliced 모드: 가장자리 1픽셀을 타일링하여 확장 영역을 채움 (현재 기본 동작)
+        /// </summary>
+        Sliced,
+
+        /// <summary>
+        /// Tiled 모드: 확장 영역의 크기에 따라 조건부 처리
+        /// - 목표 크기 >= 원본 크기: 전체 이미지를 타일링
+        /// - 목표 크기 < 원본 크기: 슬라이싱 (Stretch)
+        /// </summary>
+        Tiled
+    }
+
+    /// <summary>
     /// 16-Slice 이미지 컴포넌트 (최대 4개의 Vertical/Horizontal Cuts 지원)
     ///
     /// Unity Image 컴포넌트 호환 기능:
@@ -16,6 +34,7 @@ namespace CAT.UI
     /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
     /// - Maskable: MaskableGraphic 상속으로 자동 지원
     /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
+    /// - Image Type: Sliced (가장자리 픽셀 타일링) / Tiled (조건부 타일링)
     ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
@@ -33,6 +52,7 @@ namespace CAT.UI
 
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private bool m_PreserveAspect = false;
+        [SerializeField] private ImageType m_ImageType = ImageType.Sliced;
 
         // 0.0 ~ 1.0 정규화된 좌표값 (최대 4개)
         public List<float> verticalCuts = new List<float>();
@@ -89,6 +109,27 @@ namespace CAT.UI
         }
 
         /// <summary>
+        /// 이미지 렌더링 타입
+        /// Sliced: 가장자리 1픽셀 타일링 (기본값)
+        /// Tiled: 조건부 타일링/슬라이싱 (크기에 따라 자동 선택)
+        /// </summary>
+        public ImageType imageType
+        {
+            get { return m_ImageType; }
+            set
+            {
+                if (m_ImageType != value)
+                {
+                    m_ImageType = value;
+                    #if UNITY_EDITOR
+                    Debug.Log($"ImageType changed to: {m_ImageType}");
+                    #endif
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary>
         /// 스프라이트의 원본 크기를 RectTransform에 적용합니다.
         /// Unity Image 컴포넌트의 SetNativeSize()와 동일한 기능입니다.
         /// </summary>
@@ -130,6 +171,10 @@ namespace CAT.UI
         {
             vh.Clear();
             if (m_Sprite == null) return;
+
+            #if UNITY_EDITOR
+            Debug.Log($"OnPopulateMesh - Current ImageType: {m_ImageType}");
+            #endif
 
             Rect rect = GetPixelAdjustedRect();
 
@@ -218,24 +263,53 @@ namespace CAT.UI
                     float baseUvColWidth = baseUvRight - baseUvLeft;
                     float baseUvRowHeight = baseUvTop - baseUvBottom;
 
-                    // 확장 영역은 원본 유지 + 양쪽 가장자리 1픽셀을 타일링 (9-Slice Tiled 방식)
+                    // 확장 영역 처리
                     if (isFlexibleCol || isFlexibleRow)
                     {
-                        // 텍스처 1픽셀 크기 계산
-                        float texelWidth = uvWidth / spriteW;
-                        float texelHeight = uvHeight / spriteH;
+                        // Tiled 모드: 조건부 타일링/슬라이싱
+                        if (m_ImageType == ImageType.Tiled)
+                        {
+                            // 목표 크기가 원본보다 크거나 같으면 타일링, 아니면 슬라이싱
+                            bool shouldTileX = isFlexibleCol && (colWidth >= srcColWidth);
+                            bool shouldTileY = isFlexibleRow && (rowHeight >= srcRowHeight);
 
-                        // 확장량 계산 (양쪽으로 늘어나는 크기)
-                        float expandColSize = isFlexibleCol ? (colWidth - srcColWidth) * 0.5f : 0f;
-                        float expandRowSize = isFlexibleRow ? (rowHeight - srcRowHeight) * 0.5f : 0f;
+                            #if UNITY_EDITOR
+                            // Debug.Log($"Tiled Mode - Cell({x},{y}): colWidth={colWidth}, srcColWidth={srcColWidth}, shouldTileX={shouldTileX}, rowHeight={rowHeight}, srcRowHeight={srcRowHeight}, shouldTileY={shouldTileY}");
+                            #endif
 
-                        // 가로 방향: 왼쪽 1픽셀, 원본, 오른쪽 1픽셀
-                        float leftEdgeUvX = baseUvLeft;
-                        float rightEdgeUvX = baseUvRight - texelWidth;
+                            if (shouldTileX || shouldTileY)
+                            {
+                                // 전체 이미지를 타일링
+                                RenderTiled(vh, currentPos, colWidth, rowHeight,
+                                           srcColWidth, srcRowHeight,
+                                           baseUvLeft, baseUvRight, baseUvBottom, baseUvTop,
+                                           shouldTileX, shouldTileY);
+                            }
+                            else
+                            {
+                                // 슬라이싱 (stretch)
+                                RenderStretched(vh, currentPos, colWidth, rowHeight,
+                                               baseUvLeft, baseUvRight, baseUvBottom, baseUvTop);
+                            }
+                        }
+                        else
+                        {
+                            // Sliced 모드: 가장자리 1픽셀 타일링 (기존 로직)
+                            // 텍스처 1픽셀 크기 계산
+                            float texelWidth = uvWidth / spriteW;
+                            float texelHeight = uvHeight / spriteH;
 
-                        // 세로 방향: 아래 1픽셀, 원본, 위 1픽셀
-                        float bottomEdgeUvY = baseUvBottom;
-                        float topEdgeUvY = baseUvTop - texelHeight;
+                            // 확장량 계산 (양쪽으로 늘어나는 크기)
+                            float expandColSize = isFlexibleCol ? (colWidth - srcColWidth) * 0.5f : 0f;
+                            float expandRowSize = isFlexibleRow ? (rowHeight - srcRowHeight) * 0.5f : 0f;
+
+                            // 가로 방향: 왼쪽 1픽셀, 원본, 오른쪽 1픽셀
+                            float leftEdgeUvX = baseUvLeft;
+                            float rightEdgeUvX = baseUvRight - texelWidth;
+
+                            // 세로 방향: 아래 1픽셀, 원본, 위 1픽셀
+                            float bottomEdgeUvY = baseUvBottom;
+                            float topEdgeUvY = baseUvTop - texelHeight;
 
                         // 3x3 그리드로 처리 (왼쪽/중앙/오른쪽 x 아래/중앙/위)
                         for (int sectionY = 0; sectionY < 3; sectionY++)
@@ -372,6 +446,7 @@ namespace CAT.UI
                                 }
                             }
                         }
+                        }
                     }
                     else
                     {
@@ -414,7 +489,7 @@ namespace CAT.UI
             return cache;
         }
 
-        private void CalculateSizes(List<float> stops, float totalDstSize, float totalSrcSize, out float[] srcSizes, out float[] dstSizes, ref float[] cacheSrc, ref float[] cacheDst)
+        private void CalculateSizes(List<float> stops, float totalDstSize, float totalSrcSize, out float[] srcSizes, out float[] dstSizes, ref float[] cacheSrc, ref float[] cacheDst, bool useTiled = false)
         {
             int count = stops.Count - 1;
 
@@ -433,6 +508,7 @@ namespace CAT.UI
 
             float totalFixedSrc = 0f;
             float totalFlexSrc = 0f;
+            int flexCount = 0;
 
             // 각 영역의 원본 크기 계산 및 고정/확장 영역 분류
             for (int i = 0; i < count; i++)
@@ -440,12 +516,16 @@ namespace CAT.UI
                 float size = (stops[i + 1] - stops[i]) * totalSrcSize;
                 srcSizes[i] = size;
                 if (i % 2 == 0) totalFixedSrc += size;  // 짝수 인덱스: 고정 영역 (0, 2, 4, ...)
-                else totalFlexSrc += size;               // 홀수 인덱스: 확장 영역 (1, 3, 5, ...)
+                else
+                {
+                    totalFlexSrc += size;               // 홀수 인덱스: 확장 영역 (1, 3, 5, ...)
+                    flexCount++;
+                }
             }
 
             // 고정 영역은 원본 크기 유지, 확장 영역만 조정
             float availableFlexSpace = totalDstSize - totalFixedSrc;
-            
+
             // 확장 영역이 없으면 모든 영역을 비율적으로 축소
             if (totalFlexSrc <= 0)
             {
@@ -469,20 +549,128 @@ namespace CAT.UI
             }
 
             // 고정 영역은 원본 크기 유지, 확장 영역은 비율에 따라 분배
-            for (int i = 0; i < count; i++)
+            if (useTiled)
             {
-                if (i % 2 == 0)
+                // Tiled 모드: 조건부 타일링/슬라이싱
+                for (int i = 0; i < count; i++)
                 {
-                    // 짝수 인덱스: 고정 영역 (원본 크기 유지)
-                    dstSizes[i] = srcSizes[i];
-                }
-                else
-                {
-                    // 홀수 인덱스: 확장 영역 (비율에 따라 분배)
-                    float ratio = srcSizes[i] / totalFlexSrc;
-                    dstSizes[i] = availableFlexSpace * ratio;
+                    if (i % 2 == 0)
+                    {
+                        // 짝수 인덱스: 고정 영역 (원본 크기 유지)
+                        dstSizes[i] = srcSizes[i];
+                    }
+                    else
+                    {
+                        // 홀수 인덱스: 확장 영역 (조건부 처리)
+                        // 각 확장 영역에 할당된 목표 크기 계산
+                        float ratio = srcSizes[i] / totalFlexSrc;
+                        float targetSize = availableFlexSpace * ratio;
+
+                        // 목표 크기가 원본보다 크거나 같으면 타일링 (원본 크기 유지)
+                        // 목표 크기가 원본보다 작으면 슬라이싱 (stretch)
+                        if (targetSize >= srcSizes[i])
+                        {
+                            dstSizes[i] = srcSizes[i]; // 타일링: 원본 크기 유지
+                        }
+                        else
+                        {
+                            dstSizes[i] = targetSize;  // 슬라이싱: stretch
+                        }
+                    }
                 }
             }
+            else
+            {
+                // Sliced 모드: 기존 로직 (확장 영역 비율 분배)
+                for (int i = 0; i < count; i++)
+                {
+                    if (i % 2 == 0)
+                    {
+                        // 짝수 인덱스: 고정 영역 (원본 크기 유지)
+                        dstSizes[i] = srcSizes[i];
+                    }
+                    else
+                    {
+                        // 홀수 인덱스: 확장 영역 (비율에 따라 분배)
+                        float ratio = srcSizes[i] / totalFlexSrc;
+                        dstSizes[i] = availableFlexSpace * ratio;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tiled 모드: 전체 이미지를 반복하여 타일링
+        /// </summary>
+        private void RenderTiled(
+            VertexHelper vh,
+            Vector2 startPos,
+            float totalWidth,
+            float totalHeight,
+            float srcWidth,
+            float srcHeight,
+            float uvLeft, float uvRight,
+            float uvBottom, float uvTop,
+            bool tileX, bool tileY)
+        {
+            float uvWidth = uvRight - uvLeft;
+            float uvHeight = uvTop - uvBottom;
+
+            // 타일 크기 (픽셀 단위) - 원본 크기 사용
+            float tileW = tileX ? srcWidth : totalWidth;
+            float tileH = tileY ? srcHeight : totalHeight;
+
+            // 성능 최적화: MAX_TILE_SIZE 제한 적용
+            if (tileX && tileW > MAX_TILE_SIZE)
+            {
+                tileW = MAX_TILE_SIZE;
+            }
+            if (tileY && tileH > MAX_TILE_SIZE)
+            {
+                tileH = MAX_TILE_SIZE;
+            }
+
+            // 타일 개수 계산
+            int tilesX = tileX ? Mathf.CeilToInt(totalWidth / tileW) : 1;
+            int tilesY = tileY ? Mathf.CeilToInt(totalHeight / tileH) : 1;
+
+            // 타일링
+            for (int ty = 0; ty < tilesY; ty++)
+            {
+                float currentY = startPos.y + ty * tileH;
+                float actualH = Mathf.Min(tileH, startPos.y + totalHeight - currentY);
+
+                for (int tx = 0; tx < tilesX; tx++)
+                {
+                    float currentX = startPos.x + tx * tileW;
+                    float actualW = Mathf.Min(tileW, startPos.x + totalWidth - currentX);
+
+                    Rect cellRect = new Rect(currentX, currentY, actualW, actualH);
+
+                    // UV는 실제 렌더링 크기에 맞춰 조정 (마지막 타일이 잘릴 수 있음)
+                    float uvW = uvWidth * (actualW / tileW);
+                    float uvH = uvHeight * (actualH / tileH);
+                    Rect uvRect = new Rect(uvLeft, uvBottom, uvW, uvH);
+
+                    AddQuad(vh, cellRect, uvRect);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stretched 모드: 단순 stretch 렌더링
+        /// </summary>
+        private void RenderStretched(
+            VertexHelper vh,
+            Vector2 pos,
+            float width,
+            float height,
+            float uvLeft, float uvRight,
+            float uvBottom, float uvTop)
+        {
+            Rect cellRect = new Rect(pos.x, pos.y, width, height);
+            Rect uvRect = new Rect(uvLeft, uvBottom, uvRight - uvLeft, uvTop - uvBottom);
+            AddQuad(vh, cellRect, uvRect);
         }
 
         private void AddQuad(VertexHelper vh, Rect posRect, Rect uvRect)
