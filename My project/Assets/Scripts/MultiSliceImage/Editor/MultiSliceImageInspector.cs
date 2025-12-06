@@ -2,7 +2,11 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.UI;
+using CAT.UI;
 
+/// <summary>
+/// MultiSliceImage 컴포넌트의 에디터
+/// </summary>
 [CustomEditor(typeof(MultiSliceImage))]
 public class MultiSliceImageInspector : GraphicEditor
 {

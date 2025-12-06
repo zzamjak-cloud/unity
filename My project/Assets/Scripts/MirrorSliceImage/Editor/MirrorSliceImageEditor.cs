@@ -2,10 +2,58 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.UI;
-
+using CAT.UI;
 [CustomEditor(typeof(MirrorSliceImage))]
 public class MirrorSliceImageEditor : GraphicEditor
 {
+    /// <summary>
+    /// 선택된 오브젝트의 자식으로 MirrorSliceImage를 가진 GameObject를 생성합니다.
+    /// 단축키: Windows (Ctrl+Alt+Shift+I), Mac (Cmd+Opt+Shift+I)
+    /// </summary>
+    [MenuItem("GameObject/UI/Mirror Slice Image %&#_i", false, 10)]
+    public static void CreateMirrorSliceImage()
+    {
+        // 선택된 오브젝트 확인
+        GameObject selectedObject = Selection.activeGameObject;
+        
+        if (selectedObject == null)
+        {
+            Debug.LogWarning("MirrorSliceImage를 생성하려면 먼저 부모가 될 GameObject를 선택해주세요.");
+            return;
+        }
+
+        // 새 GameObject 생성
+        GameObject newObject = new GameObject("MirroImage");
+        
+        // 선택된 오브젝트의 자식으로 설정
+        newObject.transform.SetParent(selectedObject.transform, false);
+        
+        // RectTransform 추가 (UI 컴포넌트이므로 필요)
+        RectTransform rectTransform = newObject.AddComponent<RectTransform>();
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = new Vector2(100, 100);
+        
+        // MirrorSliceImage 컴포넌트 추가
+        newObject.AddComponent<MirrorSliceImage>();
+        
+        // 생성된 오브젝트 선택
+        Selection.activeGameObject = newObject;
+        
+        // Undo 시스템에 등록
+        Undo.RegisterCreatedObjectUndo(newObject, "Create Mirror Slice Image");
+        
+        Debug.Log($"MirrorSliceImage가 '{selectedObject.name}'의 자식으로 생성되었습니다.");
+    }
+    
+    /// <summary>
+    /// 메뉴 항목 활성화 여부 확인
+    /// </summary>
+    [MenuItem("GameObject/UI/Mirror Slice Image %&#_i", true)]
+    public static bool ValidateCreateMirrorSliceImage()
+    {
+        // GameObject가 선택되어 있을 때만 활성화
+        return Selection.activeGameObject != null;
+    }
     SerializedProperty m_Sprite;
     SerializedProperty m_MirrorMode;
 
@@ -20,18 +68,31 @@ public class MirrorSliceImageEditor : GraphicEditor
     {
         serializedObject.Update();
 
-        // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)
-        base.OnInspectorGUI();
-
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("Mirror Slice Settings", EditorStyles.boldLabel);
-
+        // Sprite 필드를 먼저 표시 (Unity 기본 Image처럼)
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(m_Sprite);
+        bool spriteChanged = EditorGUI.EndChangeCheck();
+        
+        // Sprite 변경 시 즉시 적용
+        if (spriteChanged)
+        {
+            serializedObject.ApplyModifiedProperties();
+            MirrorSliceImage img = (MirrorSliceImage)target;
+            if (img != null)
+            {
+                // sprite setter가 cacheDirty를 설정하므로 직접 호출
+                img.sprite = img.sprite; // setter를 통해 cacheDirty 설정
+                UpdateImageImmediately(img);
+            }
+        }
+        
+        // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)
+        base.OnInspectorGUI();
         
         EditorGUILayout.Space(3);
         
         // Mirror Mode 라디오 버튼
+        EditorGUI.BeginChangeCheck();
         EditorGUILayout.LabelField("Mirror Mode", EditorStyles.boldLabel);
         int selected = (int)m_MirrorMode.enumValueIndex;
         selected = GUILayout.SelectionGrid(
@@ -41,8 +102,9 @@ public class MirrorSliceImageEditor : GraphicEditor
             EditorStyles.radioButton
         );
         m_MirrorMode.enumValueIndex = selected;
+        bool mirrorModeChanged = EditorGUI.EndChangeCheck();
         
-        bool propertyChanged = EditorGUI.EndChangeCheck();
+        bool propertyChanged = spriteChanged || mirrorModeChanged;
 
         MirrorSliceImage targetImage = (MirrorSliceImage)target;
 

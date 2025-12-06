@@ -2,8 +2,12 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using CAT.UI;
 
-// 파일 위치: Assets/Scripts/MultiSliceImage/Editor/MultiSliceEditorWindow.cs
+/// <summary>
+/// MultiSliceImage 컴포넌트의 에디터 윈도우
+/// </summary>
+
 public class MultiSliceEditorWindow : EditorWindow
 {
     private MultiSliceImage targetImage;
