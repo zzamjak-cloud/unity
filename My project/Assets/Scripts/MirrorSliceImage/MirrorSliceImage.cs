@@ -19,8 +19,20 @@ namespace CAT.UI
             Horizontal  // 위 -> 아래 복제 (수평 대칭)
         }
 
+        public enum GradientDirection
+        {
+            Horizontal, // 좌 → 우
+            Vertical    // 아래 → 위
+        }
+
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private MirrorMode mirrorMode = MirrorMode.Vertical;
+
+        [SerializeField] private bool m_IsGradient = false;
+        [SerializeField] private GradientDirection m_GradientDirection = GradientDirection.Horizontal;
+        [SerializeField] private Color m_GradientColorA = Color.white;
+        [SerializeField] private Color m_GradientColorB = Color.white;
+        [SerializeField] [Range(0f, 1f)] private float m_GradientLerp = 0.5f;
 
         // 성능 최적화: 캐시된 값들
         private bool cacheDirty = true;
@@ -67,6 +79,72 @@ namespace CAT.UI
                 {
                     mirrorMode = value;
                     cacheDirty = true;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public bool isGradient
+        {
+            get { return m_IsGradient; }
+            set
+            {
+                if (m_IsGradient != value)
+                {
+                    m_IsGradient = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public GradientDirection gradientDirection
+        {
+            get { return m_GradientDirection; }
+            set
+            {
+                if (m_GradientDirection != value)
+                {
+                    m_GradientDirection = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public Color gradientColorA
+        {
+            get { return m_GradientColorA; }
+            set
+            {
+                if (m_GradientColorA != value)
+                {
+                    m_GradientColorA = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public Color gradientColorB
+        {
+            get { return m_GradientColorB; }
+            set
+            {
+                if (m_GradientColorB != value)
+                {
+                    m_GradientColorB = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public float gradientLerp
+        {
+            get { return m_GradientLerp; }
+            set
+            {
+                float clampedValue = Mathf.Clamp01(value);
+                if (!Mathf.Approximately(m_GradientLerp, clampedValue))
+                {
+                    m_GradientLerp = clampedValue;
                     SetVerticesDirty();
                 }
             }
@@ -547,6 +625,55 @@ namespace CAT.UI
         }
 
         /// <summary>
+        /// Vertex position에 따라 Gradient Color 계산
+        /// Mirror Mode와는 독립적으로, GradientDirection에 따라서만 작동
+        /// </summary>
+        private Color CalculateGradientColor(Vector2 position, Rect bounds)
+        {
+            if (!m_IsGradient)
+            {
+                return color; // 기본 Tint Color
+            }
+
+            // Mirror Mode와 상관없이 GradientDirection만 확인
+            float t;
+
+            if (m_GradientDirection == GradientDirection.Horizontal)
+            {
+                // 좌 → 우: x 좌표 기반 (Mirror Mode와 무관)
+                t = (position.x - bounds.xMin) / bounds.width;
+            }
+            else // GradientDirection.Vertical
+            {
+                // 아래 → 위: y 좌표 기반 (Mirror Mode와 무관)
+                t = (position.y - bounds.yMin) / bounds.height;
+            }
+
+            // t 값 범위 보정
+            t = Mathf.Clamp01(t);
+
+            // Lerp 값 적용 (선형 offset 방식)
+            // m_GradientLerp: 0 = Color A 영역 넓음, 0.5 = 균등, 1 = Color B 영역 넓음
+            //
+            // 원리: t 값을 선형적으로 재매핑하여 Color A 또는 Color B 영역을 확장
+            // - Lerp < 0.5: t를 아래로 밀어서 Color A가 더 넓은 영역을 차지하게 함
+            // - Lerp > 0.5: t를 위로 밀어서 Color B가 더 넓은 영역을 차지하게 함
+            float offset = (m_GradientLerp - 0.5f) * 2f; // -1 ~ +1 범위
+            t = Mathf.Clamp01(t + offset * 0.4f); // Lerp=0이면 t 감소(Color A 확장), Lerp=1이면 t 증가(Color B 확장)
+
+            // Color A와 B 사이 보간
+            Color gradientColor = Color.Lerp(m_GradientColorA, m_GradientColorB, t);
+
+            // 기본 Tint Color와 Multiply
+            return new Color(
+                color.r * gradientColor.r,
+                color.g * gradientColor.g,
+                color.b * gradientColor.b,
+                color.a * gradientColor.a
+            );
+        }
+
+        /// <summary>
         /// 9-Slice 크기 계산 (Left, Center, Right)
         /// </summary>
         private float[] CalculateSliceSizes(float leftBorder, float centerSize, float rightBorder, float totalDstSize)
@@ -578,22 +705,29 @@ namespace CAT.UI
         {
             int i = vh.currentVertCount;
             UIVertex v = UIVertex.simpleVert;
-            v.color = color;
 
+            // 좌하단
             v.position = new Vector3(posRect.x, posRect.y);
             v.uv0 = new Vector2(uvRect.x, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
+            // 좌상단
             v.position = new Vector3(posRect.x, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
+            // 우상단
             v.position = new Vector3(posRect.x + posRect.width, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
+            // 우하단
             v.position = new Vector3(posRect.x + posRect.width, posRect.y);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             vh.AddTriangle(i, i + 1, i + 2);
@@ -607,26 +741,29 @@ namespace CAT.UI
         {
             int i = vh.currentVertCount;
             UIVertex v = UIVertex.simpleVert;
-            v.color = color;
 
             // 왼쪽 하단 (UV는 오른쪽 하단)
             v.position = new Vector3(posRect.x, posRect.y);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 왼쪽 상단 (UV는 오른쪽 상단)
             v.position = new Vector3(posRect.x, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 오른쪽 상단 (UV는 왼쪽 상단)
             v.position = new Vector3(posRect.x + posRect.width, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 오른쪽 하단 (UV는 왼쪽 하단)
             v.position = new Vector3(posRect.x + posRect.width, posRect.y);
             v.uv0 = new Vector2(uvRect.x, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             vh.AddTriangle(i, i + 1, i + 2);
@@ -640,26 +777,29 @@ namespace CAT.UI
         {
             int i = vh.currentVertCount;
             UIVertex v = UIVertex.simpleVert;
-            v.color = color;
 
             // 왼쪽 하단 (UV는 왼쪽 상단)
             v.position = new Vector3(posRect.x, posRect.y);
             v.uv0 = new Vector2(uvRect.x, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 왼쪽 상단 (UV는 왼쪽 하단)
             v.position = new Vector3(posRect.x, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 오른쪽 상단 (UV는 오른쪽 하단)
             v.position = new Vector3(posRect.x + posRect.width, posRect.y + posRect.height);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             // 오른쪽 하단 (UV는 오른쪽 상단)
             v.position = new Vector3(posRect.x + posRect.width, posRect.y);
             v.uv0 = new Vector2(uvRect.x + uvRect.width, uvRect.y + uvRect.height);
+            v.color = CalculateGradientColor(v.position, cachedRect);
             vh.AddVert(v);
 
             vh.AddTriangle(i, i + 1, i + 2);

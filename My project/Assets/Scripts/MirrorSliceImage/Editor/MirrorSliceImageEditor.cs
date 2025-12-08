@@ -56,12 +56,22 @@ public class MirrorSliceImageEditor : GraphicEditor
     }
     SerializedProperty m_Sprite;
     SerializedProperty m_MirrorMode;
+    SerializedProperty m_IsGradient;
+    SerializedProperty m_GradientDirection;
+    SerializedProperty m_GradientColorA;
+    SerializedProperty m_GradientColorB;
+    SerializedProperty m_GradientLerp;
 
     protected override void OnEnable()
     {
         base.OnEnable();
         m_Sprite = serializedObject.FindProperty("m_Sprite");
         m_MirrorMode = serializedObject.FindProperty("mirrorMode");
+        m_IsGradient = serializedObject.FindProperty("m_IsGradient");
+        m_GradientDirection = serializedObject.FindProperty("m_GradientDirection");
+        m_GradientColorA = serializedObject.FindProperty("m_GradientColorA");
+        m_GradientColorB = serializedObject.FindProperty("m_GradientColorB");
+        m_GradientLerp = serializedObject.FindProperty("m_GradientLerp");
     }
 
     public override void OnInspectorGUI()
@@ -88,9 +98,34 @@ public class MirrorSliceImageEditor : GraphicEditor
         
         // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)
         base.OnInspectorGUI();
-        
+
         EditorGUILayout.Space(3);
-        
+
+        // ===== Gradient 설정 =====
+        EditorGUILayout.LabelField("Gradient Settings", EditorStyles.boldLabel);
+
+        EditorGUI.BeginChangeCheck();
+        EditorGUILayout.PropertyField(m_IsGradient, new GUIContent("Is Gradient", "Gradient 색상 적용"));
+        bool gradientChanged = EditorGUI.EndChangeCheck();
+
+        if (m_IsGradient.boolValue)
+        {
+            EditorGUI.indentLevel++;
+
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(m_GradientDirection, new GUIContent("Direction", "Gradient 방향"));
+            EditorGUILayout.PropertyField(m_GradientColorA, new GUIContent("Color A", "시작 색상"));
+            EditorGUILayout.PropertyField(m_GradientColorB, new GUIContent("Color B", "끝 색상"));
+            EditorGUILayout.Slider(m_GradientLerp, 0f, 1f, new GUIContent("Lerp", "색상 분포 비율 (0: A 많음, 1: B 많음)"));
+            bool gradientParamsChanged = EditorGUI.EndChangeCheck();
+
+            EditorGUI.indentLevel--;
+
+            gradientChanged |= gradientParamsChanged;
+        }
+
+        EditorGUILayout.Space(3);
+
         // Mirror Mode 라디오 버튼
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.LabelField("Mirror Mode", EditorStyles.boldLabel);
@@ -103,8 +138,8 @@ public class MirrorSliceImageEditor : GraphicEditor
         );
         m_MirrorMode.enumValueIndex = selected;
         bool mirrorModeChanged = EditorGUI.EndChangeCheck();
-        
-        bool propertyChanged = spriteChanged || mirrorModeChanged;
+
+        bool propertyChanged = spriteChanged || mirrorModeChanged || gradientChanged;
 
         MirrorSliceImage targetImage = (MirrorSliceImage)target;
 
