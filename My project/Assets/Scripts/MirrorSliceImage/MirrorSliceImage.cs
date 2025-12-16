@@ -149,7 +149,8 @@ namespace CAT.UI
                 }
             }
         }
-
+        
+#if UNITY_EDITOR
         private new void OnValidate()
         {
             base.OnValidate();
@@ -162,6 +163,7 @@ namespace CAT.UI
                 SetVerticesDirty();
             }
         }
+#endif
 
         /// <summary>
         /// 스프라이트의 원본 크기를 반전 모드에 따라 RectTransform에 적용합니다.
@@ -807,4 +809,3 @@ namespace CAT.UI
         }
     }
 }
-
