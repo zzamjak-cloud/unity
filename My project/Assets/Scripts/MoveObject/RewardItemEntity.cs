@@ -9,12 +9,20 @@ namespace MoveObject
     /// </summary>
     public class RewardItemEntity : MonoBehaviour
     {
+        // 상수 정의
+        private const float BEZIER_OFFSET_MULTIPLIER = 0.3f;
+        private const float DEFAULT_EFFECT_DESTROY_DELAY = 2f;
+        private const float EFFECT_DESTROY_BUFFER_TIME = 0.5f;
+        private const int BEZIER_POINT_COUNT = 3;
+        private const float BEZIER_TWEEN_START = 0f;
+        private const float BEZIER_TWEEN_END = 1f;
+
         private RectTransform _rectTransform;
         private Transform _cachedTransform;
         private Sequence _moveSequence;
         private RewardData _data;
         private Action<RewardItemEntity> _onArrivalCallback;
-        private Vector3 _targetWorldPosition; // 도착 위치 저장
+        private Vector3 _targetWorldPosition;
 
         public RewardData Data => _data;
 
@@ -65,34 +73,13 @@ namespace MoveObject
 
             if (_data.UseSpawnAnimation)
             {
-                // 등장 시작 스케일 → 이동 시작 스케일
                 _cachedTransform.localScale = Vector3.one * _data.SpawnStartScale;
-
                 Tweener scaleTween = _cachedTransform.DOScale(Vector3.one * _data.MoveStartScale, _data.SpawnDuration);
-
-                // INTERNAL_Custom이면 커스텀 곡선 사용, 아니면 Ease 사용
-                if (_data.SpawnEase == Ease.INTERNAL_Custom)
-                {
-                    if (_data.SpawnCustomCurve != null && _data.SpawnCustomCurve.length > 0)
-                    {
-                        scaleTween.SetEase(_data.SpawnCustomCurve);
-                    }
-                    else
-                    {
-                        // 커스텀 선택했지만 곡선이 없으면 기본 Linear 사용
-                        scaleTween.SetEase(Ease.Linear);
-                    }
-                }
-                else
-                {
-                    scaleTween.SetEase(_data.SpawnEase);
-                }
-
+                ApplyEaseToTween(scaleTween, _data.SpawnEase, _data.SpawnCustomCurve);
                 scaleTween.OnComplete(() => onComplete?.Invoke());
             }
             else
             {
-                // 애니메이션 없이 바로 이동 시작 스케일
                 _cachedTransform.localScale = Vector3.one * _data.MoveStartScale;
                 onComplete?.Invoke();
             }
@@ -127,72 +114,11 @@ namespace MoveObject
 
                     if (_data.UseBezierPath)
                     {
-                        // 베지어 곡선을 사용한 이동 (anchoredPosition 기준)
-                        Vector3[] path = GenerateBezierPathUI(_rectTransform.anchoredPosition, targetLocalPoint);
-
-                        // DOPath 대신 수동으로 베지어 경로 구현
-                        Vector3 startPos = _rectTransform.anchoredPosition;
-                        Tween moveTween = DOTween.To(
-                            () => 0f,
-                            t =>
-                            {
-                                Vector3 position = CalculateBezierPoint(t, path);
-                                _rectTransform.anchoredPosition = position;
-
-                                // 스케일 변화: 이동 시작 스케일 → 이동 도착 스케일
-                                float scaleValue = Mathf.Lerp(_data.MoveStartScale, _data.MoveEndScale, t);
-                                _cachedTransform.localScale = Vector3.one * scaleValue;
-                            },
-                            1f,
-                            _data.Duration
-                        );
-
-                        // INTERNAL_Custom이면 커스텀 곡선 사용, 아니면 Ease 사용
-                        if (_data.MoveEase == Ease.INTERNAL_Custom)
-                        {
-                            if (_data.MoveCustomCurve != null && _data.MoveCustomCurve.length > 0)
-                            {
-                                moveTween.SetEase(_data.MoveCustomCurve);
-                            }
-                            else
-                            {
-                                moveTween.SetEase(Ease.Linear);
-                            }
-                        }
-                        else
-                        {
-                            moveTween.SetEase(_data.MoveEase);
-                        }
-
-                        _moveSequence.Append(moveTween);
+                        CreateBezierMoveTweenUI(targetLocalPoint);
                     }
                     else
                     {
-                        // 직선 이동 (anchoredPosition 기준)
-                        Tweener moveTween = _rectTransform.DOAnchorPos(targetLocalPoint, _data.Duration);
-
-                        // INTERNAL_Custom이면 커스텀 곡선 사용, 아니면 Ease 사용
-                        if (_data.MoveEase == Ease.INTERNAL_Custom)
-                        {
-                            if (_data.MoveCustomCurve != null && _data.MoveCustomCurve.length > 0)
-                            {
-                                moveTween.SetEase(_data.MoveCustomCurve);
-                            }
-                            else
-                            {
-                                moveTween.SetEase(Ease.Linear);
-                            }
-                        }
-                        else
-                        {
-                            moveTween.SetEase(_data.MoveEase);
-                        }
-
-                        _moveSequence.Append(moveTween);
-
-                        // 스케일 변화: 이동 시작 스케일 → 이동 도착 스케일
-                        _moveSequence.Join(_cachedTransform.DOScale(Vector3.one * _data.MoveEndScale, _data.Duration)
-                            .SetEase(Ease.Linear));
+                        CreateLinearMoveTweenUI(targetLocalPoint);
                     }
                 }
                 else
@@ -219,48 +145,70 @@ namespace MoveObject
             {
                 Vector3[] path = GenerateBezierPath(_cachedTransform.position, targetPosition);
                 Tweener moveTween = _cachedTransform.DOPath(path, _data.Duration, PathType.CatmullRom);
-
-                // INTERNAL_Custom이면 커스텀 곡선 사용, 아니면 Ease 사용
-                if (_data.MoveEase == Ease.INTERNAL_Custom)
-                {
-                    if (_data.MoveCustomCurve != null && _data.MoveCustomCurve.length > 0)
-                    {
-                        moveTween.SetEase(_data.MoveCustomCurve);
-                    }
-                    else
-                    {
-                        moveTween.SetEase(Ease.Linear);
-                    }
-                }
-                else
-                {
-                    moveTween.SetEase(_data.MoveEase);
-                }
-
+                ApplyEaseToTween(moveTween, _data.MoveEase, _data.MoveCustomCurve);
                 _moveSequence.Append(moveTween);
             }
             else
             {
                 Tweener moveTween = _cachedTransform.DOMove(targetPosition, _data.Duration);
+                ApplyEaseToTween(moveTween, _data.MoveEase, _data.MoveCustomCurve);
+                _moveSequence.Append(moveTween);
+            }
+        }
 
-                // INTERNAL_Custom이면 커스텀 곡선 사용, 아니면 Ease 사용
-                if (_data.MoveEase == Ease.INTERNAL_Custom)
+        /// <summary>
+        /// UI RectTransform용 베지어 이동 트윈 생성
+        /// </summary>
+        private void CreateBezierMoveTweenUI(Vector2 targetLocalPoint)
+        {
+            Vector3[] path = GenerateBezierPathUI(_rectTransform.anchoredPosition, targetLocalPoint);
+            Tween moveTween = DOTween.To(
+                () => BEZIER_TWEEN_START,
+                t =>
                 {
-                    if (_data.MoveCustomCurve != null && _data.MoveCustomCurve.length > 0)
-                    {
-                        moveTween.SetEase(_data.MoveCustomCurve);
-                    }
-                    else
-                    {
-                        moveTween.SetEase(Ease.Linear);
-                    }
+                    Vector3 position = CalculateBezierPoint(t, path);
+                    _rectTransform.anchoredPosition = position;
+                    float scaleValue = Mathf.Lerp(_data.MoveStartScale, _data.MoveEndScale, t);
+                    _cachedTransform.localScale = Vector3.one * scaleValue;
+                },
+                BEZIER_TWEEN_END,
+                _data.Duration
+            );
+            ApplyEaseToTween(moveTween, _data.MoveEase, _data.MoveCustomCurve);
+            _moveSequence.Append(moveTween);
+        }
+
+        /// <summary>
+        /// UI RectTransform용 직선 이동 트윈 생성
+        /// </summary>
+        private void CreateLinearMoveTweenUI(Vector2 targetLocalPoint)
+        {
+            Tweener moveTween = _rectTransform.DOAnchorPos(targetLocalPoint, _data.Duration);
+            ApplyEaseToTween(moveTween, _data.MoveEase, _data.MoveCustomCurve);
+            _moveSequence.Append(moveTween);
+            _moveSequence.Join(_cachedTransform.DOScale(Vector3.one * _data.MoveEndScale, _data.Duration)
+                .SetEase(Ease.Linear));
+        }
+
+        /// <summary>
+        /// Tween에 Ease 설정 적용 (중복 코드 제거)
+        /// </summary>
+        private void ApplyEaseToTween(Tween tween, Ease ease, AnimationCurve customCurve)
+        {
+            if (ease == Ease.INTERNAL_Custom)
+            {
+                if (customCurve != null && customCurve.length > 0)
+                {
+                    tween.SetEase(customCurve);
                 }
                 else
                 {
-                    moveTween.SetEase(_data.MoveEase);
+                    tween.SetEase(Ease.Linear);
                 }
-
-                _moveSequence.Append(moveTween);
+            }
+            else
+            {
+                tween.SetEase(ease);
             }
         }
 
@@ -270,35 +218,27 @@ namespace MoveObject
         private Vector3[] GenerateBezierPathUI(Vector2 start, Vector2 end)
         {
             Vector2 midPoint = Vector2.Lerp(start, end, _data.BezierControlPointOffset);
-
-            // 수직 방향으로 제어점 오프셋 추가
-            float offsetDistance = Vector2.Distance(start, end) * 0.3f;
+            float offsetDistance = Vector2.Distance(start, end) * BEZIER_OFFSET_MULTIPLIER;
             midPoint += Vector2.up * offsetDistance;
-
             return new Vector3[] { start, midPoint, end };
         }
 
         /// <summary>
-        /// 베지어 곡선 상의 점 계산 (Catmull-Rom)
+        /// 베지어 곡선 상의 점 계산 (Quadratic Bezier)
         /// </summary>
         private Vector3 CalculateBezierPoint(float t, Vector3[] points)
         {
-            if (points.Length == 3)
+            if (points.Length == BEZIER_POINT_COUNT)
             {
-                // 3점 베지어 곡선 (Quadratic)
-                float u = 1 - t;
+                // 3점 베지어 곡선 (Quadratic): P(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+                float u = 1f - t;
                 float tt = t * t;
                 float uu = u * u;
 
-                Vector3 p = uu * points[0]; // (1-t)^2 * P0
-                p += 2 * u * t * points[1]; // 2(1-t)t * P1
-                p += tt * points[2];        // t^2 * P2
-
-                return p;
+                return uu * points[0] + 2f * u * t * points[1] + tt * points[2];
             }
             else
             {
-                // 기본 선형 보간
                 return Vector3.Lerp(points[0], points[points.Length - 1], t);
             }
         }
@@ -309,11 +249,8 @@ namespace MoveObject
         private Vector3[] GenerateBezierPath(Vector3 start, Vector3 end)
         {
             Vector3 midPoint = Vector3.Lerp(start, end, _data.BezierControlPointOffset);
-
-            // 수직 방향으로 제어점 오프셋 추가
-            float offsetDistance = Vector3.Distance(start, end) * 0.3f;
+            float offsetDistance = Vector3.Distance(start, end) * BEZIER_OFFSET_MULTIPLIER;
             midPoint += Vector3.up * offsetDistance;
-
             return new Vector3[] { start, midPoint, end };
         }
 
@@ -322,108 +259,134 @@ namespace MoveObject
         /// </summary>
         private void OnArrival()
         {
-            // 도착 이펙트 재생
-            if (_data.ArrivalEffect != null)
+            PlayArrivalEffect();
+            PlayArrivalSound();
+            _onArrivalCallback?.Invoke(this);
+        }
+
+        /// <summary>
+        /// 도착 이펙트 재생
+        /// </summary>
+        private void PlayArrivalEffect()
+        {
+            if (_data.ArrivalEffect == null) return;
+
+            Vector3 effectPosition = GetCurrentWorldPosition();
+            GameObject effect = Instantiate(_data.ArrivalEffect);
+            SetupEffectTransform(effect, effectPosition);
+            PlayParticleSystems(effect);
+            DestroyEffectAfterDelay(effect);
+        }
+
+        /// <summary>
+        /// 이펙트 Transform 설정 (UI 좌표계 지원)
+        /// </summary>
+        private void SetupEffectTransform(GameObject effect, Vector3 worldPosition)
+        {
+            if (_rectTransform != null)
             {
-                // 현재 아이템의 실제 도착 위치 사용 (가장 정확함)
-                Vector3 effectPosition = GetCurrentWorldPosition();
+                RectTransform parentRect = _rectTransform.parent as RectTransform;
+                Canvas canvas = parentRect?.GetComponentInParent<Canvas>();
                 
-                GameObject effect = Instantiate(_data.ArrivalEffect);
-                
-                // UI Canvas가 있으면 Canvas를 부모로 설정하고 UI 좌표로 변환
-                if (_rectTransform != null)
+                if (canvas != null)
                 {
-                    RectTransform parentRect = _rectTransform.parent as RectTransform;
-                    if (parentRect != null)
+                    effect.transform.SetParent(canvas.transform, false);
+                    RectTransform effectRect = effect.GetComponent<RectTransform>();
+                    
+                    if (effectRect != null)
                     {
-                        Canvas canvas = parentRect.GetComponentInParent<Canvas>();
-                        if (canvas != null)
-                        {
-                            effect.transform.SetParent(canvas.transform, false);
-                            
-                            // UI 좌표로 변환
-                            RectTransform effectRect = effect.GetComponent<RectTransform>();
-                            if (effectRect != null)
-                            {
-                                // 월드 좌표를 UI 로컬 좌표로 변환
-                                Vector2 localPoint;
-                                RectTransform canvasRect = canvas.GetComponent<RectTransform>();
-                                Camera uiCamera = canvas.worldCamera ?? Camera.main;
-                                
-                                RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                                    canvasRect,
-                                    RectTransformUtility.WorldToScreenPoint(uiCamera, effectPosition),
-                                    uiCamera,
-                                    out localPoint
-                                );
-                                effectRect.anchoredPosition = localPoint;
-                            }
-                            else
-                            {
-                                // RectTransform이 없으면 일반 Transform으로 위치 설정
-                                effect.transform.position = effectPosition;
-                            }
-                        }
-                        else
-                        {
-                            // Canvas가 없으면 월드 좌표로 설정
-                            effect.transform.position = effectPosition;
-                        }
+                        SetEffectUIPosition(effectRect, canvas, worldPosition);
                     }
                     else
                     {
-                        // 부모가 없으면 월드 좌표로 설정
-                        effect.transform.position = effectPosition;
+                        effect.transform.position = worldPosition;
                     }
                 }
                 else
                 {
-                    // RectTransform이 없으면 월드 좌표로 설정
-                    effect.transform.position = effectPosition;
+                    effect.transform.position = worldPosition;
                 }
-                
-                // 파티클 시스템이 있으면 재생
-                ParticleSystem[] particles = effect.GetComponentsInChildren<ParticleSystem>();
-                foreach (var particle in particles)
-                {
-                    if (!particle.isPlaying)
-                    {
-                        particle.Play();
-                    }
-                }
-                
-                // 파티클이 없으면 기본 2초 후 제거, 있으면 파티클 재생 시간에 맞춰 제거
-                float destroyDelay = 2f;
-                if (particles.Length > 0)
-                {
-                    float maxDuration = 0f;
-                    foreach (var particle in particles)
-                    {
-                        float duration = particle.main.duration + particle.main.startLifetime.constantMax;
-                        if (duration > maxDuration)
-                        {
-                            maxDuration = duration;
-                        }
-                    }
-                    destroyDelay = maxDuration + 0.5f; // 여유 시간 추가
-                }
-                
-                Destroy(effect, destroyDelay);
             }
-
-            // 도착 사운드 재생
-            if (_data.ArrivalSound != null)
+            else
             {
-                // AudioSource가 있다면 사용, 없다면 추후 사운드 매니저와 연동
-                AudioSource audioSource = GetComponent<AudioSource>();
-                if (audioSource != null)
+                effect.transform.position = worldPosition;
+            }
+        }
+
+        /// <summary>
+        /// 이펙트 UI 위치 설정
+        /// </summary>
+        private void SetEffectUIPosition(RectTransform effectRect, Canvas canvas, Vector3 worldPosition)
+        {
+            RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+            Camera uiCamera = canvas.worldCamera ?? Camera.main;
+            
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasRect,
+                RectTransformUtility.WorldToScreenPoint(uiCamera, worldPosition),
+                uiCamera,
+                out Vector2 localPoint
+            );
+            effectRect.anchoredPosition = localPoint;
+        }
+
+        /// <summary>
+        /// 파티클 시스템 재생
+        /// </summary>
+        private void PlayParticleSystems(GameObject effect)
+        {
+            ParticleSystem[] particles = effect.GetComponentsInChildren<ParticleSystem>();
+            foreach (var particle in particles)
+            {
+                if (!particle.isPlaying)
                 {
-                    audioSource.PlayOneShot(_data.ArrivalSound);
+                    particle.Play();
                 }
             }
+        }
 
-            // 콜백 호출
-            _onArrivalCallback?.Invoke(this);
+        /// <summary>
+        /// 이펙트 지연 제거
+        /// </summary>
+        private void DestroyEffectAfterDelay(GameObject effect)
+        {
+            ParticleSystem[] particles = effect.GetComponentsInChildren<ParticleSystem>();
+            float destroyDelay = CalculateEffectDestroyDelay(particles);
+            Destroy(effect, destroyDelay);
+        }
+
+        /// <summary>
+        /// 이펙트 제거 지연 시간 계산
+        /// </summary>
+        private float CalculateEffectDestroyDelay(ParticleSystem[] particles)
+        {
+            if (particles.Length == 0)
+            {
+                return DEFAULT_EFFECT_DESTROY_DELAY;
+            }
+
+            float maxDuration = 0f;
+            foreach (var particle in particles)
+            {
+                float duration = particle.main.duration + particle.main.startLifetime.constantMax;
+                maxDuration = Mathf.Max(maxDuration, duration);
+            }
+            
+            return maxDuration + EFFECT_DESTROY_BUFFER_TIME;
+        }
+
+        /// <summary>
+        /// 도착 사운드 재생
+        /// </summary>
+        private void PlayArrivalSound()
+        {
+            if (_data.ArrivalSound == null) return;
+
+            AudioSource audioSource = GetComponent<AudioSource>();
+            if (audioSource != null)
+            {
+                audioSource.PlayOneShot(_data.ArrivalSound);
+            }
         }
 
         /// <summary>

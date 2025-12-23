@@ -8,12 +8,17 @@ namespace MoveObject
     /// </summary>
     public class RewardPool : MonoBehaviour
     {
+        // 상수 정의
+        private const int DEFAULT_INITIAL_POOL_SIZE = 10;
+        private const int DEFAULT_EXPAND_SIZE = 5;
+        private const string POOL_OBJECT_NAME = "RewardPool";
+
         [Header("풀링 설정")]
         [Tooltip("각 타입별 미리 생성할 오브젝트 수")]
-        [SerializeField] private int _initialPoolSize = 10;
+        [SerializeField] private int _initialPoolSize = DEFAULT_INITIAL_POOL_SIZE;
 
         [Tooltip("풀이 부족할 때 추가로 생성할 오브젝트 수")]
-        [SerializeField] private int _expandSize = 5;
+        [SerializeField] private int _expandSize = DEFAULT_EXPAND_SIZE;
 
         [Tooltip("풀 오브젝트의 부모 Transform")]
         [SerializeField] private Transform _poolParent;
@@ -29,7 +34,7 @@ namespace MoveObject
 
             if (_poolParent == null)
             {
-                GameObject poolObject = new GameObject("RewardPool");
+                GameObject poolObject = new GameObject(POOL_OBJECT_NAME);
                 poolObject.transform.SetParent(transform);
                 _poolParent = poolObject.transform;
             }
@@ -40,34 +45,55 @@ namespace MoveObject
         /// </summary>
         public void InitializePool(RewardData data, int count = -1)
         {
-            if (data == null || data.ItemPrefab == null)
+            if (!ValidateRewardData(data))
             {
-                Debug.LogError($"[RewardPool] Invalid RewardData or ItemPrefab is null");
                 return;
             }
 
-            int poolSize = count > 0 ? count : _initialPoolSize;
             string rewardID = data.RewardID;
-
-            // 이미 초기화된 경우 스킵
             if (_poolDictionary.ContainsKey(rewardID))
             {
                 Debug.LogWarning($"[RewardPool] Pool for '{rewardID}' already initialized");
                 return;
             }
 
-            // 데이터 캐싱
+            int poolSize = count > 0 ? count : _initialPoolSize;
             _dataCache[rewardID] = data;
+            _poolDictionary[rewardID] = CreatePoolQueue(data, poolSize);
+        }
 
-            // 큐 생성 및 오브젝트 미리 생성
+        /// <summary>
+        /// RewardData 유효성 검사
+        /// </summary>
+        private bool ValidateRewardData(RewardData data)
+        {
+            if (data == null)
+            {
+                Debug.LogError("[RewardPool] RewardData is null");
+                return false;
+            }
+
+            if (data.ItemPrefab == null)
+            {
+                Debug.LogError($"[RewardPool] ItemPrefab is null for RewardID '{data.RewardID}'");
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 풀 큐 생성 및 오브젝트 미리 생성
+        /// </summary>
+        private Queue<RewardItemEntity> CreatePoolQueue(RewardData data, int poolSize)
+        {
             Queue<RewardItemEntity> queue = new Queue<RewardItemEntity>(poolSize);
             for (int i = 0; i < poolSize; i++)
             {
                 RewardItemEntity entity = CreateNewEntity(data);
                 queue.Enqueue(entity);
             }
-
-            _poolDictionary[rewardID] = queue;
+            return queue;
         }
 
         /// <summary>

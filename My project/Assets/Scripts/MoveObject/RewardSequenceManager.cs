@@ -94,6 +94,12 @@ namespace MoveObject
         private int _activeItemCount;
         private int _activeGroupCount;
 
+        // 상수 정의
+        private const float DEFAULT_POOL_SIZE = 10f;
+        private const int RECT_CORNER_COUNT = 4;
+        private const int CORNER_INDEX_BOTTOM_LEFT = 0;
+        private const int CORNER_INDEX_TOP_RIGHT = 2;
+
         private void Awake()
         {
             if (_instance != null && _instance != this)
@@ -136,6 +142,12 @@ namespace MoveObject
         /// </summary>
         public void RegisterRewardTypeLocation(string rewardID, RectTransform startRect, RectTransform targetRect)
         {
+            if (string.IsNullOrEmpty(rewardID))
+            {
+                Debug.LogError("[RewardSequenceManager] RewardID cannot be null or empty.");
+                return;
+            }
+
             if (_typeLocationMap.ContainsKey(rewardID))
             {
                 _typeLocationMap[rewardID].StartTransform = startRect;
@@ -344,18 +356,31 @@ namespace MoveObject
         }
 
         /// <summary>
+        /// RewardData 가져오기 (중복 코드 제거)
+        /// </summary>
+        private RewardData GetRewardData(string rewardID)
+        {
+            RewardItemEntity testEntity = _rewardPool.Get(rewardID);
+            if (testEntity == null)
+            {
+                Debug.LogError($"[RewardSequenceManager] RewardID '{rewardID}' not registered. Call RegisterRewardType first.");
+                return null;
+            }
+            RewardData data = testEntity.Data;
+            _rewardPool.Return(testEntity);
+            return data;
+        }
+
+        /// <summary>
         /// 그룹의 예상 전체 연출 시간 계산
         /// </summary>
         private float CalculateGroupDuration(RewardGroup group)
         {
-            // 풀에서 데이터 가져오기
-            RewardItemEntity testEntity = _rewardPool.Get(group.RewardID);
-            if (testEntity == null)
+            RewardData data = GetRewardData(group.RewardID);
+            if (data == null)
             {
                 return 0f;
             }
-            RewardData data = testEntity.Data;
-            _rewardPool.Return(testEntity);
 
             // 실제 생성 개수
             int actualSpawnCount = Mathf.Min(group.Count, data.MaxSpawnCount);
@@ -384,15 +409,11 @@ namespace MoveObject
         /// </summary>
         private IEnumerator PlayGroupSequence(RewardGroup group, Action onComplete)
         {
-            // 풀에서 데이터 가져오기 (검증용)
-            RewardItemEntity testEntity = _rewardPool.Get(group.RewardID);
-            if (testEntity == null)
+            RewardData data = GetRewardData(group.RewardID);
+            if (data == null)
             {
-                Debug.LogError($"[RewardSequenceManager] RewardID '{group.RewardID}' not registered. Call RegisterRewardType first.");
                 yield break;
             }
-            RewardData data = testEntity.Data;
-            _rewardPool.Return(testEntity);
 
             // 최적화: 최대 생성 개수 제한
             int actualSpawnCount = Mathf.Min(group.Count, data.MaxSpawnCount);
@@ -425,15 +446,11 @@ namespace MoveObject
         /// </summary>
         private IEnumerator PlaySingleItem(RewardItem item, Action onComplete)
         {
-            // 풀에서 데이터 가져오기 (검증용)
-            RewardItemEntity testEntity = _rewardPool.Get(item.RewardID);
-            if (testEntity == null)
+            RewardData data = GetRewardData(item.RewardID);
+            if (data == null)
             {
-                Debug.LogError($"[RewardSequenceManager] RewardID '{item.RewardID}' not registered. Call RegisterRewardType first.");
                 yield break;
             }
-            RewardData data = testEntity.Data;
-            _rewardPool.Return(testEntity);
 
             _activeItemCount = 0;
 
@@ -466,37 +483,7 @@ namespace MoveObject
             // 랜덤 오프셋을 Canvas 로컬 좌표 기준으로 추가
             if (data.SpawnRandomRadius > 0 && _canvas != null)
             {
-                // Canvas RectTransform을 통해 로컬 좌표 오프셋 계산
-                RectTransform canvasRect = _canvas.GetComponent<RectTransform>();
-                if (canvasRect != null)
-                {
-                    // 월드 좌표를 Canvas 로컬 좌표로 변환
-                    Vector2 localStart;
-                    RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        canvasRect,
-                        RectTransformUtility.WorldToScreenPoint(null, spawnPosition),
-                        null,
-                        out localStart
-                    );
-
-                    // 로컬 좌표에 오프셋 추가 (이제 픽셀 단위로 정확히 작동)
-                    Vector2 randomOffset = UnityEngine.Random.insideUnitCircle * data.SpawnRandomRadius;
-                    localStart += randomOffset;
-
-                    // 다시 월드 좌표로 변환
-                    Vector3[] corners = new Vector3[4];
-                    canvasRect.GetWorldCorners(corners);
-                    Vector3 canvasCenter = (corners[0] + corners[2]) * 0.5f;
-
-                    // 로컬 좌표를 월드 좌표로 근사 변환
-                    spawnPosition = canvasRect.TransformPoint(localStart);
-                }
-                else
-                {
-                    // Canvas RectTransform이 없는 경우 기존 방식 사용
-                    Vector3 randomOffset = UnityEngine.Random.insideUnitCircle * data.SpawnRandomRadius;
-                    spawnPosition += randomOffset;
-                }
+                spawnPosition = ApplyRandomOffsetToSpawnPosition(spawnPosition, data.SpawnRandomRadius);
             }
 
             // 등장 연출
@@ -574,15 +561,42 @@ namespace MoveObject
         {
             if (rectTransform == null) return Vector3.zero;
 
-            Vector3[] corners = new Vector3[4];
+            Vector3[] corners = new Vector3[RECT_CORNER_COUNT];
             rectTransform.GetWorldCorners(corners);
-            return (corners[0] + corners[2]) * 0.5f; // 중앙점 반환
+            return (corners[CORNER_INDEX_BOTTOM_LEFT] + corners[CORNER_INDEX_TOP_RIGHT]) * 0.5f;
         }
 
         /// <summary>
         /// 현재 재생 중인지 여부
         /// </summary>
         public bool IsPlaying => _isPlaying;
+
+        /// <summary>
+        /// 스폰 위치에 랜덤 오프셋 적용
+        /// </summary>
+        private Vector3 ApplyRandomOffsetToSpawnPosition(Vector3 spawnPosition, float radius)
+        {
+            RectTransform canvasRect = _canvas?.GetComponent<RectTransform>();
+            if (canvasRect == null)
+            {
+                return spawnPosition + (Vector3)(UnityEngine.Random.insideUnitCircle * radius);
+            }
+
+            // 월드 좌표를 Canvas 로컬 좌표로 변환
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasRect,
+                RectTransformUtility.WorldToScreenPoint(null, spawnPosition),
+                null,
+                out Vector2 localStart
+            );
+
+            // 로컬 좌표에 오프셋 추가
+            Vector2 randomOffset = UnityEngine.Random.insideUnitCircle * radius;
+            localStart += randomOffset;
+
+            // 다시 월드 좌표로 변환
+            return canvasRect.TransformPoint(localStart);
+        }
 
         /// <summary>
         /// 모든 시퀀스 중단
@@ -593,6 +607,7 @@ namespace MoveObject
             _sequenceQueue.Clear();
             _isPlaying = false;
             _activeItemCount = 0;
+            _activeGroupCount = 0;
         }
 
         private void OnDestroy()
