@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dir /S /B \"D:\\0_Client\\LCART\\My project\\Assets\")",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(if not exist \"Assets\\\\Scripts\\\\MoveObject\" mkdir \"Assets\\\\Scripts\\\\MoveObject\")"
     ],
     "deny": [],
     "ask": []

@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d7ee3a62b28f6e458e06b5b23776eb5, type: 3}
+  m_Name: RewardData_Heart
+  m_EditorClassIdentifier: 
+  RewardID: Heart
+  ItemPrefab: {fileID: 8841287323414792403, guid: 27e25066471fb814d9ddbb2a92398766, type: 3}
+  Duration: 1.2
+  MoveEase: 14
+  MoveCustomCurve:
+    serializedVersion: 2
+    m_Curve: []
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  SpawnStartScale: 0
+  MoveStartScale: 0.4
+  MoveEndScale: 0.3
+  UseSpawnAnimation: 1
+  SpawnDuration: 0.3
+  SpawnEase: 37
+  SpawnCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 2.8148599
+      outSlope: 2.8148599
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0.069453076
+    - serializedVersion: 3
+      time: 0.5042167
+      value: 1.037559
+      inSlope: 0.7863134
+      outSlope: 0.7863134
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.1258501
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.24147218
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  ArrivalEffect: {fileID: 5938544859043951668, guid: c13417f7da421dd42b01a2eaec59ca2a, type: 3}
+  ArrivalSound: {fileID: 0}
+  MaxSpawnCount: 20
+  MinSpawnInterval: 0.05
+  MaxSpawnInterval: 0.15
+  UseBezierPath: 1
+  BezierControlPointOffset: 0.5
+  SpawnRandomRadius: 60
