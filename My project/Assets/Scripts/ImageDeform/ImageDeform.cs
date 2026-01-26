@@ -13,11 +13,16 @@ namespace CAT.Effects
     /// UI Image와 Sprite Renderer 모두를 지원하는 통합 변형 컴포넌트입니다.
     /// 4개의 앵커포인트를 사용하여 메시를 변형시킵니다.
     /// Unity 2022.3 및 Unity 6 호환 버전
+    ///
+    /// [v2.0 개선사항]
+    /// - Prefab Variant 지원 강화: 앵커 참조 안정화
+    /// - 머티리얼 직렬화 개선: 프리팹에서 머티리얼 손실 방지
+    /// - ISerializationCallbackReceiver 구현으로 직렬화 안정성 향상
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
     [AddComponentMenu("CAT/Effects/Image Deform")]
-    public partial class ImageDeform : MonoBehaviour, IMeshModifier
+    public partial class ImageDeform : MonoBehaviour, IMeshModifier, ISerializationCallbackReceiver
     {
         // ===== 열거형 및 클래스 =====
         public enum DeformMode
@@ -37,6 +42,14 @@ namespace CAT.Effects
             Level6x6 = 6
         }
 
+        // 앵커 참조 모드
+        public enum AnchorReferenceMode
+        {
+            Direct,      // Transform 직접 참조 (기본)
+            ByName,      // 자식 이름으로 찾기 (Prefab Variant 안정성 향상)
+            ByPath       // 상대 경로로 찾기
+        }
+
         [System.Serializable]
         public class VertexAnchor
         {
@@ -44,6 +57,152 @@ namespace CAT.Effects
             public Transform anchorTarget;
             public Vector2 localOffset;
             public bool useAnchor = true;
+
+            [Header("Prefab Variant 지원")]
+            [Tooltip("Prefab Variant에서 앵커 참조 안정성을 위한 설정")]
+            public AnchorReferenceMode referenceMode = AnchorReferenceMode.ByName;
+
+            [Tooltip("앵커 오브젝트 이름 (referenceMode가 ByName일 때 사용)")]
+            public string anchorName;
+
+            [Tooltip("앵커 상대 경로 (referenceMode가 ByPath일 때 사용)")]
+            public string anchorPath;
+
+            // 캐시된 Transform (런타임 성능 최적화)
+            [System.NonSerialized]
+            private Transform _cachedTarget;
+            [System.NonSerialized]
+            private bool _cacheValid;
+            [System.NonSerialized]
+            private Transform _ownerTransform;
+
+            /// <summary>
+            /// 실제 앵커 Transform을 반환합니다.
+            /// referenceMode에 따라 적절한 방법으로 찾습니다.
+            /// </summary>
+            public Transform GetAnchorTarget(Transform owner)
+            {
+                if (!useAnchor) return null;
+
+                // 캐시 유효성 검사
+                if (_cacheValid && _ownerTransform == owner && _cachedTarget != null)
+                {
+                    return _cachedTarget;
+                }
+
+                _ownerTransform = owner;
+                _cachedTarget = null;
+
+                switch (referenceMode)
+                {
+                    case AnchorReferenceMode.Direct:
+                        // Direct 모드: anchorTarget이 owner의 자식인지 확인
+                        if (anchorTarget != null && owner != null && anchorTarget.IsChildOf(owner))
+                        {
+                            _cachedTarget = anchorTarget;
+                        }
+                        else if (anchorTarget != null)
+                        {
+                            // 자식이 아니면 이름으로 찾기 시도
+                            _cachedTarget = FindChildRecursive(owner, anchorTarget.name);
+                            if (_cachedTarget == null)
+                            {
+                                _cachedTarget = anchorTarget; // 최후 수단
+                            }
+                        }
+                        break;
+
+                    case AnchorReferenceMode.ByName:
+                        // ByName 모드: 항상 이름으로 찾기 (Prefab Variant 안정성)
+                        string nameToFind = !string.IsNullOrEmpty(anchorName) ? anchorName :
+                                           (anchorTarget != null ? anchorTarget.name : null);
+
+                        if (!string.IsNullOrEmpty(nameToFind) && owner != null)
+                        {
+                            _cachedTarget = owner.Find(nameToFind);
+                            // 직계 자식에서 못 찾으면 전체 자손에서 검색
+                            if (_cachedTarget == null)
+                            {
+                                _cachedTarget = FindChildRecursive(owner, nameToFind);
+                            }
+                        }
+                        break;
+
+                    case AnchorReferenceMode.ByPath:
+                        // ByPath 모드: 항상 경로로 찾기 (Prefab Variant 안정성)
+                        string pathToFind = !string.IsNullOrEmpty(anchorPath) ? anchorPath :
+                                           (anchorTarget != null ? GetRelativePath(owner, anchorTarget) : null);
+
+                        if (!string.IsNullOrEmpty(pathToFind) && owner != null)
+                        {
+                            _cachedTarget = owner.Find(pathToFind);
+                        }
+
+                        // 경로로 못 찾으면 이름으로 시도
+                        if (_cachedTarget == null && anchorTarget != null)
+                        {
+                            _cachedTarget = FindChildRecursive(owner, anchorTarget.name);
+                        }
+                        break;
+                }
+
+                _cacheValid = (_cachedTarget != null);
+                return _cachedTarget;
+            }
+
+            /// <summary>
+            /// 캐시를 무효화합니다.
+            /// </summary>
+            public void InvalidateCache()
+            {
+                _cacheValid = false;
+                _cachedTarget = null;
+            }
+
+            /// <summary>
+            /// anchorTarget에서 이름과 경로를 자동으로 설정합니다.
+            /// </summary>
+            public void SyncFromAnchorTarget(Transform owner)
+            {
+                if (anchorTarget != null && owner != null)
+                {
+                    anchorName = anchorTarget.name;
+                    anchorPath = GetRelativePath(owner, anchorTarget);
+                }
+            }
+
+            private static Transform FindChildRecursive(Transform parent, string name)
+            {
+                foreach (Transform child in parent)
+                {
+                    if (child.name == name)
+                        return child;
+
+                    Transform found = FindChildRecursive(child, name);
+                    if (found != null)
+                        return found;
+                }
+                return null;
+            }
+
+            private static string GetRelativePath(Transform root, Transform target)
+            {
+                if (target == null || root == null) return "";
+                if (!target.IsChildOf(root)) return "";
+
+                var path = new System.Text.StringBuilder();
+                Transform current = target;
+
+                while (current != null && current != root)
+                {
+                    if (path.Length > 0)
+                        path.Insert(0, "/");
+                    path.Insert(0, current.name);
+                    current = current.parent;
+                }
+
+                return path.ToString();
+            }
         }
 
         // ===== 필드 선언 =====
@@ -81,6 +240,13 @@ namespace CAT.Effects
         [SerializeField] private bool showVertices = true;
         [SerializeField] private float gizmoSize = 0.05f;
 
+        [Header("머티리얼 설정")]
+        [Tooltip("커스텀 머티리얼을 사용하려면 여기에 설정하세요. null이면 자동 생성됩니다.")]
+        [SerializeField] private Material customMaterial;
+
+        // 직렬화된 머티리얼 참조 (프리팹에서 머티리얼 손실 방지)
+        [HideInInspector][SerializeField] private Material _serializedMaterial;
+
         // 내부 변수들
         private Graphic graphic;
         private Canvas parentCanvas;
@@ -112,11 +278,38 @@ namespace CAT.Effects
         public bool UseSubdivision => useSubdivision;
         public bool UseSharedMaterial => useSharedMaterial;
 
+        // ===== ISerializationCallbackReceiver 구현 =====
+        public void OnBeforeSerialize()
+        {
+            // 인스턴스 머티리얼을 직렬화된 필드에 저장
+            if (instanceMaterial != null && !useSharedMaterial)
+            {
+                _serializedMaterial = instanceMaterial;
+            }
+
+            // 앵커 정보 동기화 (에디터에서만, this와 transform이 유효한 경우만)
+#if UNITY_EDITOR
+            if (this != null && transform != null)
+            {
+                SyncAnchorInfo();
+            }
+#endif
+        }
+
+        public void OnAfterDeserialize()
+        {
+            // 역직렬화 후에는 특별한 처리 없음
+            // 앵커 캐시는 OnEnable에서 무효화됨
+        }
+
         // ===== Unity 생명주기 =====
         void Awake()
         {
             Initialize();
-            
+
+            // 직렬화된 머티리얼 복원
+            RestoreSerializedMaterial();
+
 #if UNITY_EDITOR
             // SpriteRenderer가 있다면 자동 변환
             if (GetComponent<SpriteRenderer>() != null)
@@ -134,7 +327,7 @@ namespace CAT.Effects
             AutoCreateAnchorPoints();
             // 부모에 SpriteGroupColorLerp가 있는 경우에도 메시는 업데이트하되, 머티리얼은 별도 처리
             RefreshMesh();
-            
+
             // 부모에 SpriteGroupColorLerp가 있는 경우 알림
             if (HasSpriteGroupColorLerpParent())
             {
@@ -144,10 +337,13 @@ namespace CAT.Effects
 
         void OnEnable()
         {
+            // 앵커 캐시 무효화
+            InvalidateAnchorCaches();
+
             UpdateReferences();
             // 부모에 SpriteGroupColorLerp가 있는 경우에도 메시는 업데이트하되, 머티리얼은 별도 처리
             RefreshMesh();
-            
+
             // 부모에 SpriteGroupColorLerp가 있는 경우 알림
             if (HasSpriteGroupColorLerpParent())
             {
@@ -180,24 +376,39 @@ namespace CAT.Effects
         }
 
 #if UNITY_EDITOR
+        // delayCall 중복 방지 플래그
+        [System.NonSerialized]
+        private bool _pendingValidation = false;
+
         void OnValidate()
         {
+            // 이미 예약된 delayCall이 있으면 중복 등록 방지
+            if (_pendingValidation) return;
+            _pendingValidation = true;
+
             // 에디터에서 값이 변경될 때마다 업데이트
-            UnityEditor.EditorApplication.delayCall += () =>
+            UnityEditor.EditorApplication.delayCall += OnValidateDelayed;
+        }
+
+        private void OnValidateDelayed()
+        {
+            _pendingValidation = false;
+
+            if (this == null) return;
+
+            // 앵커 정보 동기화
+            SyncAnchorInfo();
+            InvalidateAnchorCaches();
+
+            ValidateComponents();
+            UpdateReferences();
+            RefreshMesh();
+
+            // 부모에 SpriteGroupColorLerp가 있는 경우 알림
+            if (HasSpriteGroupColorLerpParent())
             {
-                if (this != null)
-                {
-                    ValidateComponents();
-                    UpdateReferences();
-                    RefreshMesh();
-                    
-                    // 부모에 SpriteGroupColorLerp가 있는 경우 알림
-                    if (HasSpriteGroupColorLerpParent())
-                    {
-                        NotifyParentSpriteGroupColorLerp();
-                    }
-                }
-            };
+                NotifyParentSpriteGroupColorLerp();
+            }
         }
 
         void OnDestroy()
@@ -214,7 +425,7 @@ namespace CAT.Effects
 
             // SpriteRenderer 컴포넌트 추가
             SpriteRenderer spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-            
+
             // 백업된 정보 복원
             spriteRenderer.sprite = spriteRendererBackup.sprite;
             spriteRenderer.color = spriteRendererBackup.color;
@@ -222,9 +433,9 @@ namespace CAT.Effects
             spriteRenderer.flipY = spriteRendererBackup.flipY;
             spriteRenderer.sortingLayerName = spriteRendererBackup.sortingLayerName;
             spriteRenderer.sortingOrder = spriteRendererBackup.sortingOrder;
-            
+
             // 기본 머티리얼이 아닌 경우에만 적용
-            if (spriteRendererBackup.material != null && 
+            if (spriteRendererBackup.material != null &&
                 spriteRendererBackup.material.name != "Sprites-Default")
             {
                 spriteRenderer.sharedMaterial = spriteRendererBackup.material;
@@ -234,11 +445,11 @@ namespace CAT.Effects
             MeshFilter meshFilter = gameObject.GetComponent<MeshFilter>();
             MeshRenderer meshRenderer = gameObject.GetComponent<MeshRenderer>();
             CanvasRenderer canvasRenderer = gameObject.GetComponent<CanvasRenderer>();
-            
+
             if (meshFilter != null) DestroyImmediate(meshFilter);
             if (meshRenderer != null) DestroyImmediate(meshRenderer);
             if (canvasRenderer != null) DestroyImmediate(canvasRenderer);
-            
+
             // RectTransform을 일반 Transform으로 복원 (필요한 경우)
             RectTransform rectTransform = gameObject.GetComponent<RectTransform>();
             if (rectTransform != null && gameObject.GetComponentInParent<Canvas>() == null)
@@ -248,9 +459,9 @@ namespace CAT.Effects
                 Quaternion rotation = rectTransform.rotation;
                 Vector3 scale = rectTransform.localScale;
                 Transform parent = rectTransform.parent;
-                
+
                 DestroyImmediate(rectTransform);
-                
+
                 // Transform이 자동으로 추가되므로 별도 추가 불필요
                 Transform newTransform = gameObject.transform;
                 newTransform.SetParent(parent, false);
@@ -313,7 +524,7 @@ namespace CAT.Effects
 
                     DestroyImmediate(GetComponent<Transform>());
                     RectTransform rectTransform = gameObject.AddComponent<RectTransform>();
-                    
+
                     rectTransform.SetParent(parent, false);
                     rectTransform.position = position;
                     rectTransform.rotation = rotation;
@@ -347,10 +558,10 @@ namespace CAT.Effects
                 RemoveComponentSafely<Graphic>();
                 RemoveComponentSafely<Image>();
                 RemoveComponentSafely<CanvasRenderer>();
-                
+
                 // RectTransform을 일반 Transform으로 변환 (필요한 경우)
                 ConvertRectTransformToTransform();
-                
+
                 // 부모에 SpriteGroupColorLerp가 있는 경우에도 머티리얼 설정은 수행 (Shared_SpriteColorLerp 머티리얼 사용)
                 SetupMaterial();
             }
@@ -380,53 +591,98 @@ namespace CAT.Effects
                 Quaternion rotation = rectTransform.rotation;
                 Vector3 scale = rectTransform.localScale;
                 Transform parent = rectTransform.parent;
-                
+
                 DestroyImmediate(rectTransform);
                 Transform newTransform = gameObject.AddComponent<Transform>();
-                
+
                 newTransform.SetParent(parent, false);
                 newTransform.position = position;
                 newTransform.rotation = rotation;
                 newTransform.localScale = scale;
             }
         }
-
-        /*
-        // ===== 컴포넌트 순서 변경 =====
-        private void MoveComponentBefore<TComponent, TTarget>() 
-            where TComponent : Component 
-            where TTarget : Component
-        {
-            // Unity의 컴포넌트 순서 변경은 제한적이므로 로그만 남김
-            // 실제 순서 변경은 Unity Inspector에서 수동으로 해야 함
-            Debug.Log($"[{gameObject.name}] {typeof(TComponent).Name} 컴포넌트가 추가되었습니다. " +
-                     $"인스펙터에서 {typeof(TTarget).Name} 위로 이동시켜 주세요.");
-        }
-        */
 #endif
 
+        // ===== 앵커 관련 유틸리티 =====
+
+        /// <summary>
+        /// 앵커 정보를 동기화합니다 (anchorTarget에서 이름/경로 추출)
+        /// </summary>
+        private void SyncAnchorInfo()
+        {
+            // null 체크 - 직렬화 중에 transform이 null일 수 있음
+            if (this == null) return;
+
+            Transform t = null;
+            try
+            {
+                t = transform;
+            }
+            catch (System.Exception)
+            {
+                return; // transform 접근 실패 시 무시
+            }
+
+            if (t == null) return;
+
+            topLeft.SyncFromAnchorTarget(t);
+            topRight.SyncFromAnchorTarget(t);
+            bottomLeft.SyncFromAnchorTarget(t);
+            bottomRight.SyncFromAnchorTarget(t);
+        }
+
+        /// <summary>
+        /// 모든 앵커의 캐시를 무효화합니다.
+        /// </summary>
+        public void InvalidateAnchorCaches()
+        {
+            topLeft.InvalidateCache();
+            topRight.InvalidateCache();
+            bottomLeft.InvalidateCache();
+            bottomRight.InvalidateCache();
+        }
+
+        /// <summary>
+        /// 직렬화된 머티리얼을 복원합니다.
+        /// </summary>
+        private void RestoreSerializedMaterial()
+        {
+            if (_serializedMaterial != null && instanceMaterial == null)
+            {
+                instanceMaterial = _serializedMaterial;
+            }
+        }
+
         // ===== 공개 메서드(애니메이션에서 사용할 수 있는 메서드) =====
-        public void SetTopLeftAnchor(Transform anchor) 
+        public void SetTopLeftAnchor(Transform anchor)
         {
             topLeft.anchorTarget = anchor;
+            topLeft.SyncFromAnchorTarget(transform);
+            topLeft.InvalidateCache();
             RefreshMesh();
         }
 
-        public void SetTopRightAnchor(Transform anchor) 
+        public void SetTopRightAnchor(Transform anchor)
         {
             topRight.anchorTarget = anchor;
+            topRight.SyncFromAnchorTarget(transform);
+            topRight.InvalidateCache();
             RefreshMesh();
         }
 
-        public void SetBottomLeftAnchor(Transform anchor) 
+        public void SetBottomLeftAnchor(Transform anchor)
         {
             bottomLeft.anchorTarget = anchor;
+            bottomLeft.SyncFromAnchorTarget(transform);
+            bottomLeft.InvalidateCache();
             RefreshMesh();
         }
 
-        public void SetBottomRightAnchor(Transform anchor) 
+        public void SetBottomRightAnchor(Transform anchor)
         {
             bottomRight.anchorTarget = anchor;
+            bottomRight.SyncFromAnchorTarget(transform);
+            bottomRight.InvalidateCache();
             RefreshMesh();
         }
 
@@ -441,12 +697,12 @@ namespace CAT.Effects
             {
                 spriteName = null;
             }
-            
+
             if (deformMode == DeformMode.Sprite)
             {
                 SetupMaterial();
             }
-            
+
             RefreshMesh();
         }
 
@@ -495,6 +751,29 @@ namespace CAT.Effects
             {
                 Debug.LogWarning($"[{gameObject.name}] 앵커 포인트가 이미 존재하거나 앵커가 설정되어 있습니다.");
             }
+        }
+
+        /// <summary>
+        /// 앵커 참조 모드를 일괄 변경합니다.
+        /// </summary>
+        public void SetAnchorReferenceMode(AnchorReferenceMode mode)
+        {
+            topLeft.referenceMode = mode;
+            topRight.referenceMode = mode;
+            bottomLeft.referenceMode = mode;
+            bottomRight.referenceMode = mode;
+
+            SyncAnchorInfo();
+            InvalidateAnchorCaches();
+        }
+
+        /// <summary>
+        /// 커스텀 머티리얼을 설정합니다.
+        /// </summary>
+        public void SetCustomMaterial(Material material)
+        {
+            customMaterial = material;
+            SetupMaterial();
         }
 
         // ===== 비공개 메서드 =====
@@ -612,17 +891,17 @@ namespace CAT.Effects
             for (int y = 0; y <= subdivisions; y++)  // 메시 분할 레벨 만큼 반복
             {
                 float yLerp = (float)y / subdivisions;
-                
+
                 for (int x = 0; x <= subdivisions; x++)
                 {
                     float xLerp = (float)x / subdivisions;
-                    
+
                     Vector3 position = CalculateBilinearPosition(xLerp, yLerp);
                     Vector2 uv = new Vector2(
                         Mathf.Lerp(uvRect.x, uvRect.z, xLerp),
                         Mathf.Lerp(uvRect.y, uvRect.w, yLerp)
                     );
-                    
+
                     vh.AddVert(CreateUIVertex(position, uv));
                 }
             }
@@ -632,7 +911,7 @@ namespace CAT.Effects
                 for (int x = 0; x < subdivisions; x++)
                 {
                     int index = y * (subdivisions + 1) + x;
-                    
+
                     vh.AddTriangle(index, index + 1, index + subdivisions + 1);
                     vh.AddTriangle(index + 1, index + subdivisions + 2, index + subdivisions + 1);
                 }
@@ -645,24 +924,24 @@ namespace CAT.Effects
             UIVertex vertex = UIVertex.simpleVert;
             vertex.position = position;
             vertex.uv0 = uv;
-            
+
             if (graphic != null)
             {
                 Color color = graphic.color;
-                
+
                 CanvasGroup canvasGroup = GetComponentInParent<CanvasGroup>();
                 if (canvasGroup != null)
                 {
                     color.a *= canvasGroup.alpha;
                 }
-                
+
                 vertex.color = color;
             }
             else
             {
                 vertex.color = Color.white;
             }
-            
+
             return vertex;
         }
 
@@ -670,7 +949,7 @@ namespace CAT.Effects
         private void UpdateSpriteMesh()
         {
             if (meshFilter == null) return;
-            
+
             // sprite가 null인 경우 기본 사각형 메시 생성
             if (sprite == null)
             {
@@ -680,6 +959,9 @@ namespace CAT.Effects
             }
 
             CreateMesh();
+
+            // 메시 데이터 초기화 (이전 triangles 배열과 새 vertices 배열 크기 불일치 방지)
+            mesh.Clear();
 
             Vector2[] spriteVertices = sprite.vertices;
             Vector2[] spriteUVs = sprite.uv;
@@ -696,13 +978,14 @@ namespace CAT.Effects
                 CreateRectangleSpriteMesh();
             }
 
+            // vertices를 먼저 설정한 후 triangles 설정 (순서 중요)
             mesh.vertices = vertices;
             mesh.uv = uvs;
             mesh.colors = colors;
             mesh.triangles = triangles;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            
+
             meshFilter.mesh = mesh;
         }
 
@@ -710,7 +993,7 @@ namespace CAT.Effects
         private void CreateTightSpriteMesh(Vector2[] spriteVertices, Vector2[] spriteUVs, ushort[] spriteTriangles)
         {
             Bounds spriteBounds = sprite.bounds;
-            
+
             // 앵커 위치를 로컬 좌표 기준으로 계산
             Vector2 tl = GetAnchorLocalPosition(topLeft, new Vector2(spriteBounds.min.x, spriteBounds.max.y));
             Vector2 tr = GetAnchorLocalPosition(topRight, new Vector2(spriteBounds.max.x, spriteBounds.max.y));
@@ -746,7 +1029,7 @@ namespace CAT.Effects
             // sprite가 null인 경우 기본 1x1 사각형 메시 생성
             int subdivisions = 1;
             int vertexCount = (subdivisions + 1) * (subdivisions + 1);
-            
+
             InitializeArrays(vertexCount);
 
             Vector2 tl = GetAnchorLocalPosition(topLeft, new Vector2(-0.5f, 0.5f));
@@ -758,20 +1041,20 @@ namespace CAT.Effects
             for (int y = 0; y <= subdivisions; y++)
             {
                 float v = y / (float)subdivisions;
-                
+
                 for (int x = 0; x <= subdivisions; x++)
                 {
                     float u = x / (float)subdivisions;
-                    
+
                     Vector2 position = BilinearInterpolate(bl, br, tl, tr, u, v);
                     vertices[vertexIndex] = new Vector3(position.x, position.y, 0);
-                    
+
                     uvs[vertexIndex] = new Vector2(u, v);
                     colors[vertexIndex] = spriteColor;
                     vertexIndex++;
                 }
             }
-            
+
             triangles = new int[subdivisions * subdivisions * 6];
             int triangleIndex = 0;
             for (int y = 0; y < subdivisions; y++)
@@ -782,25 +1065,27 @@ namespace CAT.Effects
                     int bottomRightIndex = bottomLeftIndex + 1;
                     int topLeftIndex = bottomLeftIndex + subdivisions + 1;
                     int topRightIndex = topLeftIndex + 1;
-                    
+
                     triangles[triangleIndex++] = bottomLeftIndex;
                     triangles[triangleIndex++] = topLeftIndex;
                     triangles[triangleIndex++] = bottomRightIndex;
-                    
+
                     triangles[triangleIndex++] = bottomRightIndex;
                     triangles[triangleIndex++] = topLeftIndex;
                     triangles[triangleIndex++] = topRightIndex;
                 }
             }
-            
+
             CreateMesh();
+            // 메시 데이터 초기화 (이전 triangles 배열과 새 vertices 배열 크기 불일치 방지)
+            mesh.Clear();
             mesh.vertices = vertices;
             mesh.uv = uvs;
             mesh.colors = colors;
             mesh.triangles = triangles;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            
+
             meshFilter.mesh = mesh;
         }
 
@@ -809,7 +1094,7 @@ namespace CAT.Effects
         {
             int subdivisions = (int)subdivisionLevel;
             int vertexCount = (subdivisions + 1) * (subdivisions + 1);
-            
+
             InitializeArrays(vertexCount);
 
             Vector2[] spriteUVs = sprite.uv;
@@ -830,23 +1115,23 @@ namespace CAT.Effects
             for (int y = 0; y <= subdivisions; y++)
             {
                 float v = y / (float)subdivisions;
-                
+
                 for (int x = 0; x <= subdivisions; x++)
                 {
                     float u = x / (float)subdivisions;
-                    
+
                     Vector2 position = BilinearInterpolate(bl, br, tl, tr, u, v);
                     vertices[vertexIndex] = new Vector3(position.x, position.y, 0);
-                    
+
                     float uvX = Mathf.Lerp(uvMin.x, uvMax.x, u);
                     float uvY = Mathf.Lerp(uvMin.y, uvMax.y, v);
                     uvs[vertexIndex] = new Vector2(uvX, uvY);
-                    
+
                     colors[vertexIndex] = spriteColor;
                     vertexIndex++;
                 }
             }
-            
+
             if (triangles == null || triangles.Length != subdivisions * subdivisions * 6)
             {
                 triangles = new int[subdivisions * subdivisions * 6];
@@ -860,11 +1145,11 @@ namespace CAT.Effects
                     int bottomRightIndex = bottomLeftIndex + 1;
                     int topLeftIndex = bottomLeftIndex + subdivisions + 1;
                     int topRightIndex = topLeftIndex + 1;
-                    
+
                     triangles[triangleIndex++] = bottomLeftIndex;
                     triangles[triangleIndex++] = topLeftIndex;
                     triangles[triangleIndex++] = bottomRightIndex;
-                    
+
                     triangles[triangleIndex++] = bottomRightIndex;
                     triangles[triangleIndex++] = topLeftIndex;
                     triangles[triangleIndex++] = topRightIndex;
@@ -873,7 +1158,7 @@ namespace CAT.Effects
         }
 
         // ===== 유틸리티 메서드 =====
-        
+
         /// <summary>
         /// 부모 오브젝트에 SpriteGroupColorLerp 컴포넌트가 있는지 안전하게 확인합니다.
         /// SpriteGroupColorLerp 스크립트가 없는 프로젝트에서도 에러가 발생하지 않습니다.
@@ -888,7 +1173,7 @@ namespace CAT.Effects
                 {
                     return false; // 타입이 존재하지 않으면 false 반환
                 }
-                
+
                 // 부모에서 해당 컴포넌트를 찾습니다
                 return GetComponentInParent(spriteGroupColorLerpType) != null;
             }
@@ -898,7 +1183,7 @@ namespace CAT.Effects
                 return false;
             }
         }
-        
+
         /// <summary>
         /// Shared_SpriteColorLerp 머티리얼을 찾거나 생성합니다.
         /// SpriteGroupColorLerp에서 사용하는 공유 머티리얼과 동일한 머티리얼을 사용합니다.
@@ -914,17 +1199,17 @@ namespace CAT.Effects
                     Debug.LogWarning($"[{gameObject.name}] CAT/2D/SpriteGroupColorLerp 셰이더를 찾을 수 없습니다. 기본 머티리얼을 사용합니다.");
                     return new Material(Shader.Find("Sprites/Default"));
                 }
-                
+
                 // Shared_SpriteColorLerp 머티리얼을 생성합니다
                 Material sharedMaterial = new Material(spriteColorLerpShader);
                 sharedMaterial.name = "Shared_SpriteColorLerp";
-                
+
                 // 스프라이트 텍스처가 있다면 설정합니다
                 if (sprite != null && sprite.texture != null)
                 {
                     sharedMaterial.mainTexture = sprite.texture;
                 }
-                
+
                 return sharedMaterial;
             }
             catch (System.Exception ex)
@@ -933,7 +1218,7 @@ namespace CAT.Effects
                 return new Material(Shader.Find("Sprites/Default"));
             }
         }
-        
+
         /// <summary>
         /// 부모의 SpriteGroupColorLerp 컴포넌트에게 새로 생성된 MeshRenderer를 알려줍니다.
         /// </summary>
@@ -947,15 +1232,15 @@ namespace CAT.Effects
                 {
                     return; // 타입이 존재하지 않으면 무시
                 }
-                
+
                 // 부모에서 SpriteGroupColorLerp 컴포넌트를 찾습니다
                 var parentSpriteGroupColorLerp = GetComponentInParent(spriteGroupColorLerpType);
                 if (parentSpriteGroupColorLerp != null)
                 {
                     // RefreshComponents 메서드를 호출하여 새로 생성된 MeshRenderer를 인식하도록 합니다
-                    var refreshMethod = spriteGroupColorLerpType.GetMethod("RefreshComponents", 
+                    var refreshMethod = spriteGroupColorLerpType.GetMethod("RefreshComponents",
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    
+
                     if (refreshMethod != null)
                     {
                         refreshMethod.Invoke(parentSpriteGroupColorLerp, null);
@@ -968,41 +1253,45 @@ namespace CAT.Effects
                 Debug.LogWarning($"[{gameObject.name}] 부모 SpriteGroupColorLerp 알림 중 오류: {ex.Message}");
             }
         }
-        
+
         // 앵커 위치 계산
         private Vector3 GetAnchorPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
-            if (!anchor.useAnchor || anchor.anchorTarget == null)
+            Transform anchorTarget = anchor.GetAnchorTarget(transform);
+
+            if (!anchor.useAnchor || anchorTarget == null)
             {
                 return originalPosition;
             }
 
             if (deformMode == DeformMode.UIImage)
             {
-                bool isChildAnchor = anchor.anchorTarget.IsChildOf(transform);
-                
+                bool isChildAnchor = anchorTarget.IsChildOf(transform);
+
                 if (isChildAnchor)
                 {
-                    RectTransform anchorRect = anchor.anchorTarget as RectTransform;
+                    RectTransform anchorRect = anchorTarget as RectTransform;
                     if (anchorRect != null)
                     {
                         return anchorRect.anchoredPosition + anchor.localOffset;
                     }
                 }
-                
-                Vector3 worldPosition = anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+
+                Vector3 worldPosition = anchorTarget.position + (Vector3)anchor.localOffset;
                 return WorldToCanvasPosition(worldPosition);
             }
             else
             {
-                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                return anchorTarget.position + (Vector3)anchor.localOffset;
             }
         }
 
         // 앵커 월드 위치 계산
         private Vector2 GetAnchorWorldPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
-            if (!anchor.useAnchor || anchor.anchorTarget == null)
+            Transform anchorTarget = anchor.GetAnchorTarget(transform);
+
+            if (!anchor.useAnchor || anchorTarget == null)
             {
                 return originalPosition;
             }
@@ -1010,19 +1299,21 @@ namespace CAT.Effects
             if (deformMode == DeformMode.Sprite)
             {
                 // Sprite 모드에서는 앵커의 월드 위치를 직접 사용
-                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                return anchorTarget.position + (Vector3)anchor.localOffset;
             }
             else
             {
                 // UI 모드에서는 기존 로직 유지
-                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                return anchorTarget.position + (Vector3)anchor.localOffset;
             }
         }
 
         // 앵커 로컬 위치 계산
         private Vector2 GetAnchorLocalPosition(VertexAnchor anchor, Vector2 originalPosition)
         {
-            if (!anchor.useAnchor || anchor.anchorTarget == null)
+            Transform anchorTarget = anchor.GetAnchorTarget(transform);
+
+            if (!anchor.useAnchor || anchorTarget == null)
             {
                 return originalPosition;
             }
@@ -1031,21 +1322,21 @@ namespace CAT.Effects
             {
                 // Sprite 모드에서는 앵커의 로컬 위치를 계산
                 // 앵커가 자식인 경우 로컬 위치 사용, 그렇지 않으면 월드 위치를 로컬로 변환
-                if (anchor.anchorTarget.IsChildOf(transform))
+                if (anchorTarget.IsChildOf(transform))
                 {
-                    return (Vector2)anchor.anchorTarget.localPosition + anchor.localOffset;
+                    return (Vector2)anchorTarget.localPosition + anchor.localOffset;
                 }
                 else
                 {
                     // 월드 위치를 로컬 위치로 변환
-                    Vector3 worldPos = anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                    Vector3 worldPos = anchorTarget.position + (Vector3)anchor.localOffset;
                     return transform.InverseTransformPoint(worldPos);
                 }
             }
             else
             {
                 // UI 모드에서는 기존 로직 유지
-                return anchor.anchorTarget.position + (Vector3)anchor.localOffset;
+                return anchorTarget.position + (Vector3)anchor.localOffset;
             }
         }
 
@@ -1079,7 +1370,7 @@ namespace CAT.Effects
                 Vector2 tr = GetAnchorLocalPosition(topRight, Vector2.zero);
                 Vector2 bl = GetAnchorLocalPosition(bottomLeft, Vector2.zero);
                 Vector2 br = GetAnchorLocalPosition(bottomRight, Vector2.zero);
-                
+
                 return BilinearInterpolate(bl, br, tl, tr, x, y);
             }
         }
@@ -1089,7 +1380,7 @@ namespace CAT.Effects
         {
             float u1 = 1f - u;
             float v1 = 1f - v;
-            
+
             return new Vector2(
                 p00.x * u1 * v1 + p10.x * u * v1 + p01.x * u1 * v + p11.x * u * v,
                 p00.y * u1 * v1 + p10.y * u * v1 + p01.y * u1 * v + p11.y * u * v
@@ -1104,7 +1395,7 @@ namespace CAT.Effects
 
             Vector2 screenPoint;
             Camera canvasCamera = parentCanvas.worldCamera;
-            
+
             if (parentCanvas.renderMode == RenderMode.ScreenSpaceOverlay)
             {
                 screenPoint = RectTransformUtility.WorldToScreenPoint(null, worldPosition);
@@ -1135,11 +1426,11 @@ namespace CAT.Effects
                 if (image != null && image.sprite != null)
                 {
                     Sprite currentSprite = image.overrideSprite ?? image.sprite;
-                    
+
                     if (currentSprite.packed && currentSprite.packingMode != SpritePackingMode.Tight)
                     {
                         Vector4 outerUV = UnityEngine.Sprites.DataUtility.GetOuterUV(currentSprite);
-                        
+
                         if (image.type == Image.Type.Simple || image.type == Image.Type.Filled)
                         {
                             return outerUV;
@@ -1156,7 +1447,7 @@ namespace CAT.Effects
                     }
                 }
             }
-            
+
             return new Vector4(0f, 0f, 1f, 1f);
         }
 
@@ -1164,8 +1455,11 @@ namespace CAT.Effects
         // 앵커포인트 생성 여부 확인
         private bool ShouldCreateAnchorPoints()
         {
-            if (topLeft.anchorTarget != null || topRight.anchorTarget != null ||
-                bottomLeft.anchorTarget != null || bottomRight.anchorTarget != null)
+            // 이미 앵커가 설정되어 있는지 확인 (GetAnchorTarget 사용)
+            if (topLeft.GetAnchorTarget(transform) != null ||
+                topRight.GetAnchorTarget(transform) != null ||
+                bottomLeft.GetAnchorTarget(transform) != null ||
+                bottomRight.GetAnchorTarget(transform) != null)
             {
                 return false;
             }
@@ -1197,7 +1491,7 @@ namespace CAT.Effects
             else  // Sprite 모드 앵커포인트 생성
             {
                 if (sprite == null) return;
-                
+
                 // Sprite 모드에서는 로컬 좌표 기준으로 앵커 위치 계산
                 Bounds bounds = sprite.bounds;
                 // 스프라이트의 로컬 바운드를 기준으로 앵커 위치 설정
@@ -1314,7 +1608,16 @@ namespace CAT.Effects
         {
             if (deformMode != DeformMode.Sprite || meshRenderer == null)
                 return;
-                
+
+            // 커스텀 머티리얼이 설정되어 있으면 우선 사용
+            if (customMaterial != null)
+            {
+                meshRenderer.sharedMaterial = customMaterial;
+                meshRenderer.sortingLayerName = sortingLayerName;
+                meshRenderer.sortingOrder = sortingOrder;
+                return;
+            }
+
             // 부모에 SpriteGroupColorLerp가 있는 경우 Shared_SpriteColorLerp 머티리얼 사용
             if (HasSpriteGroupColorLerpParent())
             {
@@ -1325,13 +1628,13 @@ namespace CAT.Effects
                     meshRenderer.material = sharedColorLerpMaterial;
                     meshRenderer.sortingLayerName = sortingLayerName;
                     meshRenderer.sortingOrder = sortingOrder;
-                    
+
                     // 부모 SpriteGroupColorLerp에게 새로 생성된 MeshRenderer를 알려줍니다
                     NotifyParentSpriteGroupColorLerp();
                     return;
                 }
             }
-                
+
             // sprite가 null인 경우 기본 머티리얼 설정
             if (sprite == null)
             {
@@ -1351,7 +1654,7 @@ namespace CAT.Effects
                 if (useSharedMaterial)
                 {
                     Texture2D spriteTexture = sprite.texture;
-                    if (!sharedMaterials.TryGetValue(spriteTexture, out targetMaterial))
+                    if (!sharedMaterials.TryGetValue(spriteTexture, out targetMaterial) || targetMaterial == null)
                     {
                         targetMaterial = CreateSpriteMaterial(spriteTexture);
                         sharedMaterials[spriteTexture] = targetMaterial;
@@ -1359,9 +1662,16 @@ namespace CAT.Effects
                 }
                 else
                 {
+                    // 직렬화된 머티리얼이 있으면 복원
+                    if (_serializedMaterial != null && instanceMaterial == null)
+                    {
+                        instanceMaterial = _serializedMaterial;
+                    }
+
                     if (instanceMaterial == null)
                     {
                         instanceMaterial = CreateSpriteMaterial(sprite.texture);
+                        _serializedMaterial = instanceMaterial; // 직렬화를 위해 저장
                     }
                     targetMaterial = instanceMaterial;
                 }
@@ -1391,7 +1701,7 @@ namespace CAT.Effects
                 mat.name = "Sprite Deform Material (No Texture)";
                 Debug.LogWarning($"[{gameObject.name}] texture가 null입니다. 기본 머티리얼을 생성합니다.");
             }
-            
+
             return mat;
         }
 
@@ -1417,7 +1727,7 @@ namespace CAT.Effects
         public void LogPerformanceInfo()
         {
             int vertexCount, triangleCount;
-            
+
             if (useSubdivision)
             {
                 int subdivisions = (int)subdivisionLevel;
@@ -1447,7 +1757,7 @@ namespace CAT.Effects
             if (!showVertices) return;
 
             Gizmos.color = Color.cyan;
-            
+
             if (deformMode == DeformMode.UIImage)
             {
                 DrawUIGizmos();
@@ -1499,8 +1809,42 @@ namespace CAT.Effects
         // ===== 정적 메서드 (정리) =====
         private void OnApplicationQuit()
         {
+            ClearSharedMaterials();
+        }
+
+        /// <summary>
+        /// 공유 머티리얼 캐시를 정리합니다.
+        /// 씬 전환 시 메모리 누수를 방지하기 위해 호출할 수 있습니다.
+        /// </summary>
+        public static void ClearSharedMaterials()
+        {
+            // 머티리얼 인스턴스들을 명시적으로 파괴
+            foreach (var mat in sharedMaterials.Values)
+            {
+                if (mat != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(mat);
+#if UNITY_EDITOR
+                    else
+                        DestroyImmediate(mat);
+#endif
+                }
+            }
             sharedMaterials.Clear();
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// 에디터에서 플레이 모드 변경 시 정리
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticFields()
+        {
+            // Domain Reload가 비활성화된 경우를 위한 정적 필드 초기화
+            sharedMaterials.Clear();
+        }
+#endif
     }
 
 #if UNITY_EDITOR
@@ -1514,6 +1858,13 @@ namespace CAT.Effects
         private SerializedProperty spriteColorProp;
         private SerializedProperty sortingLayerProp;
         private SerializedProperty sortingOrderProp;
+        private SerializedProperty customMaterialProp;
+
+        // 앵커 프로퍼티
+        private SerializedProperty topLeftProp;
+        private SerializedProperty topRightProp;
+        private SerializedProperty bottomLeftProp;
+        private SerializedProperty bottomRightProp;
 
         private void OnEnable()
         {
@@ -1524,6 +1875,12 @@ namespace CAT.Effects
             spriteColorProp = serializedObject.FindProperty("spriteColor");
             sortingLayerProp = serializedObject.FindProperty("sortingLayerName");
             sortingOrderProp = serializedObject.FindProperty("sortingOrder");
+            customMaterialProp = serializedObject.FindProperty("customMaterial");
+
+            topLeftProp = serializedObject.FindProperty("topLeft");
+            topRightProp = serializedObject.FindProperty("topRight");
+            bottomLeftProp = serializedObject.FindProperty("bottomLeft");
+            bottomRightProp = serializedObject.FindProperty("bottomRight");
         }
 
         // 인스펙터 그리기
@@ -1532,37 +1889,54 @@ namespace CAT.Effects
             serializedObject.Update();
             ImageDeform imageDeform = (ImageDeform)target;
 
-            /*
-            // 변형 모드 선택
-            EditorGUI.BeginChangeCheck();
-            EditorGUILayout.PropertyField(deformModeProp, new GUIContent("변형 모드"));
-            if (EditorGUI.EndChangeCheck())
+            // Prefab Variant 경고 표시
+            if (PrefabUtility.IsPartOfPrefabInstance(imageDeform))
             {
-                serializedObject.ApplyModifiedProperties();
-                imageDeform.SetDeformMode((ImageDeform.DeformMode)deformModeProp.enumValueIndex);
+                var prefabType = PrefabUtility.GetPrefabAssetType(imageDeform);
+                if (prefabType == PrefabAssetType.Variant)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Prefab Variant입니다. 앵커 참조 모드를 'ByName'으로 설정하면 안정성이 향상됩니다.",
+                        MessageType.Info);
+                }
             }
 
-            EditorGUILayout.Space();
-            */
-
             // 앵커 설정
-            DrawPropertiesExcluding(serializedObject, 
-                "m_Script", "deformMode", "useSubdivision", "subdivisionLevel",
-                "sprite", "spriteColor", "sortingLayerName", "sortingOrder",
-                "spriteAtlas", "spriteName", "updateEveryFrame", "optimizePerformance", 
-                "useLateUpdate", "useSharedMaterial", "showPerformanceInfo", 
-                "showVertices", "gizmoSize");
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Vertex 앵커 설정", EditorStyles.boldLabel);
+
+            DrawAnchorProperty(topLeftProp, "Top Left");
+            DrawAnchorProperty(topRightProp, "Top Right");
+            DrawAnchorProperty(bottomLeftProp, "Bottom Left");
+            DrawAnchorProperty(bottomRightProp, "Bottom Right");
+
+            // 앵커 참조 모드 일괄 변경 버튼
+            EditorGUILayout.Space();
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("모든 앵커를 ByName 모드로"))
+            {
+                Undo.RecordObject(imageDeform, "Change Anchor Reference Mode");
+                imageDeform.SetAnchorReferenceMode(ImageDeform.AnchorReferenceMode.ByName);
+                EditorUtility.SetDirty(imageDeform);
+            }
+            if (GUILayout.Button("모든 앵커를 Direct 모드로"))
+            {
+                Undo.RecordObject(imageDeform, "Change Anchor Reference Mode");
+                imageDeform.SetAnchorReferenceMode(ImageDeform.AnchorReferenceMode.Direct);
+                EditorUtility.SetDirty(imageDeform);
+            }
+            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space();
 
             // 메시 분할 설정
-            
+
             // Sprite 모드에서 Tight Mesh인지 확인
-            bool isTightMesh = imageDeform.CurrentDeformMode == ImageDeform.DeformMode.Sprite && 
-                              imageDeform.CurrentSprite != null && 
-                              imageDeform.CurrentSprite.triangles.Length > 0 && 
+            bool isTightMesh = imageDeform.CurrentDeformMode == ImageDeform.DeformMode.Sprite &&
+                              imageDeform.CurrentSprite != null &&
+                              imageDeform.CurrentSprite.triangles.Length > 0 &&
                               imageDeform.CurrentSprite.vertices.Length > 4;
-            
+
             if (isTightMesh)
             {
                 EditorGUILayout.HelpBox("Tight Mesh 스프라이트는 자동으로 원본 메시를 사용합니다.", MessageType.Info);
@@ -1582,7 +1956,7 @@ namespace CAT.Effects
                 EditorGUILayout.Space();
                 EditorGUILayout.PropertyField(spriteProp);
                 EditorGUILayout.PropertyField(spriteColorProp);
-                
+
                 // Sorting Layer 설정
                 string[] sortingLayerNames = GetSortingLayerNames();
                 int currentLayerIndex = System.Array.IndexOf(sortingLayerNames, sortingLayerProp.stringValue);
@@ -1596,6 +1970,9 @@ namespace CAT.Effects
                 }
 
                 EditorGUILayout.PropertyField(sortingOrderProp);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.PropertyField(customMaterialProp, new GUIContent("커스텀 머티리얼"));
             }
 
             // 성능 및 디버그 설정
@@ -1621,7 +1998,7 @@ namespace CAT.Effects
             {
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("실시간 성능 정보", EditorStyles.boldLabel);
-                
+
                 int vertexCount, triangleCount;
                 if (imageDeform.UseSubdivision)
                 {
@@ -1634,13 +2011,51 @@ namespace CAT.Effects
                     vertexCount = 4;
                     triangleCount = 2;
                 }
-                
+
                 EditorGUILayout.LabelField($"Vertices: {vertexCount}");
                 EditorGUILayout.LabelField($"Triangles: {triangleCount}");
                 EditorGUILayout.LabelField($"Material Sharing: {(imageDeform.UseSharedMaterial ? "Enabled" : "Disabled")}");
             }
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private void DrawAnchorProperty(SerializedProperty anchorProp, string label)
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+
+            var useAnchorProp = anchorProp.FindPropertyRelative("useAnchor");
+            var anchorTargetProp = anchorProp.FindPropertyRelative("anchorTarget");
+            var localOffsetProp = anchorProp.FindPropertyRelative("localOffset");
+            var referenceModeProp = anchorProp.FindPropertyRelative("referenceMode");
+            var anchorNameProp = anchorProp.FindPropertyRelative("anchorName");
+
+            EditorGUILayout.PropertyField(useAnchorProp, new GUIContent("사용"));
+
+            if (useAnchorProp.boolValue)
+            {
+                EditorGUILayout.PropertyField(anchorTargetProp, new GUIContent("타겟"));
+                EditorGUILayout.PropertyField(localOffsetProp, new GUIContent("오프셋"));
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.LabelField("Prefab Variant 지원", EditorStyles.miniLabel);
+                EditorGUILayout.PropertyField(referenceModeProp, new GUIContent("참조 모드"));
+
+                var mode = (ImageDeform.AnchorReferenceMode)referenceModeProp.enumValueIndex;
+                if (mode == ImageDeform.AnchorReferenceMode.ByName)
+                {
+                    EditorGUILayout.PropertyField(anchorNameProp, new GUIContent("앵커 이름"));
+                }
+                else if (mode == ImageDeform.AnchorReferenceMode.ByPath)
+                {
+                    var anchorPathProp = anchorProp.FindPropertyRelative("anchorPath");
+                    EditorGUILayout.PropertyField(anchorPathProp, new GUIContent("앵커 경로"));
+                }
+            }
+
+            EditorGUILayout.EndVertical();
         }
 
         // 정렬 레이어 이름 배열 반환
@@ -1705,7 +2120,7 @@ namespace CAT.Effects
             spriteColor = spriteRendererBackup.color;
             sortingLayerName = spriteRendererBackup.sortingLayerName;
             sortingOrder = spriteRendererBackup.sortingOrder;
-            
+
             // Debug.Log($"[{gameObject.name}] 변환된 정보 - deformMode: {deformMode}, sprite: {(sprite != null ? sprite.name : "null")}, color: {spriteColor}");
 
             // Undo 시스템에 등록
@@ -1726,7 +2141,7 @@ namespace CAT.Effects
 
             // 메시 즉시 업데이트
             RefreshMesh();
-            
+
             // 부모에 SpriteGroupColorLerp가 있는 경우 알림
             if (HasSpriteGroupColorLerpParent())
             {
@@ -1747,7 +2162,7 @@ namespace CAT.Effects
 
             // SpriteRenderer 컴포넌트 추가
             SpriteRenderer spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-            
+
             // 백업된 정보 복원
             spriteRenderer.sprite = spriteRendererBackup.sprite;
             spriteRenderer.color = spriteRendererBackup.color;
@@ -1755,9 +2170,9 @@ namespace CAT.Effects
             spriteRenderer.flipY = spriteRendererBackup.flipY;
             spriteRenderer.sortingLayerName = spriteRendererBackup.sortingLayerName;
             spriteRenderer.sortingOrder = spriteRendererBackup.sortingOrder;
-            
+
             // 기본 머티리얼이 아닌 경우에만 적용
-            if (spriteRendererBackup.material != null && 
+            if (spriteRendererBackup.material != null &&
                 spriteRendererBackup.material.name != "Sprites-Default")
             {
                 spriteRenderer.sharedMaterial = spriteRendererBackup.material;  // sharedMaterial 사용
@@ -1770,7 +2185,7 @@ namespace CAT.Effects
             RemoveComponentSafely<MeshFilter>();
             RemoveComponentSafely<MeshRenderer>();
             RemoveComponentSafely<CanvasRenderer>();
-            
+
             // RectTransform을 일반 Transform으로 복원 (필요한 경우)
             ConvertRectTransformToTransform();
 
