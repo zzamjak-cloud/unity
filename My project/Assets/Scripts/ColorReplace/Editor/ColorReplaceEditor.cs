@@ -7,19 +7,31 @@ namespace CAT.Effects
     [CustomEditor(typeof(ColorReplace))]
     public class ColorReplaceEditor : Editor
     {
-        private ColorReplace colorReplace;
-        private SerializedProperty color;
         private SerializedProperty hsvRangeMin;
         private SerializedProperty hsvRangeMax;
         private SerializedProperty hsvAdjust;
 
+        // 에디터 전용 컬러 피커 (HSV 범위 자동 설정용)
+        private Color pickerColor = Color.red;
+
         private void OnEnable()
         {
-            colorReplace = (ColorReplace)target;
-            color = serializedObject.FindProperty("_color");
             hsvRangeMin = serializedObject.FindProperty("_hsvRangeMin");
             hsvRangeMax = serializedObject.FindProperty("_hsvRangeMax");
             hsvAdjust = serializedObject.FindProperty("_hsvAdjust");
+
+            // 현재 HSV Range에서 대표 색상 추정
+            if (hsvRangeMin != null && hsvRangeMax != null)
+            {
+                float midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue) * 0.5f;
+                if (hsvRangeMin.floatValue > hsvRangeMax.floatValue)
+                {
+                    // wrap-around 케이스
+                    midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue + 1f) * 0.5f;
+                    if (midHue > 1f) midHue -= 1f;
+                }
+                pickerColor = Color.HSVToRGB(midHue, 1f, 1f);
+            }
         }
 
         public override void OnInspectorGUI()
@@ -28,64 +40,76 @@ namespace CAT.Effects
 
             EditorGUI.BeginChangeCheck();
 
-            // Display renderer type info
+            // 렌더러 타입 표시
             Component renderer = ((ColorReplace)target).GetComponent<SpriteRenderer>();
-            bool isUIComponent = false;
-            if (renderer == null)
+            bool isUIComponent = renderer == null;
+            if (isUIComponent)
             {
                 renderer = ((ColorReplace)target).GetComponent<UnityEngine.UI.Graphic>();
-                isUIComponent = renderer != null;
             }
+
+            // 렌더러 정보 박스
+            string rendererType = isUIComponent ? "UI Graphic" : "SpriteRenderer";
+            EditorGUILayout.HelpBox($"Mode: {rendererType}", MessageType.None);
 
             EditorGUILayout.Space(5);
 
-            // 컬러 피커 --------------------------------------------------------------------------------------------
-            EditorGUILayout.LabelField("Replace Color", EditorStyles.boldLabel);
+            // 컬러 피커 (HSV 범위 자동 설정용)
+            EditorGUILayout.LabelField("Color Picker", EditorStyles.boldLabel);
             EditorGUILayout.Space(3);
-            EditorGUI.BeginChangeCheck();
             EditorGUI.indentLevel++;
-            Color newColor = EditorGUILayout.ColorField(new GUIContent("Picker", "선택한 색상을 기준으로 HSV 범위를 자동 설정합니다"), color.colorValue);
+
+            EditorGUI.BeginChangeCheck();
+            pickerColor = EditorGUILayout.ColorField(
+                new GUIContent("Target Color", "이 색상을 기준으로 HSV 범위를 자동 설정합니다"),
+                pickerColor
+            );
             if (EditorGUI.EndChangeCheck())
             {
-                color.colorValue = newColor;
-                SetHSVRangeFromColor(newColor);  // 색상이 변경되면 HSV 범위를 자동으로 설정
+                SetHSVRangeFromColor(pickerColor);
             }
             EditorGUI.indentLevel--;
-            EditorGUILayout.Space(3);
 
-            // compact, similar, wide 버튼 ------------------------------------------------------------------------
+            // 범위 프리셋 버튼
+            EditorGUILayout.Space(3);
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Compact", GUILayout.Width(80)))
             {
-                SetHSVRangeFromColor(color.colorValue, 0.02f); // 매우 좁은 범위
+                SetHSVRangeFromColor(pickerColor, 0.02f);
             }
             if (GUILayout.Button("Similar", GUILayout.Width(80)))
             {
-                SetHSVRangeFromColor(color.colorValue, 0.1f); // 중간 범위
+                SetHSVRangeFromColor(pickerColor, 0.1f);
             }
             if (GUILayout.Button("Wide", GUILayout.Width(80)))
             {
-                SetHSVRangeFromColor(color.colorValue, 0.2f); // 넓은 범위
+                SetHSVRangeFromColor(pickerColor, 0.2f);
             }
             EditorGUILayout.EndHorizontal();
-            // EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(10);
+
+            // HSV Range
             EditorGUILayout.LabelField("HSV Range", EditorStyles.boldLabel);
             EditorGUILayout.Space(3);
 
-            // HSV 색상 다이어그램 (개선된 버전 - 어두운 표시) ------------------------------------------------------------------------
             DrawImprovedHSVDiagram(hsvRangeMin.floatValue, hsvRangeMax.floatValue);
 
-            // HSV Min/Max 슬라이더
             EditorGUILayout.Space(3);
             EditorGUI.indentLevel++;
-            float newMinValue = EditorGUILayout.Slider(new GUIContent("Min", "Minimum HSV range (0.0 ~ 1.0)"), hsvRangeMin.floatValue, 0f, 1f);
-            float newMaxValue = EditorGUILayout.Slider(new GUIContent("Max", "Maximum HSV range (0.0 ~ 1.0)"), hsvRangeMax.floatValue, 0f, 1f);
+
+            float newMinValue = EditorGUILayout.Slider(
+                new GUIContent("Min", "HSV 범위 최소값 (0.0 ~ 1.0)"),
+                hsvRangeMin.floatValue, 0f, 1f
+            );
+            float newMaxValue = EditorGUILayout.Slider(
+                new GUIContent("Max", "HSV 범위 최대값 (0.0 ~ 1.0)"),
+                hsvRangeMax.floatValue, 0f, 1f
+            );
+
             EditorGUI.indentLevel--;
 
-            // 슬라이더 값이 변경되었으면 SerializedProperty 업데이트
             if (Mathf.Abs(newMinValue - hsvRangeMin.floatValue) > 0.001f)
             {
                 hsvRangeMin.floatValue = newMinValue;
@@ -97,14 +121,15 @@ namespace CAT.Effects
 
             EditorGUILayout.Space(10);
 
+            // HSV Adjust
             EditorGUILayout.LabelField("HSV Adjust", EditorStyles.boldLabel);
             EditorGUI.indentLevel++;
 
             Vector4 currentAdjust = hsvAdjust.vector4Value;
-            currentAdjust.x = EditorGUILayout.Slider(new GUIContent("H", "Adjusts color hue"), currentAdjust.x, -1f, 1f);
-            currentAdjust.y = EditorGUILayout.Slider(new GUIContent("S", "Adjusts color saturation"), currentAdjust.y, -1f, 1f);
-            currentAdjust.z = EditorGUILayout.Slider(new GUIContent("V", "Adjusts brightness"), currentAdjust.z, -1f, 1f);
-            // currentAdjust.w = EditorGUILayout.Slider(new GUIContent("Alpha", "Adjusts transparency"), currentAdjust.w, -1f, 1f);
+            currentAdjust.x = EditorGUILayout.Slider(new GUIContent("H", "색조(Hue) 조정"), currentAdjust.x, -1f, 1f);
+            currentAdjust.y = EditorGUILayout.Slider(new GUIContent("S", "채도(Saturation) 조정"), currentAdjust.y, -1f, 1f);
+            currentAdjust.z = EditorGUILayout.Slider(new GUIContent("V", "명도(Value) 조정"), currentAdjust.z, -1f, 1f);
+            currentAdjust.w = EditorGUILayout.Slider(new GUIContent("A", "알파(Alpha) 조정"), currentAdjust.w, -1f, 1f);
 
             EditorGUI.indentLevel--;
             hsvAdjust.vector4Value = currentAdjust;
@@ -113,8 +138,7 @@ namespace CAT.Effects
             {
                 serializedObject.ApplyModifiedProperties();
                 EditorUtility.SetDirty(target);
-                
-                // 프리팹 수정 기록
+
                 if (PrefabUtility.IsPartOfAnyPrefab(target))
                 {
                     PrefabUtility.RecordPrefabInstancePropertyModifications(target);
@@ -123,56 +147,44 @@ namespace CAT.Effects
 
             EditorGUILayout.Space(10);
 
-            // Reset Button (Quick Presets 기능 제거, Reset All Values만 남김) ------------------------------------------------------------------------
+            // Reset 버튼
+            EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Reset"))
             {
                 Undo.RecordObject(target, "Reset ColorReplace Values");
 
-                color.colorValue = Color.black;
                 hsvRangeMin.floatValue = 0f;
                 hsvRangeMax.floatValue = 1f;
                 hsvAdjust.vector4Value = Vector4.zero;
+                pickerColor = Color.red;
 
                 serializedObject.ApplyModifiedProperties();
                 EditorUtility.SetDirty(target);
             }
 
-            // Clear cache button (only in play mode)
+            // 캐시 클리어 버튼 (플레이 모드에서만)
             if (Application.isPlaying)
             {
-                EditorGUILayout.Space(5);
-                if (GUILayout.Button("Clear Material Cache"))
+                if (GUILayout.Button("Clear Cache"))
                 {
                     ColorReplace.ClearMaterialCache();
-                    EditorUtility.DisplayDialog("Cache Cleared", "Material cache has been cleared.", "OK");
                 }
             }
-
+            EditorGUILayout.EndHorizontal();
         }
 
-        /// <summary>
-        /// 개선된 HSV 다이어그램을 그립니다 (어두운 색상으로 범위 표시)
-        /// </summary>
         private void DrawImprovedHSVDiagram(float minRange, float maxRange)
         {
             Rect rect = GUILayoutUtility.GetRect(0, 20, GUILayout.ExpandWidth(true));
-            rect.height = 15;  // 높이 고정
-            rect.x += 14;      // 좌측 패딩
-            rect.width -= 8;  // 우측 패딩
+            rect.height = 15;
+            rect.x += 14;
+            rect.width -= 8;
 
-            // 배경 그리기 (HSV 색상환)
             DrawHSVBackground(rect);
-            
-            // 선택된 범위 표시 (어두운 오버레이)
             DrawRangeOverlay(rect, minRange, maxRange);
-            
-            // 범위 핸들 그리기
             DrawRangeHandles(rect, minRange, maxRange);
         }
 
-        /// <summary>
-        /// HSV 색상환 배경을 그립니다
-        /// </summary>
         private void DrawHSVBackground(Rect rect)
         {
             int segments = 360;
@@ -182,54 +194,38 @@ namespace CAT.Effects
             {
                 float hue = (float)i / segments;
                 Color color = Color.HSVToRGB(hue, 1f, 1f);
-                
+
                 Rect segmentRect = new Rect(
-                    rect.x + i * segmentWidth, 
-                    rect.y, 
-                    segmentWidth + 1, // 작은 겹침으로 틈새 방지
+                    rect.x + i * segmentWidth,
+                    rect.y,
+                    segmentWidth + 1,
                     rect.height
                 );
-                
+
                 EditorGUI.DrawRect(segmentRect, color);
             }
         }
 
-        /// <summary>
-        /// 선택되지 않은 범위에 어두운 오버레이를 그립니다
-        /// </summary>
         private void DrawRangeOverlay(Rect rect, float minRange, float maxRange)
         {
-            Color overlayColor = new Color(0.1f, 0.1f, 0.1f, 0.7f); // 어두운 반투명 색상
+            Color overlayColor = new Color(0.1f, 0.1f, 0.1f, 0.7f);
 
-            if (maxRange < minRange) // 범위가 0을 넘나드는 경우
+            if (maxRange < minRange) // wrap-around
             {
-                // 0 ~ maxRange 구간에 오버레이
-                if (maxRange > 0)
+                // maxRange ~ minRange 사이에 오버레이 (선택 영역 외부)
+                if (maxRange < minRange)
                 {
-                    Rect leftOverlay = new Rect(
-                        rect.x,
+                    Rect middleOverlay = new Rect(
+                        rect.x + rect.width * maxRange,
                         rect.y,
-                        rect.width * maxRange,
+                        rect.width * (minRange - maxRange),
                         rect.height
                     );
-                    EditorGUI.DrawRect(leftOverlay, overlayColor);
-                }
-
-                // minRange ~ 1 구간에 오버레이  
-                if (minRange < 1)
-                {
-                    Rect rightOverlay = new Rect(
-                        rect.x + rect.width * minRange,
-                        rect.y,
-                        rect.width * (1f - minRange),
-                        rect.height
-                    );
-                    EditorGUI.DrawRect(rightOverlay, overlayColor);
+                    EditorGUI.DrawRect(middleOverlay, overlayColor);
                 }
             }
-            else // 일반적인 경우
+            else // 일반 케이스
             {
-                // 0 ~ minRange 구간에 오버레이
                 if (minRange > 0)
                 {
                     Rect leftOverlay = new Rect(
@@ -241,7 +237,6 @@ namespace CAT.Effects
                     EditorGUI.DrawRect(leftOverlay, overlayColor);
                 }
 
-                // maxRange ~ 1 구간에 오버레이
                 if (maxRange < 1)
                 {
                     Rect rightOverlay = new Rect(
@@ -255,56 +250,37 @@ namespace CAT.Effects
             }
         }
 
-        /// <summary>
-        /// 범위 조절 핸들을 그립니다
-        /// </summary>
         private void DrawRangeHandles(Rect rect, float minRange, float maxRange)
         {
             Color handleColor = Color.white;
             Color borderColor = Color.black;
             float handleWidth = 3f;
 
-            // Min 핸들
             float minX = rect.x + rect.width * minRange;
             Rect minHandle = new Rect(minX - handleWidth / 2, rect.y - 1, handleWidth, rect.height + 2);
-            EditorGUI.DrawRect(minHandle, borderColor); // 테두리
+            EditorGUI.DrawRect(minHandle, borderColor);
             EditorGUI.DrawRect(new Rect(minX - handleWidth / 2 + 1, rect.y, handleWidth - 2, rect.height), handleColor);
 
-            // Max 핸들
             float maxX = rect.x + rect.width * maxRange;
             Rect maxHandle = new Rect(maxX - handleWidth / 2, rect.y - 1, handleWidth, rect.height + 2);
-            EditorGUI.DrawRect(maxHandle, borderColor); // 테두리
+            EditorGUI.DrawRect(maxHandle, borderColor);
             EditorGUI.DrawRect(new Rect(maxX - handleWidth / 2 + 1, rect.y, handleWidth - 2, rect.height), handleColor);
         }
 
-        /// <summary>
-        /// 선택한 색상을 기준으로 HSV 범위를 자동으로 설정합니다
-        /// </summary>
         private void SetHSVRangeFromColor(Color selectedColor, float tolerance = 0.05f)
         {
-            // RGB를 HSV로 변환
-            Color.RGBToHSV(selectedColor, out float hue, out float saturation, out float value);
-            
-            // 허용 오차를 적용한 범위 계산
+            Color.RGBToHSV(selectedColor, out float hue, out _, out _);
+
             float minHue = hue - tolerance;
             float maxHue = hue + tolerance;
-            
-            // Hue는 0~1 범위를 순환하므로 경계 처리
-            if (minHue < 0f)
-            {
-                minHue += 1f;
-            }
-            if (maxHue > 1f)
-            {
-                maxHue -= 1f;
-            }
-            
-            // SerializedProperty 업데이트
+
+            if (minHue < 0f) minHue += 1f;
+            if (maxHue > 1f) maxHue -= 1f;
+
             Undo.RecordObject(target, "Auto Set HSV Range");
             hsvRangeMin.floatValue = minHue;
             hsvRangeMax.floatValue = maxHue;
-            
-            // 변경사항 적용
+
             serializedObject.ApplyModifiedProperties();
             EditorUtility.SetDirty(target);
         }

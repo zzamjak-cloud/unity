@@ -3,21 +3,62 @@ Shader "CAT/Effects/ColorReplace"
     Properties
     {
         [PerRendererData] _MainTex("Sprite Texture", 2D) = "white" {}
-        _Color("Replace Color", Color) = (0,0,0,1)
-        _HSVRangeMin("HSV Affect Min", Range(0, 1)) = 0
-        _HSVRangeMax("HSV Affect Max", Range(0, 1)) = 1
-        _HSVAAdjust("HSVA Adjust", Vector) = (0, 0, 0, 0)
 
-        // UI 전용(또는 Sprite에서 숨김) 스텐실/마스크 설정
-        _StencilComp("Stencil Comparison", Float) = 8
-        _Stencil("Stencil ID", Float) = 0
-        _StencilOp("Stencil Operation", Float) = 0
-        _StencilWriteMask("Stencil Write Mask", Float) = 255
-        _StencilReadMask("Stencil Read Mask", Float) = 255
-        _ColorMask("Color Mask", Float) = 15
+        // PerRendererData로 PropertyBlock에서 개별 값 설정 가능
+        [PerRendererData] _HSVRangeMin("HSV Affect Min", Range(0, 1)) = 0
+        [PerRendererData] _HSVRangeMax("HSV Affect Max", Range(0, 1)) = 1
+        [PerRendererData] _HSVAAdjust("HSVA Adjust", Vector) = (0, 0, 0, 0)
+
+        // UI 스텐실/마스크 설정
+        [HideInInspector] _StencilComp("Stencil Comparison", Float) = 8
+        [HideInInspector] _Stencil("Stencil ID", Float) = 0
+        [HideInInspector] _StencilOp("Stencil Operation", Float) = 0
+        [HideInInspector] _StencilWriteMask("Stencil Write Mask", Float) = 255
+        [HideInInspector] _StencilReadMask("Stencil Read Mask", Float) = 255
+        [HideInInspector] _ColorMask("Color Mask", Float) = 15
     }
 
-    // SubShader 0: UI 경로 (Unity UI 클리핑/알파클립 지원)
+    // 공통 함수를 CGINCLUDE로 분리
+    CGINCLUDE
+    #include "UnityCG.cginc"
+
+    sampler2D _MainTex;
+    float4 _MainTex_ST;
+    half _HSVRangeMin;
+    half _HSVRangeMax;
+    half4 _HSVAAdjust;
+
+    // RGB -> HSV 변환 (half precision)
+    inline half3 RGB2HSV(half3 c)
+    {
+        half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
+        half4 p = lerp(half4(c.bg, K.wz), half4(c.gb, K.xy), step(c.b, c.g));
+        half4 q = lerp(half4(p.xyw, c.r), half4(c.r, p.yzx), step(p.x, c.r));
+        half d = q.x - min(q.w, q.y);
+        half e = 1.0e-4h;
+        return half3(abs(q.z + (q.w - q.y) / (6.0h * d + e)), d / (q.x + e), q.x);
+    }
+
+    // HSV -> RGB 변환 (half precision)
+    inline half3 HSV2RGB(half3 c)
+    {
+        c = half3(c.x, saturate(c.yz));
+        half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
+        half3 p = abs(frac(c.xxx + K.xyz) * 6.0h - K.www);
+        return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
+    }
+
+    // HSV 범위 체크 (분기 없이 수학 연산)
+    inline half ComputeAffectMult(half hue, half rangeMin, half rangeMax)
+    {
+        half isWrapped = step(rangeMax + 0.001h, rangeMin);
+        half normalCase = step(rangeMin, hue) * step(hue, rangeMax);
+        half wrappedCase = saturate(step(rangeMin, hue) + step(hue, rangeMax));
+        return lerp(normalCase, wrappedCase, isWrapped);
+    }
+    ENDCG
+
+    // SubShader 0: UI 경로
     SubShader
     {
         Tags
@@ -52,34 +93,28 @@ Shader "CAT/Effects/ColorReplace"
             #pragma fragment frag
             #pragma multi_compile_local _ UNITY_UI_CLIP_RECT
             #pragma multi_compile_local _ UNITY_UI_ALPHACLIP
+            #pragma target 2.0
 
             #include "UnityUI.cginc"
-            #include "UnityCG.cginc"
 
             struct appdata_t
             {
                 float4 vertex   : POSITION;
-                float4 color    : COLOR;
+                half4 color     : COLOR;
                 float2 texcoord : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
-                float4 vertex   : SV_POSITION;
-                fixed4 color    : COLOR;
-                float2 texcoord : TEXCOORD0;
+                float4 vertex        : SV_POSITION;
+                half4 color          : COLOR;
+                float2 texcoord      : TEXCOORD0;
                 float4 worldPosition : TEXCOORD1;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
-            sampler2D _MainTex;
-            fixed4 _Color;
-            float _HSVRangeMin;
-            float _HSVRangeMax;
-            float4 _HSVAAdjust;
             float4 _ClipRect;
-            float4 _MainTex_ST;
 
             v2f vert(appdata_t v)
             {
@@ -87,62 +122,35 @@ Shader "CAT/Effects/ColorReplace"
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
                 OUT.worldPosition = v.vertex;
-                OUT.vertex = UnityObjectToClipPos(OUT.worldPosition);
+                OUT.vertex = UnityObjectToClipPos(v.vertex);
                 OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
                 OUT.color = v.color;
                 return OUT;
             }
 
-            // rgb to hsv
-            // https://www.rapidtables.com/convert/color/rgb-to-hsv.html
-            float3 rgb2hsv(float3 c)
+            half4 frag(v2f IN) : SV_Target
             {
-                float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-                float4 p = lerp(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
-                float4 q = lerp(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
-                float d = q.x - min(q.w, q.y);
-                float e = 1.0e-10;
-                return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-            }
-
-            // hsv to rgb
-            // https://www.rapidtables.com/convert/color/hsv-to-rgb.html
-            float3 hsv2rgb(float3 c)
-            {
-                c = float3(c.x, clamp(c.yz, 0.0, 1.0));
-                float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-                float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
-                return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-            }
-
-            fixed4 frag(v2f IN) : SV_Target
-            {
-                // Texture Color
                 half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
-                // Clip Rect
                 #ifdef UNITY_UI_CLIP_RECT
                 color.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif
 
-                // Alpha Clip
                 #ifdef UNITY_UI_ALPHACLIP
-                clip(color.a - 0.001);
+                clip(color.a - 0.001h);
                 #endif
 
-                // HSV Adjust
-                float3 hsv = rgb2hsv(color.rgb);
-                float affectMult = step(_HSVRangeMin, hsv.x) * step(hsv.x, _HSVRangeMax);
-                float3 rgb = hsv2rgb(hsv + _HSVAAdjust.xyz * affectMult);
+                half3 hsv = RGB2HSV(color.rgb);
+                half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
+                half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-                // Return Color
-                return fixed4(rgb, color.a + _HSVAAdjust.w);
+                return half4(rgb, color.a + _HSVAAdjust.w);
             }
             ENDCG
         }
     }
 
-    // SubShader 1: Sprite 경로 (픽셀 스냅 등 스프라이트 표준 경로)
+    // SubShader 1: Sprite 경로
     SubShader
     {
         Tags
@@ -175,30 +183,23 @@ Shader "CAT/Effects/ColorReplace"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma multi_compile _ PIXELSNAP_ON
-            #include "UnityCG.cginc"
+            #pragma target 2.0
 
             struct appdata_t
             {
-                float4 vertex : POSITION;
-                float4 color : COLOR;
+                float4 vertex   : POSITION;
+                half4 color     : COLOR;
                 float2 texcoord : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
-                float4 vertex : SV_POSITION;
-                fixed4 color : COLOR;
+                float4 vertex   : SV_POSITION;
+                half4 color     : COLOR;
                 float2 texcoord : TEXCOORD0;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
-
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
-            fixed4 _Color;
-            float _HSVRangeMin;
-            float _HSVRangeMax;
-            float4 _HSVAAdjust;
 
             v2f vert(appdata_t IN)
             {
@@ -214,31 +215,15 @@ Shader "CAT/Effects/ColorReplace"
                 return OUT;
             }
 
-            float3 rgb2hsv(float3 c)
+            half4 frag(v2f IN) : SV_Target
             {
-                float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-                float4 p = lerp(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
-                float4 q = lerp(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
-                float d = q.x - min(q.w, q.y);
-                float e = 1.0e-10;
-                return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-            }
+                half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
-            float3 hsv2rgb(float3 c)
-            {
-                c = float3(c.x, clamp(c.yz, 0.0, 1.0));
-                float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-                float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
-                return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-            }
+                half3 hsv = RGB2HSV(color.rgb);
+                half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
+                half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-            fixed4 frag(v2f IN) : SV_Target
-            {
-                fixed4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
-                float3 hsv = rgb2hsv(color.rgb);
-                float affectMult = step(_HSVRangeMin, hsv.x) * step(hsv.x, _HSVRangeMax);
-                float3 rgb = hsv2rgb(hsv + _HSVAAdjust.xyz * affectMult);
-                return fixed4(rgb, color.a + _HSVAAdjust.w);
+                return half4(rgb, color.a + _HSVAAdjust.w);
             }
             ENDCG
         }
@@ -246,5 +231,3 @@ Shader "CAT/Effects/ColorReplace"
 
     Fallback "UI/Default"
 }
-
-
