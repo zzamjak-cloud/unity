@@ -5,60 +5,63 @@ namespace CAT.Utility.ShapeGenerator
 {
     /// <summary>
     /// 다각형(Polygon) 생성기
-    /// N각형으로 생성하며, 모서리 R값(둥글기) 조정 가능
     /// </summary>
     public class PolygonGenerator : BaseShapeGenerator
     {
-        private int _size = 20;
-        private int _sides = 6;
-        private int _cornerRadius = 0;
-        private float _rotation = 0f;
+        private readonly PolygonSettings _settings;
 
         public override string ShapeName => "Polygon";
 
+        public PolygonGenerator() : this(new PolygonSettings()) { }
+
+        public PolygonGenerator(PolygonSettings settings)
+        {
+            _settings = settings;
+        }
+
         public override void DrawSettingsGUI()
         {
-            _size = EditorGUILayout.IntSlider(
+            _settings.Size = EditorGUILayout.IntSlider(
                 new GUIContent("Size", "다각형 크기"),
-                _size, 4, 256);
+                _settings.Size, 4, 256);
 
-            _sides = EditorGUILayout.IntSlider(
+            _settings.Sides = EditorGUILayout.IntSlider(
                 new GUIContent("Sides", "변의 개수 (3~12)"),
-                _sides, 3, 12);
+                _settings.Sides, 3, 12);
 
-            int maxRadius = _size / 4;
-            _cornerRadius = EditorGUILayout.IntSlider(
+            int maxRadius = _settings.Size / 4;
+            _settings.CornerRadius = EditorGUILayout.IntSlider(
                 new GUIContent("Corner Radius", "모서리 둥글기"),
-                _cornerRadius, 0, maxRadius);
+                _settings.CornerRadius, 0, maxRadius);
 
-            _rotation = EditorGUILayout.Slider(
+            _settings.Rotation = EditorGUILayout.Slider(
                 new GUIContent("Rotation", "회전 각도"),
-                _rotation, 0f, 360f);
+                _settings.Rotation, 0f, 360f);
         }
 
         public override Vector2Int GetTextureSize()
         {
-            return new Vector2Int(_size, _size);
+            return new Vector2Int(_settings.Size, _settings.Size);
         }
 
         public override string GetFileName()
         {
-            string rotStr = _rotation > 0 ? $"_Rot{Mathf.RoundToInt(_rotation)}" : "";
-            return $"Polygon{_sides}_S{_size}_R{_cornerRadius}{rotStr}.png";
+            string rotStr = _settings.Rotation > 0 ? $"_Rot{Mathf.RoundToInt(_settings.Rotation)}" : "";
+            return $"Polygon{_settings.Sides}_S{_settings.Size}_R{_settings.CornerRadius}{rotStr}.png";
         }
 
         public override Texture2D Generate()
         {
-            var (texture, pixels) = CreateTextureWithPixels(_size, _size);
+            var (texture, pixels) = CreateTextureWithPixels(_settings.Size, _settings.Size);
 
-            float center = _size * 0.5f;
-            float radius = _size * 0.45f;
+            float center = _settings.Size * 0.5f;
+            float radius = _settings.Size * 0.45f;
 
-            Vector2[] vertices = new Vector2[_sides];
-            float angleStep = 360f / _sides;
-            float startAngle = -90f + _rotation;
+            Vector2[] vertices = new Vector2[_settings.Sides];
+            float angleStep = 360f / _settings.Sides;
+            float startAngle = -90f + _settings.Rotation;
 
-            for (int i = 0; i < _sides; i++)
+            for (int i = 0; i < _settings.Sides; i++)
             {
                 float angle = (startAngle + angleStep * i) * Mathf.Deg2Rad;
                 vertices[i] = new Vector2(
@@ -67,15 +70,15 @@ namespace CAT.Utility.ShapeGenerator
                 );
             }
 
-            for (int y = 0; y < _size; y++)
+            for (int y = 0; y < _settings.Size; y++)
             {
-                int rowOffset = y * _size;
+                int rowOffset = y * _settings.Size;
                 float py = y + 0.5f;
 
-                for (int x = 0; x < _size; x++)
+                for (int x = 0; x < _settings.Size; x++)
                 {
                     Vector2 point = new Vector2(x + 0.5f, py);
-                    float sdf = RoundedPolygonSDF(point, vertices, _cornerRadius);
+                    float sdf = RoundedPolygonSDF(point, vertices, _settings.CornerRadius);
                     float alpha = CalculateAntiAliasedAlpha(sdf);
 
                     if (alpha > 0f)

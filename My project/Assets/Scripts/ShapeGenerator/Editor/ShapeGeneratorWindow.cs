@@ -1,8 +1,6 @@
 using UnityEngine;
 using UnityEditor;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 
 namespace CAT.Utility.ShapeGenerator
 {
@@ -12,12 +10,25 @@ namespace CAT.Utility.ShapeGenerator
     public class ShapeGeneratorWindow : EditorWindow
     {
         private const string PREFS_KEY_SAVE_FOLDER = "CAT_ShapeGenerator_SaveFolder";
-        private const string PREFS_KEY_SELECTED_SHAPE = "CAT_ShapeGenerator_SelectedShape";
+        private const string PREFS_KEY_SHAPE_TYPE = "CAT_ShapeGenerator_ShapeType";
+        private const string PREFS_KEY_FILL_TYPE = "CAT_ShapeGenerator_FillType";
         private const double DEBOUNCE_DELAY = 0.15;
 
-        private List<IShapeGenerator> _generators;
-        private string[] _generatorNames;
-        private int _selectedGeneratorIndex;
+        private enum ShapeType { Circle, Polygon, Star }
+        private enum FillType { Fill, Outline, FillOutline }
+
+        // Generator 2D 배열: [ShapeType][FillType]
+        private IShapeGenerator[,] _generators;
+        private readonly string[] _shapeNames = { "Circle", "Polygon", "Star" };
+        private readonly string[] _fillTypeNames = { "Fill", "Outline", "FillOutline" };
+
+        // 공유 설정 인스턴스
+        private CircleSettings _circleSettings;
+        private PolygonSettings _polygonSettings;
+        private StarSettings _starSettings;
+
+        private ShapeType _shapeType = ShapeType.Circle;
+        private FillType _fillType = FillType.Fill;
 
         private string _saveFolderPath;
         private DefaultAsset _saveFolderAsset;
@@ -27,6 +38,8 @@ namespace CAT.Utility.ShapeGenerator
 
         private double _lastChangeTime;
         private bool _pendingUpdate;
+
+        private IShapeGenerator CurrentGenerator => _generators[(int)_shapeType, (int)_fillType];
 
         [MenuItem("CAT/Utility/Shape Generator")]
         public static void ShowWindow()
@@ -58,19 +71,21 @@ namespace CAT.Utility.ShapeGenerator
 
         private void InitializeGenerators()
         {
-            _generators = new List<IShapeGenerator>
-            {
-                new CircleGenerator(),
-                new CircleOutlineGenerator(),
-                new CircleWithOutlineGenerator(),
-                new PolygonGenerator(),
-                new PolygonOutlineGenerator(),
-                new PolygonWithOutlineGenerator(),
-                new StarGenerator(),
-                new StarOutlineGenerator(),
-            };
+            // 공유 설정 인스턴스 생성
+            _circleSettings = new CircleSettings();
+            _polygonSettings = new PolygonSettings();
+            _starSettings = new StarSettings();
 
-            _generatorNames = _generators.Select(g => g.ShapeName).ToArray();
+            // [ShapeType][FillType] 순서로 배열 - 동일한 Settings 인스턴스 공유
+            _generators = new IShapeGenerator[3, 3]
+            {
+                // Circle: Fill, Outline, FillOutline (모두 _circleSettings 공유)
+                { new CircleGenerator(_circleSettings), new CircleOutlineGenerator(_circleSettings), new CircleWithOutlineGenerator(_circleSettings) },
+                // Polygon: Fill, Outline, FillOutline (모두 _polygonSettings 공유)
+                { new PolygonGenerator(_polygonSettings), new PolygonOutlineGenerator(_polygonSettings), new PolygonWithOutlineGenerator(_polygonSettings) },
+                // Star: Fill, Outline, FillOutline (모두 _starSettings 공유)
+                { new StarGenerator(_starSettings), new StarOutlineGenerator(_starSettings), new StarWithOutlineGenerator(_starSettings) }
+            };
         }
 
         private void OnEditorUpdate()
@@ -104,7 +119,6 @@ namespace CAT.Utility.ShapeGenerator
             EditorGUILayout.Space(10);
 
             DrawGenerateSection();
-
 
             EditorGUILayout.EndScrollView();
 
@@ -160,15 +174,33 @@ namespace CAT.Utility.ShapeGenerator
         {
             EditorGUILayout.LabelField("도형 설정", EditorStyles.boldLabel);
 
-            int newIndex = EditorGUILayout.Popup("Shape", _selectedGeneratorIndex, _generatorNames);
-            if (newIndex != _selectedGeneratorIndex)
+            // Shape 드롭다운
+            ShapeType newShapeType = (ShapeType)EditorGUILayout.Popup("Shape", (int)_shapeType, _shapeNames);
+            if (newShapeType != _shapeType)
             {
-                _selectedGeneratorIndex = newIndex;
+                _shapeType = newShapeType;
                 SaveSettings();
             }
 
+            // Fill Type 라디오 버튼
             EditorGUI.indentLevel++;
-            _generators[_selectedGeneratorIndex].DrawSettingsGUI();
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("Type");
+
+            for (int i = 0; i < _fillTypeNames.Length; i++)
+            {
+                bool isSelected = (int)_fillType == i;
+                bool newSelected = GUILayout.Toggle(isSelected, _fillTypeNames[i], EditorStyles.miniButtonMid);
+                if (newSelected && !isSelected)
+                {
+                    _fillType = (FillType)i;
+                    SaveSettings();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Generator 옵션
+            CurrentGenerator.DrawSettingsGUI();
             EditorGUI.indentLevel--;
         }
 
@@ -218,7 +250,7 @@ namespace CAT.Utility.ShapeGenerator
 
         private void DrawGenerateSection()
         {
-            string fileName = _generators[_selectedGeneratorIndex].GetFileName();
+            string fileName = CurrentGenerator.GetFileName();
             EditorGUILayout.LabelField($"파일명: {fileName}", EditorStyles.miniLabel);
 
             EditorGUILayout.Space(5);
@@ -240,9 +272,9 @@ namespace CAT.Utility.ShapeGenerator
         {
             CleanupPreview();
 
-            if (_generators != null && _selectedGeneratorIndex < _generators.Count)
+            if (_generators != null)
             {
-                _previewTexture = _generators[_selectedGeneratorIndex].Generate();
+                _previewTexture = CurrentGenerator.Generate();
                 _previewTexture = BaseShapeGenerator.TrimTexture(_previewTexture);
             }
 
@@ -260,7 +292,7 @@ namespace CAT.Utility.ShapeGenerator
 
         private void GenerateAndSave()
         {
-            var generator = _generators[_selectedGeneratorIndex];
+            var generator = CurrentGenerator;
             var texture = generator.Generate();
             texture = BaseShapeGenerator.TrimTexture(texture);
 
@@ -331,7 +363,8 @@ namespace CAT.Utility.ShapeGenerator
                 EditorPrefs.DeleteKey(PREFS_KEY_SAVE_FOLDER);
             }
 
-            EditorPrefs.SetInt(PREFS_KEY_SELECTED_SHAPE, _selectedGeneratorIndex);
+            EditorPrefs.SetInt(PREFS_KEY_SHAPE_TYPE, (int)_shapeType);
+            EditorPrefs.SetInt(PREFS_KEY_FILL_TYPE, (int)_fillType);
         }
 
         private void LoadSettings()
@@ -351,8 +384,8 @@ namespace CAT.Utility.ShapeGenerator
                 }
             }
 
-            _selectedGeneratorIndex = EditorPrefs.GetInt(PREFS_KEY_SELECTED_SHAPE, 0);
-            _selectedGeneratorIndex = Mathf.Clamp(_selectedGeneratorIndex, 0, _generators.Count - 1);
+            _shapeType = (ShapeType)Mathf.Clamp(EditorPrefs.GetInt(PREFS_KEY_SHAPE_TYPE, 0), 0, 2);
+            _fillType = (FillType)Mathf.Clamp(EditorPrefs.GetInt(PREFS_KEY_FILL_TYPE, 0), 0, 2);
         }
     }
 }

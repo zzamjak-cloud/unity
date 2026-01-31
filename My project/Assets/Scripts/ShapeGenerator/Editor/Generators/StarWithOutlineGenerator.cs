@@ -4,17 +4,18 @@ using UnityEditor;
 namespace CAT.Utility.ShapeGenerator
 {
     /// <summary>
-    /// 별 외곽선(Star Outline) 생성기
+    /// 별 + 외곽선(Star + Outline) 생성기
+    /// 내부는 흰색, 외곽선은 그레이스케일
     /// </summary>
-    public class StarOutlineGenerator : BaseShapeGenerator
+    public class StarWithOutlineGenerator : BaseShapeGenerator
     {
         private readonly StarSettings _settings;
 
-        public override string ShapeName => "Star Outline";
+        public override string ShapeName => "Star + Outline";
 
-        public StarOutlineGenerator() : this(new StarSettings()) { }
+        public StarWithOutlineGenerator() : this(new StarSettings()) { }
 
-        public StarOutlineGenerator(StarSettings settings)
+        public StarWithOutlineGenerator(StarSettings settings)
         {
             _settings = settings;
         }
@@ -35,8 +36,12 @@ namespace CAT.Utility.ShapeGenerator
 
             int maxWidth = _settings.Size / 4;
             _settings.OutlineWidth = EditorGUILayout.IntSlider(
-                new GUIContent("Width", "외곽선 두께"),
+                new GUIContent("Outline Width", "외곽선 두께"),
                 _settings.OutlineWidth, 1, maxWidth);
+
+            _settings.OutlineGray = EditorGUILayout.Slider(
+                new GUIContent("Outline Gray", "외곽선 그레이스케일 (0=검정, 1=흰색)"),
+                _settings.OutlineGray, 0f, 1f);
 
             int maxRadius = _settings.Size / 8;
             _settings.CornerRadius = EditorGUILayout.IntSlider(
@@ -58,8 +63,9 @@ namespace CAT.Utility.ShapeGenerator
         public override string GetFileName()
         {
             int innerInt = Mathf.RoundToInt(_settings.InnerRatio * 100);
+            int grayInt = Mathf.RoundToInt(_settings.OutlineGray * 100);
             string rotStr = _settings.Rotation > 0 ? $"_Rot{Mathf.RoundToInt(_settings.Rotation)}" : "";
-            return $"Star{_settings.Points}_S{_settings.Size}_Out{_settings.OutlineWidth}_I{innerInt}_R{_settings.CornerRadius}{rotStr}.png";
+            return $"Star{_settings.Points}_S{_settings.Size}_OutF{_settings.OutlineWidth}_I{innerInt}_G{grayInt}_R{_settings.CornerRadius}{rotStr}.png";
         }
 
         public override Texture2D Generate()
@@ -89,6 +95,8 @@ namespace CAT.Utility.ShapeGenerator
                 );
             }
 
+            byte outlineGrayByte = (byte)(_settings.OutlineGray * 255f + 0.5f);
+
             for (int y = 0; y < texSize; y++)
             {
                 int rowOffset = y * texSize;
@@ -100,15 +108,27 @@ namespace CAT.Utility.ShapeGenerator
                     float baseSDF = RoundedPolygonSDF(point, vertices, _settings.CornerRadius);
 
                     float outerSDF = baseSDF - outerWidthPx;
-                    float innerSDF = baseSDF + innerWidthPx;
-
                     float outerAlpha = CalculateAntiAliasedAlpha(outerSDF);
-                    float innerAlpha = CalculateAntiAliasedAlpha(-innerSDF);
-                    float alpha = Mathf.Min(outerAlpha, innerAlpha);
 
-                    if (alpha > 0f)
+                    if (outerAlpha <= 0f) continue;
+
+                    float fillSDF = baseSDF + innerWidthPx;
+                    float fillAlpha = CalculateAntiAliasedAlpha(fillSDF);
+
+                    byte a = AlphaToByte(outerAlpha);
+
+                    if (fillAlpha >= 1f)
                     {
-                        pixels[rowOffset + x] = new Color32(255, 255, 255, AlphaToByte(alpha));
+                        pixels[rowOffset + x] = new Color32(255, 255, 255, a);
+                    }
+                    else if (fillAlpha <= 0f)
+                    {
+                        pixels[rowOffset + x] = new Color32(outlineGrayByte, outlineGrayByte, outlineGrayByte, a);
+                    }
+                    else
+                    {
+                        byte blended = (byte)(outlineGrayByte + (255 - outlineGrayByte) * fillAlpha + 0.5f);
+                        pixels[rowOffset + x] = new Color32(blended, blended, blended, a);
                     }
                 }
             }

@@ -5,50 +5,42 @@ namespace CAT.Utility.ShapeGenerator
 {
     /// <summary>
     /// 원 외곽선(Circle Outline) 생성기
-    /// Round, Width 값을 기반으로 외곽선만 있는 원 텍스처 생성
-    /// 외곽선은 원 경계의 중앙을 기준으로 Inner/Outer 동일 비율로 확장
     /// </summary>
     public class CircleOutlineGenerator : BaseShapeGenerator
     {
-        private int _round = 10;
-        private int _width = 2;
+        private readonly CircleSettings _settings;
 
         public override string ShapeName => "Circle Outline";
 
-        public int Round
-        {
-            get => _round;
-            set => _round = Mathf.Clamp(value, 1, 256);
-        }
+        public CircleOutlineGenerator() : this(new CircleSettings()) { }
 
-        public int Width
+        public CircleOutlineGenerator(CircleSettings settings)
         {
-            get => _width;
-            set => _width = Mathf.Clamp(value, 1, _round * 2);
+            _settings = settings;
         }
 
         public override void DrawSettingsGUI()
         {
-            _round = EditorGUILayout.IntSlider(
-                new GUIContent("Round", "원의 반지름 (텍스처 크기 = Round * 2)"),
-                _round, 1, 256);
+            _settings.Round = EditorGUILayout.IntSlider(
+                new GUIContent("Round", "원의 반지름"),
+                _settings.Round, 1, 256);
 
-            int maxWidth = Mathf.Max(1, _round * 2);
-            _width = EditorGUILayout.IntSlider(
+            int maxWidth = Mathf.Max(1, _settings.Round * 2);
+            _settings.Width = EditorGUILayout.IntSlider(
                 new GUIContent("Width", "외곽선 두께"),
-                _width, 1, maxWidth);
+                _settings.Width, 1, maxWidth);
         }
 
         public override Vector2Int GetTextureSize()
         {
-            int outerWidth = _width - (_width / 2);
-            int size = (_round + outerWidth) * 2;
+            int outerWidth = _settings.Width - (_settings.Width / 2);
+            int size = (_settings.Round + outerWidth) * 2;
             return new Vector2Int(size, size);
         }
 
         public override string GetFileName()
         {
-            return $"Circle_R{_round}_Out{_width}.png";
+            return $"Circle_R{_settings.Round}_Out{_settings.Width}.png";
         }
 
         public override Vector4 GetSpriteBorder()
@@ -60,14 +52,14 @@ namespace CAT.Utility.ShapeGenerator
 
         public override Texture2D Generate()
         {
-            int innerWidthPx = _width / 2;
-            int outerWidthPx = _width - innerWidthPx;
+            int innerWidthPx = _settings.Width / 2;
+            int outerWidthPx = _settings.Width - innerWidthPx;
 
-            int size = (_round + outerWidthPx) * 2;
+            int size = (_settings.Round + outerWidthPx) * 2;
             var (texture, pixels) = CreateTextureWithPixels(size, size);
 
             float center = size * 0.5f - 0.5f;
-            float baseRadius = _round;
+            float baseRadius = _settings.Round;
             float outerRadius = baseRadius + outerWidthPx;
             float innerRadius = baseRadius - innerWidthPx;
 

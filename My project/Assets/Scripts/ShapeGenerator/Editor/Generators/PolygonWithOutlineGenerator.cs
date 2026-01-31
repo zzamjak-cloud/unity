@@ -9,74 +9,76 @@ namespace CAT.Utility.ShapeGenerator
     /// </summary>
     public class PolygonWithOutlineGenerator : BaseShapeGenerator
     {
-        private int _size = 20;
-        private int _sides = 6;
-        private int _outlineWidth = 2;
-        private int _cornerRadius = 0;
-        private float _rotation = 0f;
-        private float _outlineGray = 0.5f;
+        private readonly PolygonSettings _settings;
 
         public override string ShapeName => "Polygon + Outline";
 
+        public PolygonWithOutlineGenerator() : this(new PolygonSettings()) { }
+
+        public PolygonWithOutlineGenerator(PolygonSettings settings)
+        {
+            _settings = settings;
+        }
+
         public override void DrawSettingsGUI()
         {
-            _size = EditorGUILayout.IntSlider(
+            _settings.Size = EditorGUILayout.IntSlider(
                 new GUIContent("Size", "다각형 크기"),
-                _size, 4, 256);
+                _settings.Size, 4, 256);
 
-            _sides = EditorGUILayout.IntSlider(
+            _settings.Sides = EditorGUILayout.IntSlider(
                 new GUIContent("Sides", "변의 개수 (3~12)"),
-                _sides, 3, 12);
+                _settings.Sides, 3, 12);
 
-            int maxWidth = _size / 2;
-            _outlineWidth = EditorGUILayout.IntSlider(
-                new GUIContent("Outline Width", "외곽선 두께 (Inner/Outer 동일 비율)"),
-                _outlineWidth, 1, maxWidth);
+            int maxWidth = _settings.Size / 2;
+            _settings.OutlineWidth = EditorGUILayout.IntSlider(
+                new GUIContent("Outline Width", "외곽선 두께"),
+                _settings.OutlineWidth, 1, maxWidth);
 
-            _outlineGray = EditorGUILayout.Slider(
+            _settings.OutlineGray = EditorGUILayout.Slider(
                 new GUIContent("Outline Gray", "외곽선 그레이스케일 (0=검정, 1=흰색)"),
-                _outlineGray, 0f, 1f);
+                _settings.OutlineGray, 0f, 1f);
 
-            int maxRadius = _size / 4;
-            _cornerRadius = EditorGUILayout.IntSlider(
+            int maxRadius = _settings.Size / 4;
+            _settings.CornerRadius = EditorGUILayout.IntSlider(
                 new GUIContent("Corner Radius", "모서리 둥글기"),
-                _cornerRadius, 0, maxRadius);
+                _settings.CornerRadius, 0, maxRadius);
 
-            _rotation = EditorGUILayout.Slider(
+            _settings.Rotation = EditorGUILayout.Slider(
                 new GUIContent("Rotation", "회전 각도"),
-                _rotation, 0f, 360f);
+                _settings.Rotation, 0f, 360f);
         }
 
         public override Vector2Int GetTextureSize()
         {
-            int outerWidth = _outlineWidth - (_outlineWidth / 2);
-            int size = _size + outerWidth * 2;
+            int outerWidth = _settings.OutlineWidth - (_settings.OutlineWidth / 2);
+            int size = _settings.Size + outerWidth * 2;
             return new Vector2Int(size, size);
         }
 
         public override string GetFileName()
         {
-            int grayInt = Mathf.RoundToInt(_outlineGray * 100);
-            string rotStr = _rotation > 0 ? $"_Rot{Mathf.RoundToInt(_rotation)}" : "";
-            return $"Polygon{_sides}_S{_size}_OutF{_outlineWidth}_G{grayInt}_R{_cornerRadius}{rotStr}.png";
+            int grayInt = Mathf.RoundToInt(_settings.OutlineGray * 100);
+            string rotStr = _settings.Rotation > 0 ? $"_Rot{Mathf.RoundToInt(_settings.Rotation)}" : "";
+            return $"Polygon{_settings.Sides}_S{_settings.Size}_OutF{_settings.OutlineWidth}_G{grayInt}_R{_settings.CornerRadius}{rotStr}.png";
         }
 
         public override Texture2D Generate()
         {
-            int innerWidthPx = _outlineWidth / 2;
-            int outerWidthPx = _outlineWidth - innerWidthPx;
+            int innerWidthPx = _settings.OutlineWidth / 2;
+            int outerWidthPx = _settings.OutlineWidth - innerWidthPx;
 
-            int texSize = _size + outerWidthPx * 2;
+            int texSize = _settings.Size + outerWidthPx * 2;
             var (texture, pixels) = CreateTextureWithPixels(texSize, texSize);
 
             float center = texSize * 0.5f;
-            float radius = _size * 0.45f;
+            float radius = _settings.Size * 0.45f;
 
-            Vector2[] vertices = new Vector2[_sides];
-            float angleStep = 360f / _sides;
-            float startAngle = -90f + _rotation;
+            Vector2[] vertices = new Vector2[_settings.Sides];
+            float angleStep = 360f / _settings.Sides;
+            float startAngle = -90f + _settings.Rotation;
 
-            for (int i = 0; i < _sides; i++)
+            for (int i = 0; i < _settings.Sides; i++)
             {
                 float angle = (startAngle + angleStep * i) * Mathf.Deg2Rad;
                 vertices[i] = new Vector2(
@@ -85,7 +87,7 @@ namespace CAT.Utility.ShapeGenerator
                 );
             }
 
-            byte outlineGrayByte = (byte)(_outlineGray * 255f + 0.5f);
+            byte outlineGrayByte = (byte)(_settings.OutlineGray * 255f + 0.5f);
 
             for (int y = 0; y < texSize; y++)
             {
@@ -95,7 +97,7 @@ namespace CAT.Utility.ShapeGenerator
                 for (int x = 0; x < texSize; x++)
                 {
                     Vector2 point = new Vector2(x + 0.5f, py);
-                    float baseSDF = RoundedPolygonSDF(point, vertices, _cornerRadius);
+                    float baseSDF = RoundedPolygonSDF(point, vertices, _settings.CornerRadius);
 
                     float outerSDF = baseSDF - outerWidthPx;
                     float outerAlpha = CalculateAntiAliasedAlpha(outerSDF);
