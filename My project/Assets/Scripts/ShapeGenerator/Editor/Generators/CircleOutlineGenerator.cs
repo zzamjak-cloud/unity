@@ -35,12 +35,8 @@ namespace CAT.Utility.ShapeGenerator
 
             int maxWidth = Mathf.Max(1, _round * 2);
             _width = EditorGUILayout.IntSlider(
-                new GUIContent("Width", "외곽선 두께 (Inner/Outer 동일 비율)"),
+                new GUIContent("Width", "외곽선 두께"),
                 _width, 1, maxWidth);
-
-            int innerWidth = _width / 2;
-            int outerWidth = _width - innerWidth;
-            EditorGUILayout.HelpBox($"Inner: {innerWidth}, Outer: {outerWidth}", MessageType.None);
         }
 
         public override Vector2Int GetTextureSize()

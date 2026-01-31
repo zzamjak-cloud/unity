@@ -29,10 +29,6 @@ namespace CAT.Utility.ShapeGenerator
             _outlineGray = EditorGUILayout.Slider(
                 new GUIContent("Outline Gray", "외곽선 그레이스케일 (0=검정, 1=흰색)"),
                 _outlineGray, 0f, 1f);
-
-            int innerWidth = _outlineWidth / 2;
-            int outerWidth = _outlineWidth - innerWidth;
-            EditorGUILayout.HelpBox($"Inner: {innerWidth}, Outer: {outerWidth}", MessageType.None);
         }
 
         public override Vector2Int GetTextureSize()

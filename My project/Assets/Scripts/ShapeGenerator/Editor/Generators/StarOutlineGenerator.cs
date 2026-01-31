@@ -44,10 +44,6 @@ namespace CAT.Utility.ShapeGenerator
             _rotation = EditorGUILayout.Slider(
                 new GUIContent("Rotation", "회전 각도"),
                 _rotation, 0f, 360f);
-
-            int innerWidth = _outlineWidth / 2;
-            int outerWidth = _outlineWidth - innerWidth;
-            EditorGUILayout.HelpBox($"Inner: {innerWidth}, Outer: {outerWidth}", MessageType.None);
         }
 
         public override Vector2Int GetTextureSize()
