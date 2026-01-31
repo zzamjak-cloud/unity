@@ -8,7 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-Unity 2D 게임 프로젝트로, URP(Universal Render Pipeline)를 사용합니다. UI 중심의 프로젝트이며, 다양한 시각 효과와 애니메이션 기능을 포함합니다.
+**모바일 게임** Unity 2D 프로젝트로, URP(Universal Render Pipeline)를 사용합니다. UI 중심의 프로젝트이며, 다양한 시각 효과와 애니메이션 기능을 포함합니다.
+
+> ⚠️ **중요**: 이 프로젝트의 모든 스크립트는 **모바일 게임 최적화**를 최우선으로 고려하여 작성되어야 합니다.
 
 ## 주요 의존성
 
@@ -102,6 +104,57 @@ Unity 2D 게임 프로젝트로, URP(Universal Render Pipeline)를 사용합니�
 3. **커스텀 에디터 제공**: 복잡한 컴포넌트는 반드시 커스텀 에디터 작성 (Gizmo 시각화, 인스펙터 개선)
 4. **성능 최적화**: Transform 캐싱, Dictionary 사전 할당, 불필요한 연산 최소화
 
+### 🔴 모바일 최적화 필수 가이드라인
+
+**이 프로젝트의 모든 스크립트 작성 시 반드시 준수해야 합니다.**
+
+#### C# 스크립트 최적화
+
+1. **메모리 할당 최소화**
+   - Update/LateUpdate에서 `new` 키워드 사용 금지
+   - 문자열 연결 시 `StringBuilder` 사용
+   - LINQ 사용 자제 (GC 발생)
+   - 컬렉션은 미리 할당하고 재사용
+
+2. **캐싱 필수**
+   - `GetComponent<T>()` 결과는 반드시 캐싱
+   - `Shader.PropertyToID()` 결과는 static readonly로 캐싱
+   - Transform, GameObject 참조는 Awake/Start에서 캐싱
+
+3. **Draw Call 최적화**
+   - Material 인스턴스 생성 최소화 (같은 설정은 공유)
+   - SpriteRenderer: `MaterialPropertyBlock` 활용하여 배칭 유지
+   - UI: 같은 설정의 컴포넌트끼리 Material 공유
+
+4. **Update 최적화**
+   - 매 프레임 불필요한 연산 금지
+   - 이벤트 기반 또는 코루틴 활용
+   - `Time.frameCount % N` 으로 분산 처리 고려
+
+#### 셰이더 최적화
+
+1. **Precision**
+   - 모바일에서는 `half` (16bit) 우선 사용
+   - `float`는 위치/UV 계산에만 사용
+
+2. **분기문 회피**
+   - `if` 대신 `step()`, `lerp()` 등 수학 함수 사용
+   - GPU 분기는 성능에 큰 영향
+
+3. **코드 구조**
+   - 공통 함수는 `CGINCLUDE`로 분리하여 중복 제거
+   - `[PerRendererData]` 활용하여 PropertyBlock 지원
+
+4. **텍스처 샘플링**
+   - 불필요한 텍스처 샘플링 최소화
+   - 가능하면 버텍스 셰이더에서 계산 후 전달
+
+#### 참고 예시: ColorReplace 컴포넌트
+`Assets/Scripts/ColorReplace/` 디렉토리의 구현을 참고하세요.
+- SpriteRenderer: 텍스처 기반 Material 공유 + PropertyBlock으로 개별 값
+- UI: 텍스처 + 설정값 해시 기반 Material 캐싱
+- 셰이더: half precision, 분기 없는 수학 연산
+
 ### DOTween 사용 시 주의사항
 
 - DOTween은 `Assets/Plugins/Demigiant/DOTween/`에 DLL로 설치됨
@@ -142,3 +195,54 @@ Unity Editor: `File > Build Settings > Build`
 
 ### 테스트
 Unity Test Runner: `Window > General > Test Runner`
+
+## 알려진 이슈 및 해결 방법
+
+### DontSaveInEditor Assertion 오류
+
+**오류 메시지:**
+```
+Assertion failed on expression: '!(o->TestHideFlag(Object::kDontSaveInEditor) && (options & kAllowDontSaveObjectsToBePersistent) == 0)'
+UnityEngine.GUIUtility:ProcessEvent (int,intptr,bool&)
+```
+
+**원인:**
+런타임에서 `new Material()`, `new Texture2D()` 등으로 생성한 오브젝트에 `HideFlags`가 설정되지 않아, 에디터가 해당 오브젝트를 직렬화/저장하려고 시도할 때 발생합니다.
+
+**해결 방법:**
+런타임에서 생성하는 모든 Unity 오브젝트(Material, Texture, Mesh 등)에 `HideFlags`를 설정합니다.
+
+```csharp
+// Material 생성 시
+Material mat = new Material(shader);
+mat.hideFlags = HideFlags.DontSave;  // 또는 HideFlags.HideAndDontSave
+
+// Texture 생성 시
+Texture2D tex = new Texture2D(width, height);
+tex.hideFlags = HideFlags.DontSave;
+
+// Mesh 생성 시
+Mesh mesh = new Mesh();
+mesh.hideFlags = HideFlags.DontSave;
+```
+
+**HideFlags 옵션:**
+| 플래그 | 설명 |
+|--------|------|
+| `HideFlags.DontSave` | 씬 저장 시 제외, 인스펙터에는 표시됨 |
+| `HideFlags.HideAndDontSave` | 저장 제외 + 인스펙터/하이어라키에서 숨김 |
+| `HideFlags.HideInInspector` | 인스펙터에서만 숨김 |
+
+**적용 예시 (ColorReplace.cs):**
+```csharp
+currentMaterial = new Material(shader)
+{
+    name = $"{SHADER_NAME} (Shared)",
+    hideFlags = HideFlags.DontSave  // 이 줄 추가
+};
+```
+
+**주의사항:**
+- 캐시된 Material도 `HideFlags` 설정 필요
+- `OnDestroy()`에서 `Destroy()` 호출 시에는 `HideFlags`와 관계없이 정상 파괴됨
+- 에디터 전용 오브젝트는 `HideFlags.HideAndDontSave` 권장
