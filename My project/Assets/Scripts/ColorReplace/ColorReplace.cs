@@ -137,7 +137,8 @@ namespace CAT.Effects
             {
                 currentMaterial = new Material(shader)
                 {
-                    name = $"{SHADER_NAME} (Sprite Shared)"
+                    name = $"{SHADER_NAME} (Sprite Shared)",
+                    hideFlags = HideFlags.DontSave // 에디터 직렬화 오류 방지
                 };
                 if (texture != null)
                 {
@@ -172,7 +173,8 @@ namespace CAT.Effects
             {
                 currentMaterial = new Material(shader)
                 {
-                    name = $"{SHADER_NAME} (UI Shared)"
+                    name = $"{SHADER_NAME} (UI Shared)",
+                    hideFlags = HideFlags.DontSave // 에디터 직렬화 오류 방지
                 };
                 if (texture != null)
                 {
@@ -285,7 +287,8 @@ namespace CAT.Effects
 
                     currentMaterial = new Material(shader)
                     {
-                        name = $"{SHADER_NAME} (UI Shared)"
+                        name = $"{SHADER_NAME} (UI Shared)",
+                        hideFlags = HideFlags.DontSave // 에디터 직렬화 오류 방지
                     };
                     Texture texture = GetUITexture();
                     if (texture != null)
