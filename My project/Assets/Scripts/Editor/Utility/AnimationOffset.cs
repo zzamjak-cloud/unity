@@ -224,19 +224,37 @@ namespace CAT.Utility
 
             string selectedObjectPath = AnimationUtility.CalculateTransformPath(selectedObject.transform, rootObject.transform);
             float clipDuration = sourceClip.length;
-            
+
+            // RectTransform인지 확인
+            RectTransform rectTransform = selectedObject.GetComponent<RectTransform>();
+            bool isRectTransform = rectTransform != null;
+
             Undo.RecordObject(sourceClip, "Add Transform Keys");
-            
+
             bool anyKeyAdded = false;
             string addedProperties = "";
 
             // Position 키 추가
             if ((propertyTypes & PropertyType.Position) != 0)
             {
-                if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalPosition", selectedObject.transform.localPosition, clipDuration))
+                if (isRectTransform)
                 {
-                    anyKeyAdded = true;
-                    addedProperties += "Position ";
+                    // RectTransform: m_AnchoredPosition.x/y 사용
+                    Vector2 anchoredPosition = rectTransform.anchoredPosition;
+                    if (AddRectTransformPositionKeys(sourceClip, selectedObjectPath, anchoredPosition, clipDuration))
+                    {
+                        anyKeyAdded = true;
+                        addedProperties += "Position ";
+                    }
+                }
+                else
+                {
+                    // Transform: m_LocalPosition.x/y/z 사용
+                    if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalPosition", selectedObject.transform.localPosition, clipDuration, typeof(Transform)))
+                    {
+                        anyKeyAdded = true;
+                        addedProperties += "Position ";
+                    }
                 }
             }
 
@@ -245,33 +263,49 @@ namespace CAT.Utility
             {
                 // 1. 먼저 기존 애니메이션 클립에서 사용 중인 rotation 속성을 확인
                 string rotationPropertyType = DetectRotationPropertyType(sourceClip, selectedObjectPath);
-                
+
                 // 2. 감지된 속성 타입에 맞춰 키 추가
                 if (rotationPropertyType == "quaternion")
                 {
                     // Quaternion 형식으로 키 추가
                     Quaternion rotation = selectedObject.transform.localRotation;
-                    if (AddQuaternionKeys(sourceClip, selectedObjectPath, rotation, clipDuration))
+                    if (AddQuaternionKeys(sourceClip, selectedObjectPath, rotation, clipDuration, isRectTransform))
                     {
                         anyKeyAdded = true;
                         addedProperties += "Rotation ";
                         // Rotation 프로퍼티 초기화 (Z 값 변경 후 복원)
-                        InitializeRotationProperty(sourceClip, selectedObjectPath, selectedObject.transform.localEulerAngles.z);
+                        InitializeRotationProperty(sourceClip, selectedObjectPath, selectedObject.transform.localEulerAngles.z, isRectTransform);
                     }
                     // Euler 형식 제거
-                    RemoveEulerRotationCurves(sourceClip, selectedObjectPath);
+                    RemoveEulerRotationCurves(sourceClip, selectedObjectPath, isRectTransform);
                 }
                 else
                 {
                     // Euler 방식 사용
-                    RemoveQuaternionRotationCurves(sourceClip, selectedObjectPath);
+                    RemoveQuaternionRotationCurves(sourceClip, selectedObjectPath, isRectTransform);
                     Vector3 eulerAngles = selectedObject.transform.localEulerAngles;
-                    if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalEulerAngles", eulerAngles, clipDuration))
+
+                    if (isRectTransform)
                     {
-                        anyKeyAdded = true;
-                        addedProperties += "Rotation ";
-                        // Rotation 프로퍼티 초기화 (Z 값 변경 후 복원)
-                        InitializeRotationProperty(sourceClip, selectedObjectPath, eulerAngles.z);
+                        // RectTransform: localEulerAnglesRaw.z 사용
+                        if (AddRectTransformRotationKeys(sourceClip, selectedObjectPath, eulerAngles.z, clipDuration))
+                        {
+                            anyKeyAdded = true;
+                            addedProperties += "Rotation ";
+                            // Rotation 프로퍼티 초기화 (Z 값 변경 후 복원)
+                            InitializeRotationProperty(sourceClip, selectedObjectPath, eulerAngles.z, isRectTransform);
+                        }
+                    }
+                    else
+                    {
+                        // Transform: m_LocalEulerAngles.x/y/z 사용
+                        if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalEulerAngles", eulerAngles, clipDuration, typeof(Transform)))
+                        {
+                            anyKeyAdded = true;
+                            addedProperties += "Rotation ";
+                            // Rotation 프로퍼티 초기화 (Z 값 변경 후 복원)
+                            InitializeRotationProperty(sourceClip, selectedObjectPath, eulerAngles.z, isRectTransform);
+                        }
                     }
                 }
             }
@@ -279,7 +313,8 @@ namespace CAT.Utility
             // Scale 키 추가
             if ((propertyTypes & PropertyType.Scale) != 0)
             {
-                if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalScale", selectedObject.transform.localScale, clipDuration))
+                System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
+                if (AddPropertyKeys(sourceClip, selectedObjectPath, "m_LocalScale", selectedObject.transform.localScale, clipDuration, bindingType))
                 {
                     anyKeyAdded = true;
                     addedProperties += "Scale ";
@@ -304,19 +339,20 @@ namespace CAT.Utility
         private static string DetectRotationPropertyType(AnimationClip clip, string objectPath)
         {
             EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(clip);
-            
+
             foreach (var binding in bindings)
             {
                 if (binding.path == objectPath)
                 {
                     if (binding.propertyName.Contains("m_LocalRotation"))
                         return "quaternion";
-                    if (binding.propertyName.Contains("localEulerAngles") || 
-                        binding.propertyName.Contains("m_LocalEulerAngles"))
+                    if (binding.propertyName.Contains("localEulerAngles") ||
+                        binding.propertyName.Contains("m_LocalEulerAngles") ||
+                        binding.propertyName.Contains("localEulerAnglesRaw"))
                         return "euler";
                 }
             }
-            
+
             // 기본값은 euler
             return "euler";
         }
@@ -324,33 +360,34 @@ namespace CAT.Utility
         /// <summary>
         /// Quaternion 형식으로 회전 키를 추가합니다
         /// </summary>
-        private static bool AddQuaternionKeys(AnimationClip clip, string objectPath, Quaternion rotation, float duration)
+        private static bool AddQuaternionKeys(AnimationClip clip, string objectPath, Quaternion rotation, float duration, bool isRectTransform)
         {
             try
             {
                 string[] components = { ".x", ".y", ".z", ".w" };
                 float[] values = { rotation.x, rotation.y, rotation.z, rotation.w };
-                
+                System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
+
                 for (int i = 0; i < 4; i++)
                 {
                     string fullPropertyName = "m_LocalRotation" + components[i];
-                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), fullPropertyName);
-                    
+                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, fullPropertyName);
+
                     AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                     if (curve == null)
                     {
                         curve = new AnimationCurve();
                     }
-                    
+
                     // 0프레임에 키 추가
                     curve.AddKey(0f, values[i]);
-                    
+
                     // 마지막 프레임에 키 추가
                     if (duration > 0f)
                     {
                         curve.AddKey(duration, values[i]);
                     }
-                    
+
                     AnimationUtility.SetEditorCurve(clip, binding, curve);
                 }
                 return true;
@@ -365,15 +402,16 @@ namespace CAT.Utility
         /// <summary>
         /// Quaternion 기반의 m_LocalRotation 커브를 제거합니다. (Euler 각도 방식과의 중복 방지)
         /// </summary>
-        private static void RemoveQuaternionRotationCurves(AnimationClip clip, string objectPath)
+        private static void RemoveQuaternionRotationCurves(AnimationClip clip, string objectPath, bool isRectTransform)
         {
             try
             {
+                System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
                 // Quaternion의 x, y, z, w 컴포넌트를 모두 제거
                 string[] quaternionComponents = { ".x", ".y", ".z", ".w" };
                 foreach (string component in quaternionComponents)
                 {
-                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalRotation" + component);
+                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalRotation" + component);
                     AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                     if (curve != null)
                     {
@@ -388,21 +426,36 @@ namespace CAT.Utility
         }
 
         /// <summary>
-        /// Euler 기반의 m_LocalEulerAngles 커브를 제거합니다. (Quaternion 방식과의 중복 방지)
+        /// Euler 기반의 m_LocalEulerAngles 또는 localEulerAnglesRaw 커브를 제거합니다. (Quaternion 방식과의 중복 방지)
         /// </summary>
-        private static void RemoveEulerRotationCurves(AnimationClip clip, string objectPath)
+        private static void RemoveEulerRotationCurves(AnimationClip clip, string objectPath, bool isRectTransform)
         {
             try
             {
-                // Euler의 x, y, z 컴포넌트를 모두 제거
-                string[] eulerComponents = { ".x", ".y", ".z" };
-                foreach (string component in eulerComponents)
+                System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
+
+                if (isRectTransform)
                 {
-                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalEulerAngles" + component);
+                    // RectTransform: localEulerAnglesRaw.z 제거
+                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "localEulerAnglesRaw.z");
                     AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                     if (curve != null)
                     {
                         AnimationUtility.SetEditorCurve(clip, binding, null);
+                    }
+                }
+                else
+                {
+                    // Transform: m_LocalEulerAngles.x/y/z 제거
+                    string[] eulerComponents = { ".x", ".y", ".z" };
+                    foreach (string component in eulerComponents)
+                    {
+                        EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalEulerAngles" + component);
+                        AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                        if (curve != null)
+                        {
+                            AnimationUtility.SetEditorCurve(clip, binding, null);
+                        }
                     }
                 }
             }
@@ -415,34 +468,34 @@ namespace CAT.Utility
         /// <summary>
         /// 선택된 GameObject의 Transform 속성에 대한 키를 추가합니다.
         /// </summary>
-        private static bool AddPropertyKeys(AnimationClip clip, string objectPath, string propertyName, Vector3 value, float duration)
+        private static bool AddPropertyKeys(AnimationClip clip, string objectPath, string propertyName, Vector3 value, float duration, System.Type bindingType)
         {
             try
             {
                 // X, Y, Z 각각에 대해 키 추가
                 string[] components = { ".x", ".y", ".z" };
                 float[] values = { value.x, value.y, value.z };
-                
+
                 for (int i = 0; i < 3; i++)
                 {
                     string fullPropertyName = propertyName + components[i];
-                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), fullPropertyName);
-                    
+                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, fullPropertyName);
+
                     AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                     if (curve == null)
                     {
                         curve = new AnimationCurve();
                     }
-                    
+
                     // 0프레임에 키 추가
                     curve.AddKey(0f, values[i]);
-                    
+
                     // 마지막 프레임에 키 추가 (시작과 다를 때만)
                     if (duration > 0f)
                     {
                         curve.AddKey(duration, values[i]);
                     }
-                    
+
                     AnimationUtility.SetEditorCurve(clip, binding, curve);
                 }
                 return true;
@@ -455,24 +508,103 @@ namespace CAT.Utility
         }
 
         /// <summary>
-        /// Rotation 프로퍼티를 초기화합니다. 0프레임 Z 값에 +0.1을 적용한 후 원래 값으로 복원합니다.
+        /// RectTransform의 Position 키를 추가합니다 (m_AnchoredPosition.x/y)
         /// </summary>
-        private static void InitializeRotationProperty(AnimationClip clip, string objectPath, float originalZValue)
+        private static bool AddRectTransformPositionKeys(AnimationClip clip, string objectPath, Vector2 anchoredPosition, float duration)
         {
             try
             {
+                string[] components = { ".x", ".y" };
+                float[] values = { anchoredPosition.x, anchoredPosition.y };
+
+                for (int i = 0; i < 2; i++)
+                {
+                    string fullPropertyName = "m_AnchoredPosition" + components[i];
+                    EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(RectTransform), fullPropertyName);
+
+                    AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                    if (curve == null)
+                    {
+                        curve = new AnimationCurve();
+                    }
+
+                    // 0프레임에 키 추가
+                    curve.AddKey(0f, values[i]);
+
+                    // 마지막 프레임에 키 추가
+                    if (duration > 0f)
+                    {
+                        curve.AddKey(duration, values[i]);
+                    }
+
+                    AnimationUtility.SetEditorCurve(clip, binding, curve);
+                }
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to add RectTransform position keys: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// RectTransform의 Rotation 키를 추가합니다 (localEulerAnglesRaw.z)
+        /// </summary>
+        private static bool AddRectTransformRotationKeys(AnimationClip clip, string objectPath, float rotationZ, float duration)
+        {
+            try
+            {
+                string fullPropertyName = "localEulerAnglesRaw.z";
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(RectTransform), fullPropertyName);
+
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (curve == null)
+                {
+                    curve = new AnimationCurve();
+                }
+
+                // 0프레임에 키 추가
+                curve.AddKey(0f, rotationZ);
+
+                // 마지막 프레임에 키 추가
+                if (duration > 0f)
+                {
+                    curve.AddKey(duration, rotationZ);
+                }
+
+                AnimationUtility.SetEditorCurve(clip, binding, curve);
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to add RectTransform rotation keys: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Rotation 프로퍼티를 초기화합니다. 0프레임 Z 값에 +0.1을 적용한 후 원래 값으로 복원합니다.
+        /// </summary>
+        private static void InitializeRotationProperty(AnimationClip clip, string objectPath, float originalZValue, bool isRectTransform)
+        {
+            try
+            {
+                System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
+
                 // 먼저 Euler 각도 Z 값 커브를 확인
-                EditorCurveBinding eulerBinding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalEulerAngles.z");
+                string eulerPropertyName = isRectTransform ? "localEulerAnglesRaw.z" : "m_LocalEulerAngles.z";
+                EditorCurveBinding eulerBinding = EditorCurveBinding.FloatCurve(objectPath, bindingType, eulerPropertyName);
                 AnimationCurve eulerCurve = AnimationUtility.GetEditorCurve(clip, eulerBinding);
-                
+
                 // Quaternion 방식인지 확인 (m_LocalRotation 커브 존재 여부)
-                EditorCurveBinding quatBinding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalRotation.x");
+                EditorCurveBinding quatBinding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalRotation.x");
                 AnimationCurve quatCurve = AnimationUtility.GetEditorCurve(clip, quatBinding);
-                
+
                 if (quatCurve != null && quatCurve.keys.Length > 0)
                 {
                     // Quaternion 방식: Quaternion에서 Euler Z 값을 계산하여 초기화
-                    InitializeQuaternionRotationProperty(clip, objectPath, originalZValue);
+                    InitializeQuaternionRotationProperty(clip, objectPath, originalZValue, isRectTransform);
                 }
                 else if (eulerCurve != null && eulerCurve.keys.Length > 0)
                 {
@@ -526,18 +658,20 @@ namespace CAT.Utility
         /// <summary>
         /// Quaternion 방식 Rotation 프로퍼티를 초기화합니다.
         /// </summary>
-        private static void InitializeQuaternionRotationProperty(AnimationClip clip, string objectPath, float originalZValue)
+        private static void InitializeQuaternionRotationProperty(AnimationClip clip, string objectPath, float originalZValue, bool isRectTransform)
         {
+            System.Type bindingType = isRectTransform ? typeof(RectTransform) : typeof(Transform);
+
             // Quaternion의 x, y, z, w 값을 가져와서 Euler Z로 변환
             string[] quatComponents = { ".x", ".y", ".z", ".w" };
             float[] quatValues = new float[4];
-            
+
             for (int i = 0; i < 4; i++)
             {
-                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalRotation" + quatComponents[i]);
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalRotation" + quatComponents[i]);
                 AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                 if (curve == null || curve.keys.Length == 0) return;
-                
+
                 // 0프레임 키 찾기
                 int keyIndex = -1;
                 for (int j = 0; j < curve.keys.Length; j++)
@@ -549,26 +683,26 @@ namespace CAT.Utility
                     }
                 }
                 if (keyIndex == -1) return;
-                
+
                 quatValues[i] = curve.keys[keyIndex].value;
             }
-            
+
             // Quaternion에서 Euler Z 값 계산
             Quaternion quat = new Quaternion(quatValues[0], quatValues[1], quatValues[2], quatValues[3]);
             Vector3 euler = quat.eulerAngles;
-            
+
             // Euler Z 값을 +0.1 증가한 후 Quaternion으로 변환
             Vector3 modifiedEuler = new Vector3(euler.x, euler.y, euler.z + 0.1f);
             Quaternion modifiedQuat = Quaternion.Euler(modifiedEuler);
-            
+
             // Quaternion 값을 업데이트 (+0.1)
             float[] modifiedQuatValues = { modifiedQuat.x, modifiedQuat.y, modifiedQuat.z, modifiedQuat.w };
             for (int i = 0; i < 4; i++)
             {
-                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalRotation" + quatComponents[i]);
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalRotation" + quatComponents[i]);
                 AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                 if (curve == null) continue;
-                
+
                 int keyIndex = -1;
                 for (int j = 0; j < curve.keys.Length; j++)
                 {
@@ -579,23 +713,23 @@ namespace CAT.Utility
                     }
                 }
                 if (keyIndex == -1) continue;
-                
+
                 var key = curve.keys[keyIndex];
-                Keyframe newKey = new Keyframe(key.time, modifiedQuatValues[i], key.inTangent, key.outTangent, key.inWeight, key.outWeight) 
-                { 
-                    weightedMode = key.weightedMode 
+                Keyframe newKey = new Keyframe(key.time, modifiedQuatValues[i], key.inTangent, key.outTangent, key.inWeight, key.outWeight)
+                {
+                    weightedMode = key.weightedMode
                 };
                 curve.MoveKey(keyIndex, newKey);
                 AnimationUtility.SetEditorCurve(clip, binding, curve);
             }
-            
+
             // 원래 Quaternion 값으로 복원
             for (int i = 0; i < 4; i++)
             {
-                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, typeof(Transform), "m_LocalRotation" + quatComponents[i]);
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(objectPath, bindingType, "m_LocalRotation" + quatComponents[i]);
                 AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
                 if (curve == null) continue;
-                
+
                 int keyIndex = -1;
                 for (int j = 0; j < curve.keys.Length; j++)
                 {
@@ -606,11 +740,11 @@ namespace CAT.Utility
                     }
                 }
                 if (keyIndex == -1) continue;
-                
+
                 var key = curve.keys[keyIndex];
-                Keyframe restoredKey = new Keyframe(key.time, quatValues[i], key.inTangent, key.outTangent, key.inWeight, key.outWeight) 
-                { 
-                    weightedMode = key.weightedMode 
+                Keyframe restoredKey = new Keyframe(key.time, quatValues[i], key.inTangent, key.outTangent, key.inWeight, key.outWeight)
+                {
+                    weightedMode = key.weightedMode
                 };
                 curve.MoveKey(keyIndex, restoredKey);
                 AnimationUtility.SetEditorCurve(clip, binding, curve);
@@ -877,15 +1011,17 @@ namespace CAT.Utility
         {
             switch (type)
             {
-                case PropertyType.Position: 
-                    return propertyName.Contains("Position");
-                case PropertyType.Rotation: 
-                    return propertyName.Contains("Euler") || 
+                case PropertyType.Position:
+                    return propertyName.Contains("Position") ||
+                           propertyName.Contains("m_AnchoredPosition");
+                case PropertyType.Rotation:
+                    return propertyName.Contains("Euler") ||
                            propertyName.Contains("Rotation") ||
-                           propertyName.Contains("localEulerAngles");
-                case PropertyType.Scale: 
+                           propertyName.Contains("localEulerAngles") ||
+                           propertyName.Contains("localEulerAnglesRaw");
+                case PropertyType.Scale:
                     return propertyName.Contains("Scale");
-                default: 
+                default:
                     return false;
             }
         }
