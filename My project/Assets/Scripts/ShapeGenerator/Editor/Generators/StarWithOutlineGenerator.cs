@@ -83,7 +83,7 @@ namespace CAT.Utility.ShapeGenerator
             int vertexCount = _settings.Points * 2;
             Vector2[] vertices = new Vector2[vertexCount];
             float angleStep = 360f / vertexCount;
-            float startAngle = -90f + _settings.Rotation;
+            float startAngle = 90f + _settings.Rotation; // 군인 계급 별 모양 (위를 향함)
 
             for (int i = 0; i < vertexCount; i++)
             {
@@ -105,7 +105,8 @@ namespace CAT.Utility.ShapeGenerator
                 for (int x = 0; x < texSize; x++)
                 {
                     Vector2 point = new Vector2(x + 0.5f, py);
-                    float baseSDF = RoundedPolygonSDF(point, vertices, _settings.CornerRadius);
+                    // Corner Radius는 외부 정점에만 적용하여 Inner Ratio와 독립적으로 동작
+                    float baseSDF = RoundedStarSDF(point, vertices, _settings.CornerRadius);
 
                     float outerSDF = baseSDF - outerWidthPx;
                     float outerAlpha = CalculateAntiAliasedAlpha(outerSDF);
@@ -135,6 +136,73 @@ namespace CAT.Utility.ShapeGenerator
 
             ApplyPixels(texture, pixels);
             return texture;
+        }
+
+        /// <summary>
+        /// 별 모양 전용 SDF: Corner Radius를 외부 정점에만 적용
+        /// </summary>
+        private float RoundedStarSDF(Vector2 point, Vector2[] vertices, float cornerRadius)
+        {
+            if (cornerRadius <= 0)
+                return PolygonSDF(point, vertices);
+
+            int n = vertices.Length;
+
+            // 외부 정점에만 Corner Radius 적용
+            Vector2[] cornerCenters = new Vector2[n];
+            for (int i = 0; i < n; i++)
+            {
+                // 외부 정점 (i % 2 == 0)에만 Corner Radius 적용
+                if (i % 2 == 0)
+                {
+                    int prevIdx = (i + n - 1) % n;
+                    int nextIdx = (i + 1) % n;
+
+                    Vector2 curr = vertices[i];
+                    float dirPrevX = vertices[prevIdx].x - curr.x;
+                    float dirPrevY = vertices[prevIdx].y - curr.y;
+                    float dirNextX = vertices[nextIdx].x - curr.x;
+                    float dirNextY = vertices[nextIdx].y - curr.y;
+
+                    // Normalize
+                    float lenPrev = Mathf.Sqrt(dirPrevX * dirPrevX + dirPrevY * dirPrevY);
+                    float lenNext = Mathf.Sqrt(dirNextX * dirNextX + dirNextY * dirNextY);
+
+                    if (lenPrev > 0.0001f) { dirPrevX /= lenPrev; dirPrevY /= lenPrev; }
+                    if (lenNext > 0.0001f) { dirNextX /= lenNext; dirNextY /= lenNext; }
+
+                    float bisectorX = dirPrevX + dirNextX;
+                    float bisectorY = dirPrevY + dirNextY;
+                    float lenBisector = Mathf.Sqrt(bisectorX * bisectorX + bisectorY * bisectorY);
+
+                    if (lenBisector > 0.0001f)
+                    {
+                        bisectorX /= lenBisector;
+                        bisectorY /= lenBisector;
+                    }
+
+                    float dot = dirPrevX * dirNextX + dirPrevY * dirNextY;
+                    float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f));
+                    float halfAngle = angle * 0.5f;
+
+                    if (halfAngle > 0.001f)
+                    {
+                        float insetDist = cornerRadius / Mathf.Sin(halfAngle);
+                        cornerCenters[i] = new Vector2(curr.x + bisectorX * insetDist, curr.y + bisectorY * insetDist);
+                    }
+                    else
+                    {
+                        cornerCenters[i] = curr;
+                    }
+                }
+                else
+                {
+                    // 내부 정점은 그대로 유지
+                    cornerCenters[i] = vertices[i];
+                }
+            }
+
+            return PolygonSDF(point, cornerCenters) - cornerRadius;
         }
     }
 }
