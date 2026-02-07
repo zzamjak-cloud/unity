@@ -18,11 +18,13 @@ namespace CAT.UI
     [AddComponentMenu("CAT/UI/SoftMask")]
     public class SoftMask : MonoBehaviour
     {
-        public const string VERSION = "1.0.0";
+        public const string VERSION = "1.1.0";
 
         public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
         public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
         private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
+        private static readonly string PARTICLE_SHADER_PREFIX = "CAT/Particles/";
+        private static readonly string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
 
         // 셰이더 직렬화 참조 (빌드에서 Shader.Find() 실패 방지)
         // 직렬화된 참조가 있으면 빌드에 셰이더가 자동 포함됨
@@ -137,6 +139,13 @@ namespace CAT.UI
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _tmpAppliedMaskMats =
             new Dictionary<UnityEngine.UI.Graphic, Material>(2);
 
+        // Particle (UIParticle) 전용 Material 리스트
+        private readonly List<Material> _particleMaskMaterials = new List<Material>(2);
+
+        // Particle Graphic → 적용 중인 마스크 Material 매핑
+        private readonly Dictionary<UnityEngine.UI.Graphic, Material> _particleAppliedMaskMats =
+            new Dictionary<UnityEngine.UI.Graphic, Material>(2);
+
         // GC 방지: 재사용 리스트
         private readonly List<UnityEngine.UI.Graphic> _toRemove = new List<UnityEngine.UI.Graphic>(4);
 
@@ -157,9 +166,8 @@ namespace CAT.UI
         [SerializeField, HideInInspector]
         private List<TMPOriginalEntry> _tmpOriginalBackup = new List<TMPOriginalEntry>(2);
 
-#if UNITY_EDITOR
+        // 자식 수 변경 감지 (에디터 + 플레이모드 공통)
         private int _lastChildCount;
-#endif
 
         // ─────────────────────────────────────────────
         // 생명주기
@@ -189,9 +197,7 @@ namespace CAT.UI
             // Stencil Material이 새로 생성된 후에도 프로퍼티 전파가 필요
             _stencilRefreshCountdown = 2;
 
-#if UNITY_EDITOR
             _lastChildCount = transform.childCount;
-#endif
         }
 
         private void Initialize()
@@ -216,8 +222,17 @@ namespace CAT.UI
         {
             if (!_initialized) return;
 
-            // TMP 외부 Material 변경 감지 (Material Preset 교체 등)
+            // TMP / Particle 외부 Material 변경 감지
             DetectTMPMaterialChanges();
+            DetectParticleMaterialChanges();
+
+            // 자식 수 변경 감지 (UIParticle 활성/비활성 시 새 자식 추가됨)
+            int currentChildCount = transform.childCount;
+            if (currentChildCount != _lastChildCount)
+            {
+                _lastChildCount = currentChildCount;
+                ApplyMaskToChildren();
+            }
 
             UpdateSharedMaterial();
 
@@ -537,7 +552,7 @@ namespace CAT.UI
         private void UpdateSharedMaterial()
         {
             if (_originalChildMaterials.Count == 0) return;
-            if (_sharedMaskMaterial == null && _tmpMaskMaterials.Count == 0) return;
+            if (_sharedMaskMaterial == null && _tmpMaskMaterials.Count == 0 && _particleMaskMaterials.Count == 0) return;
 
             bool anyChange = false;
 
@@ -617,10 +632,11 @@ namespace CAT.UI
                 }
             }
 
-            // TMP Material 및 Stencil Material에 마스크 프로퍼티 전파
+            // TMP, Particle, Stencil Material에 마스크 프로퍼티 전파
             if (anyChange || _materialDirty)
             {
                 UpdateTMPMaterials();
+                UpdateParticleMaterials();
                 PropagateToStencilMaterials();
             }
 
@@ -650,9 +666,9 @@ namespace CAT.UI
                 // 기본 Material 자체는 이미 업데이트됨 → 스킵
                 if (rendered == _sharedMaskMaterial) continue;
                 if (_tmpMaskMaterials.Contains(rendered)) continue;
+                if (_particleMaskMaterials.Contains(rendered)) continue;
 
-                // 셰이더 이름 기반으로 일반/TMP 프로퍼티 ID 결정
-                // (CopyPropertiesFromMaterial이 HasProperty에 영향을 줄 수 있으므로 셰이더 이름 사용)
+                // 셰이더 이름 기반으로 일반/TMP/Particle 프로퍼티 ID 결정
                 int pTex, pSoftness, pInvert, pWorldToUV, pUVRect;
                 int pTex2, pSoftness2, pInvert2, pWorldToUV2, pUVRect2;
 
@@ -668,6 +684,17 @@ namespace CAT.UI
                 else if (shaderName == SHADER_NAME)
                 {
                     // 일반 CAT/UI/SoftMask 셰이더
+                    pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
+                    pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
+                    pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
+                    pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
+                }
+                else if (shaderName.StartsWith(PARTICLE_SHADER_PREFIX))
+                {
+                    // CAT/Particles/* 셰이더 (표준 프로퍼티 이름 + _CAT_SOFTMASK 키워드)
+                    if (!rendered.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
+                        rendered.EnableKeyword(KEYWORD_CAT_SOFTMASK);
+
                     pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
                     pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
                     pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
@@ -719,6 +746,7 @@ namespace CAT.UI
             {
                 _originalChildMaterials.Remove(_toRemove[i]);
                 _tmpAppliedMaskMats.Remove(_toRemove[i]);
+                _particleAppliedMaskMats.Remove(_toRemove[i]);
             }
         }
 
@@ -805,6 +833,19 @@ namespace CAT.UI
                     }
                 }
 
+                // Particle (UIParticle) — 원본 셰이더 유지, _CAT_SOFTMASK 키워드 추가
+                if (IsParticleMaterial(originalMat))
+                {
+                    Material particleMat = CreateParticleMaskMaterial(originalMat);
+                    if (particleMat != null)
+                    {
+                        child.material = particleMat;
+                        _particleAppliedMaskMats[child] = particleMat;
+                        child.SetAllDirty();
+                        continue;
+                    }
+                }
+
                 child.material = mat;
                 child.SetAllDirty();
             }
@@ -851,6 +892,20 @@ namespace CAT.UI
             }
             _tmpMaskMaterials.Clear();
             _tmpAppliedMaskMats.Clear();
+
+            // Particle Material 파괴
+            for (int i = 0; i < _particleMaskMaterials.Count; i++)
+            {
+                if (_particleMaskMaterials[i] != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(_particleMaskMaterials[i]);
+                    else
+                        DestroyImmediate(_particleMaskMaterials[i]);
+                }
+            }
+            _particleMaskMaterials.Clear();
+            _particleAppliedMaskMats.Clear();
         }
 
         // ─────────────────────────────────────────────
@@ -1065,6 +1120,182 @@ namespace CAT.UI
                     Texture parentTex = _parentSoftMask.GetMaskTexture();
                     if (parentTex != null) tmpMat.SetTexture(PropTMPMaskTex2, parentTex);
                     tmpMat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────
+        // Particle (UIParticle) 지원
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Material이 CAT 파티클 셰이더를 사용하는지 판별
+        /// </summary>
+        private static bool IsParticleMaterial(Material mat)
+        {
+            return mat != null && mat.shader != null &&
+                   mat.shader.name.StartsWith(PARTICLE_SHADER_PREFIX);
+        }
+
+        /// <summary>
+        /// 파티클 전용 SoftMask Material 생성
+        /// 원본 Material을 복제하여 블렌드 모드/셰이더를 보존하고
+        /// _CAT_SOFTMASK 키워드를 활성화하여 마스크 샘플링 추가
+        /// </summary>
+        private Material CreateParticleMaskMaterial(Material originalMat)
+        {
+            Material mat = new Material(originalMat)
+            {
+                name = $"{originalMat.shader.name} (SoftMask: {gameObject.name})",
+                hideFlags = HideFlags.DontSave
+            };
+
+            mat.EnableKeyword(KEYWORD_CAT_SOFTMASK);
+
+            // 마스크 프로퍼티 설정 (표준 프로퍼티 이름)
+            Texture maskTex = GetMaskTexture();
+            if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
+            mat.SetMatrix(PropMaskWorldToUV, ComputeWorldToMaskUV());
+            mat.SetFloat(PropSoftness, _softness);
+            mat.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
+            mat.SetVector(PropMaskUVRect, GetMaskUVRect());
+
+            // 중첩 마스크 설정
+            if (_hasParentMask && _parentSoftMask != null)
+            {
+                mat.EnableKeyword(KEYWORD_NESTED);
+
+                Texture parentTex = _parentSoftMask.GetMaskTexture();
+                if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
+                mat.SetMatrix(PropMaskWorldToUV2, _parentSoftMask.ComputeWorldToMaskUV());
+                mat.SetFloat(PropSoftness2, _parentSoftMask._softness);
+                mat.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
+                mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+            }
+
+            _particleMaskMaterials.Add(mat);
+            return mat;
+        }
+
+        /// <summary>
+        /// 파티클 외부 Material 변경 감지 및 마스크 자동 재적용
+        /// UIParticleRenderer가 내부적으로 Material을 재할당한 경우
+        /// (비활성→활성 전환, RefreshParticles 등)
+        /// </summary>
+        private void DetectParticleMaterialChanges()
+        {
+            if (_particleAppliedMaskMats.Count == 0) return;
+
+            _toRemove.Clear();
+
+            foreach (var kvp in _particleAppliedMaskMats)
+            {
+                if (kvp.Key == null) { _toRemove.Add(kvp.Key); continue; }
+
+                Material currentMat = kvp.Key.material;
+
+                // 적용한 마스크 Material과 동일 → 변경 없음
+                if (currentMat == kvp.Value || currentMat == null) continue;
+
+                // Material이 외부에서 교체됨
+                _toRemove.Add(kvp.Key);
+            }
+
+            if (_toRemove.Count == 0) return;
+
+            for (int i = 0; i < _toRemove.Count; i++)
+            {
+                var child = _toRemove[i];
+
+                // null 오브젝트 정리
+                if (child == null)
+                {
+                    _particleAppliedMaskMats.Remove(child);
+                    _originalChildMaterials.Remove(child);
+                    continue;
+                }
+
+                // 기존 마스크 Material 정리
+                if (_particleAppliedMaskMats.TryGetValue(child, out Material oldMaskMat) && oldMaskMat != null)
+                {
+                    _particleMaskMaterials.Remove(oldMaskMat);
+                    if (Application.isPlaying) Destroy(oldMaskMat);
+                    else DestroyImmediate(oldMaskMat);
+                }
+
+                // 새 Material 가져오기
+                Material userMat = child.material;
+
+                if (userMat == null)
+                {
+                    _particleAppliedMaskMats.Remove(child);
+                    _originalChildMaterials.Remove(child);
+                    continue;
+                }
+
+                // 원본 Material 갱신
+                _originalChildMaterials[child] = userMat;
+
+                // 여전히 파티클 Material이면 새 마스크 Material 생성
+                if (IsParticleMaterial(userMat))
+                {
+                    Material newMaskMat = CreateParticleMaskMaterial(userMat);
+                    if (newMaskMat != null)
+                    {
+                        child.material = newMaskMat;
+                        _particleAppliedMaskMats[child] = newMaskMat;
+                        child.SetAllDirty();
+                    }
+                    else
+                    {
+                        _particleAppliedMaskMats.Remove(child);
+                    }
+                }
+                else
+                {
+                    _particleAppliedMaskMats.Remove(child);
+                }
+            }
+
+            _materialDirty = true;
+        }
+
+        /// <summary>
+        /// Particle Material에 현재 마스크 프로퍼티 일괄 전파
+        /// </summary>
+        private void UpdateParticleMaterials()
+        {
+            Texture maskTex = GetMaskTexture();
+            Vector4 maskUVRect = GetMaskUVRect();
+
+            for (int i = _particleMaskMaterials.Count - 1; i >= 0; i--)
+            {
+                Material mat = _particleMaskMaterials[i];
+                if (mat == null)
+                {
+                    _particleMaskMaterials.RemoveAt(i);
+                    continue;
+                }
+
+                // Particle 셰이더는 표준 프로퍼티 이름 사용
+                mat.SetMatrix(PropMaskWorldToUV, _cachedWorldToUV);
+                mat.SetFloat(PropSoftness, _cachedSoftness);
+                mat.SetFloat(PropInvertMask, _cachedInvertMask ? 1f : 0f);
+                if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
+                mat.SetVector(PropMaskUVRect, maskUVRect);
+
+                if (_hasParentMask && _parentSoftMask != null)
+                {
+                    if (!mat.IsKeywordEnabled(KEYWORD_NESTED))
+                        mat.EnableKeyword(KEYWORD_NESTED);
+
+                    mat.SetMatrix(PropMaskWorldToUV2, _cachedParentWorldToUV);
+                    mat.SetFloat(PropSoftness2, _cachedParentSoftness);
+                    mat.SetFloat(PropInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+
+                    Texture parentTex = _parentSoftMask.GetMaskTexture();
+                    if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
+                    mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
                 }
             }
         }

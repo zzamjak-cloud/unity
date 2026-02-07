@@ -1,4 +1,4 @@
-# CAT SoftMask v1.0.0
+# CAT SoftMask v1.1.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
@@ -8,10 +8,11 @@ Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너�
 
 ```
 Assets/Scripts/SoftMask/
-├── SoftMask.cs                       # 메인 컴포넌트 (1197줄)
+├── SoftMask.cs                       # 메인 컴포넌트 (1430줄)
 ├── Shader/
 │   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (283줄)
-│   └── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
+│   ├── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
+│   └── CAT_SoftMask_Core.cginc       # 파티클 셰이더용 공용 마스크 샘플링 (96줄)
 └── Editor/
     └── SoftMaskEditor.cs             # 커스텀 인스펙터 (165줄)
 ```
@@ -33,6 +34,7 @@ Assets/Scripts/SoftMask/
 | **TextMeshPro 지원** | TMP 전용 셰이더로 SDF 텍스트 마스킹 (Outline, Underlay 호환) |
 | **TMP Material Preset 자동 감지** | 외부 Material 변경 시 마스크 자동 재적용 |
 | **TMP Material Preset 플레이모드 보존** | 직렬화 백업으로 플레이모드 전환 시 프리셋 유실 방지 |
+| **UIParticle 지원** | `com.coffee.ui-particle` 파티클의 원본 셰이더/블렌드 모드 유지하며 마스킹 |
 | **에디터 실시간 프리뷰** | `[ExecuteAlways]`로 에디터에서 즉시 결과 확인 |
 
 ## 아키텍처
@@ -55,6 +57,12 @@ Assets/Scripts/SoftMask/
 │  ├─ TMP SDF 렌더링 + SoftMask 샘플링 (premultiplied alpha)    │
 │  ├─ Material Preset 변경 자동 감지 및 재적용                   │
 │  └─ 원본 Preset Material 직렬화 백업 (플레이모드 보존)         │
+│                                                               │
+│  자식 UIParticle (com.coffee.ui-particle)                     │
+│  ├─ IsParticleMaterial() → 원본 셰이더 감지 (CAT/Particles/*) │
+│  ├─ CreateParticleMaskMaterial() → 원본 복제 + _CAT_SOFTMASK  │
+│  ├─ 원본 블렌드 모드 보존 (Additive/AlphaBlend)               │
+│  └─ DetectParticleMaterialChanges() → 비활성/활성 자동 재적용 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,9 +79,13 @@ Assets/Scripts/SoftMask/
 
 ```
 LateUpdate()
-  ├── DetectTMPMaterialChanges()    ← TMP Material Preset 외부 변경 감지
+  ├── DetectTMPMaterialChanges()       ← TMP Material Preset 외부 변경 감지
   │    └── 변경됨? → 기존 Material 파괴 → CreateTMPMaskMaterial(새 Material)
   │                 → SaveTMPOriginalBackup(새 Material) ← 직렬화 백업 갱신
+  ├── DetectParticleMaterialChanges()  ← UIParticle Material 재할당 감지
+  │    └── 변경됨? → 기존 Material 파괴 → CreateParticleMaskMaterial(새 Material)
+  ├── 자식 수 변경 감지                ← UIParticle 활성/비활성 시 새 자식 추가
+  │    └── 변경됨? → ApplyMaskToChildren()
   └── UpdateSharedMaterial()
        ├── ComputeWorldToMaskUV() -> Matrix4x4 비교
        │   └── 변경됨? -> _sharedMaskMaterial.SetMatrix()
@@ -85,6 +97,7 @@ LateUpdate()
        │   └── 변경됨? -> _sharedMaskMaterial.Set*2()
        └── anyChange?
             ├── UpdateTMPMaterials()         ← TMP Material에 마스크 프로퍼티 전파
+            ├── UpdateParticleMaterials()    ← Particle Material에 마스크 프로퍼티 전파
             └── PropagateToStencilMaterials()
                  └── 각 자식의 materialForRendering에도 프로퍼티 복사
                      (UI Mask의 StencilMaterial 복사본 대응)
@@ -98,6 +111,7 @@ LateUpdate()
 |------|------|
 | Material 인스턴스 (일반) | SoftMask당 1개 (일반 자식 수 무관) |
 | Material 인스턴스 (TMP) | TMP 자식 수만큼 추가 (폰트별 개별 Material) |
+| Material 인스턴스 (Particle) | 파티클 자식 수만큼 추가 (원본 셰이더 보존) |
 | RenderTexture | **없음** (1-Pass 방식) |
 | Dictionary 오버헤드 | 자식 수 x (Graphic ref + Material ref) |
 | 셰이더 Variant | 일반: 2개 x 2 SubShader / TMP: 48개 (Outline x Underlay x ClipRect x AlphaClip x Nested) |
@@ -427,6 +441,7 @@ c *= SampleSoftMask1(input.softMaskUV);
 | 키워드 | 타입 | 설명 |
 |--------|------|------|
 | `_SOFTMASK_NESTED` | `multi_compile_local` | 중첩 마스크 활성화 (비활성 시 추가 코드 완전 제거) |
+| `_CAT_SOFTMASK` | `multi_compile_local` | 파티클 셰이더 SoftMask 활성화 (CAT_SoftMask_Core.cginc) |
 | `UNITY_UI_CLIP_RECT` | `multi_compile_local` | RectMask2D/ScrollView 클리핑 |
 | `UNITY_UI_ALPHACLIP` | `multi_compile_local` | 알파 클리핑 |
 | `OUTLINE_ON` | `multi_compile` | TMP Outline (TMP 셰이더 전용, 빌드 variant 보호) |
@@ -447,6 +462,7 @@ c *= SampleSoftMask1(input.softMaskUV);
 | TextMeshPro | O (자동 감지 + 전용 셰이더) |
 | TMP Outline/Underlay | O |
 | TMP Material Preset | O (동적 변경 감지 + 플레이모드 보존) |
+| UIParticle (com.coffee.ui-particle) | O (원본 셰이더/블렌드 모드 보존) |
 | 에디터 실시간 편집 | O |
 
 ## 빌드 안정성
@@ -490,13 +506,40 @@ c *= SampleSoftMask1(input.softMaskUV);
 ## 제한사항
 
 - 최대 **2단계** 중첩 마스크 (셰이더 키워드 제한)
-- 자식의 기존 Material을 SoftMask 전용 셰이더로 교체하므로, **커스텀 셰이더를 사용하는 자식**에는 별도 대응 필요
+- 자식의 기존 Material을 SoftMask 전용 셰이더로 교체하므로, **커스텀 셰이더를 사용하는 자식**에는 별도 대응 필요 (단, `CAT/Particles/*` 셰이더는 자동 지원)
 - SpriteRenderer 미지원 (셰이더 SubShader는 준비되어 있으나 C# 로직 미구현)
 - MaskingShape (가산/감산 영역) 미지원
 - TMP 자식은 폰트별 개별 Material 생성 필요 (공유 Material 불가)
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
 
 ## 변경 이력
+
+### v1.1.0 (2025-02-07)
+
+UIParticle (com.coffee.ui-particle) 지원 추가
+
+**신규 기능**
+- `CAT/Particles/*` 셰이더 자동 감지 (`IsParticleMaterial()`)
+- 원본 Material 복제 + `_CAT_SOFTMASK` 키워드 활성화 (`CreateParticleMaskMaterial()`)
+- 원본 셰이더/블렌드 모드 보존 (Additive, AlphaBlend 등)
+- UIParticle Material 재할당 자동 감지 및 재적용 (`DetectParticleMaterialChanges()`)
+- 자식 수 변경 감지로 UIParticle 활성/비활성 시 새 자식 자동 마스킹
+
+**셰이더**
+- `CAT_SoftMask_Core.cginc` 공용 include 파일 추가 (매크로 기반 통합)
+- 5개 파티클 셰이더에 SoftMask 키워드 추가:
+  - `CAT/Particles/UIAdditive` — premultiplied additive (`color *= mask`)
+  - `CAT/Particles/UIAlphaBlend` — alpha blend (`col.a *= mask`)
+  - `CAT/Particles/FlowUV` — alpha blend (`col.a *= mask`)
+  - `CAT/Particles/UIAlphaBlendCustom` — dissolve + alpha blend (`finalCol.a *= mask`)
+  - `CAT/Particles/UIAdditiveCustom` — dissolve + additive (`finalCol.a *= mask`)
+- mob-sakai 미사용 키워드 제거 (`SOFTMASK_SIMPLE/SLICED/TILED`)
+
+**SoftMask.cs**
+- `_particleMaskMaterials`, `_particleAppliedMaskMats` 필드 추가
+- `UpdateParticleMaterials()` — 파티클 Material 프로퍼티 갱신
+- `PropagateToStencilMaterials()` — `CAT/Particles/*` 셰이더 지원 추가
+- 자식 수 변경 감지를 플레이모드에서도 실행 (UIParticle 대응)
 
 ### v1.0.0 (2025-02-07)
 

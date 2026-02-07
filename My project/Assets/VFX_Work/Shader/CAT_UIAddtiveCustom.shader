@@ -3,6 +3,16 @@ Shader "CAT/Particles/UIAdditiveCustom"
     Properties
     {
         _MainTex("Main Texture", 2D) = "white" {}
+
+        // SoftMask
+        [HideInInspector] _MaskTex("Mask Texture", 2D) = "white" {}
+        [HideInInspector] _Softness("Softness", Range(0, 1)) = 0.1
+        [HideInInspector] _InvertMask("Invert Mask", Float) = 0
+        [HideInInspector] _MaskUVRect("Mask UV Rect", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _MaskTex2("Mask Texture 2", 2D) = "white" {}
+        [HideInInspector] _Softness2("Softness 2", Range(0, 1)) = 0.1
+        [HideInInspector] _InvertMask2("Invert Mask 2", Float) = 0
+        [HideInInspector] _MaskUVRect2("Mask UV Rect 2", Vector) = (0, 0, 1, 1)
     }
 
     SubShader
@@ -16,28 +26,33 @@ Shader "CAT/Particles/UIAdditiveCustom"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_local _ _CAT_SOFTMASK
+            #pragma multi_compile_local _ _SOFTMASK_NESTED
+
             #include "UnityCG.cginc"
+            #include "../../Scripts/SoftMask/Shader/CAT_SoftMask_Core.cginc"
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
 
             struct appdata
             {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
-                float4 color : COLOR;
+                float4 vertex     : POSITION;
+                float2 uv         : TEXCOORD0;
+                float4 color      : COLOR;
                 float4 customData1 : TEXCOORD1;
-                float4 customData2 : TEXCOORD2; // CustomData2는 여전히 정의되어 있지만, 사용 여부를 결정
+                float4 customData2 : TEXCOORD2;
             };
 
             struct v2f
             {
-                float4 vertex : SV_POSITION;
-                float2 uv : TEXCOORD0;
-                float4 color : COLOR;
+                float4 vertex     : SV_POSITION;
+                float2 uv         : TEXCOORD0;
+                float4 color      : COLOR;
                 float4 customData1 : TEXCOORD1;
                 float4 customData2 : TEXCOORD2;
-                float4 projPos : TEXCOORD3;
+                float4 projPos    : TEXCOORD3;
+                CAT_SOFTMASK_COORDS(4, 5)
             };
 
             v2f vert(appdata v)
@@ -49,6 +64,10 @@ Shader "CAT/Particles/UIAdditiveCustom"
                 o.customData1 = v.customData1;
                 o.customData2 = v.customData2;
                 o.projPos = ComputeScreenPos(o.vertex);
+
+                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                CAT_SOFTMASK_VERT(worldPos, o)
+
                 return o;
             }
 
@@ -56,29 +75,28 @@ Shader "CAT/Particles/UIAdditiveCustom"
             {
                 float2 screenPos = i.projPos.xy / i.projPos.w;
 
-                // Sample main texture and apply dissolve effect
                 fixed4 col = tex2D(_MainTex, i.uv);
                 float dissolveValue = i.customData1.x;
                 float dissolveSharpness = i.customData1.y;
                 float emissivePower = i.customData1.z;
                 fixed4 finalCol;
-                float lerpFactor = col.b;   // Secondary Color Factor
+                float lerpFactor = col.b;
 
                 col.a *= smoothstep(dissolveValue - dissolveSharpness, dissolveValue + dissolveSharpness, col.g);
                 col.a *= i.color.a;
 
-                finalCol.rgb = col.r * i.color.rgb;     // Particle Color
-                finalCol.a = col.a;                     // Particle Alpha
+                finalCol.rgb = col.r * i.color.rgb;
+                finalCol.a = col.a;
 
-                // Apply emissive power based on custom data
                 finalCol.rgb += finalCol.rgb * emissivePower;
 
-                // Check if CustomData2 is valid (e.g., if the alpha channel is not zero)
-                if (i.customData2.a > 0.0) // CustomData2의 알파 값이 0보다 큰 경우에만 사용
+                if (i.customData2.a > 0.0)
                 {
-                    // Blend with secondary color from custom data
                     finalCol.rgb = lerp(finalCol.rgb, i.customData2.rgb, 1 - lerpFactor);
                 }
+
+                // SoftMask
+                finalCol.a *= CAT_SOFTMASK_FRAG(i);
 
                 return finalCol;
             }

@@ -12,6 +12,16 @@ Shader "CAT/Particles/UIAdditive"
         _StencilReadMask ("Stencil Read Mask", Float) = 255
 
         _ColorMask ("Color Mask", Float) = 15
+
+        // SoftMask
+        [HideInInspector] _MaskTex("Mask Texture", 2D) = "white" {}
+        [HideInInspector] _Softness("Softness", Range(0, 1)) = 0.1
+        [HideInInspector] _InvertMask("Invert Mask", Float) = 0
+        [HideInInspector] _MaskUVRect("Mask UV Rect", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _MaskTex2("Mask Texture 2", 2D) = "white" {}
+        [HideInInspector] _Softness2("Softness 2", Range(0, 1)) = 0.1
+        [HideInInspector] _InvertMask2("Invert Mask 2", Float) = 0
+        [HideInInspector] _MaskUVRect2("Mask UV Rect 2", Vector) = (0, 0, 1, 1)
     }
 
     SubShader
@@ -38,10 +48,7 @@ Shader "CAT/Particles/UIAdditive"
         Lighting Off
         ZWrite Off
         ZTest [unity_GUIZTestMode]
-        Fog
-        {
-            Mode Off
-        }
+        Fog { Mode Off }
 
         Blend SrcAlpha One, One One
         ColorMask [_ColorMask]
@@ -51,42 +58,54 @@ Shader "CAT/Particles/UIAdditive"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile __ SOFTMASK_SIMPLE SOFTMASK_SLICED SOFTMASK_TILED
+            #pragma multi_compile_local _ _CAT_SOFTMASK
+            #pragma multi_compile_local _ _SOFTMASK_NESTED
 
             #include "UnityCG.cginc"
-            
-            struct appdata_t {
-                float4 vertex : POSITION;
-                float4 color : COLOR;
+            #include "../../Scripts/SoftMask/Shader/CAT_SoftMask_Core.cginc"
+
+            struct appdata_t
+            {
+                float4 vertex   : POSITION;
+                float4 color    : COLOR;
                 float2 texcoord : TEXCOORD0;
             };
 
-            struct v2f {
-                float4 vertex : SV_POSITION;
-                fixed4 color : COLOR;
-                half2 texcoord : TEXCOORD0;
+            struct v2f
+            {
+                float4 vertex   : SV_POSITION;
+                fixed4 color    : COLOR;
+                half2 texcoord  : TEXCOORD0;
+                CAT_SOFTMASK_COORDS(1, 2)
             };
 
             fixed4 _Color;
+            sampler2D _MainTex;
 
-            v2f vert( appdata_t IN ){
+            v2f vert(appdata_t IN)
+            {
                 v2f OUT;
                 OUT.vertex = UnityObjectToClipPos(IN.vertex);
                 OUT.texcoord = IN.texcoord;
                 #ifdef UNITY_HALF_TEXEL_OFFSET
-				OUT.vertex.xy += (_ScreenParams.zw-1.0)*float2(-1,1);
+                OUT.vertex.xy += (_ScreenParams.zw - 1.0) * float2(-1, 1);
                 #endif
                 OUT.color = IN.color * _Color;
-                
+
+                float3 worldPos = mul(unity_ObjectToWorld, IN.vertex).xyz;
+                CAT_SOFTMASK_VERT(worldPos, OUT)
+
                 return OUT;
             }
 
-            sampler2D _MainTex;
-
-            fixed4 frag( v2f IN ) : SV_Target{
+            fixed4 frag(v2f IN) : SV_Target
+            {
                 half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
                 color.rgb *= color.a;
-                
+
+                // SoftMask (premultiplied additive — 전 채널 곱)
+                color *= CAT_SOFTMASK_FRAG(IN);
+
                 clip(color.a - 0.01);
                 return color;
             }
