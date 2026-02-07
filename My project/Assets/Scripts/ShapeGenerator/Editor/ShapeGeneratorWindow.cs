@@ -14,18 +14,20 @@ namespace CAT.Utility.ShapeGenerator
         private const string PREFS_KEY_FILL_TYPE = "CAT_ShapeGenerator_FillType";
         private const double DEBOUNCE_DELAY = 0.15;
 
-        private enum ShapeType { Circle, Polygon, Star }
+        private enum ShapeType { Circle, Polygon, Star, Gradient, Noise }
         private enum FillType { Fill, Outline, FillOutline }
 
         // Generator 2D 배열: [ShapeType][FillType]
         private IShapeGenerator[,] _generators;
-        private readonly string[] _shapeNames = { "Circle", "Polygon", "Star" };
+        private readonly string[] _shapeNames = { "Circle", "Polygon", "Star", "Gradient", "Noise" };
         private readonly string[] _fillTypeNames = { "Fill", "Outline", "FillOutline" };
 
         // 공유 설정 인스턴스
         private CircleSettings _circleSettings;
         private PolygonSettings _polygonSettings;
         private StarSettings _starSettings;
+        private GradientSettings _gradientSettings;
+        private NoiseSettings _noiseSettings;
 
         private ShapeType _shapeType = ShapeType.Circle;
         private FillType _fillType = FillType.Fill;
@@ -75,16 +77,22 @@ namespace CAT.Utility.ShapeGenerator
             _circleSettings = new CircleSettings();
             _polygonSettings = new PolygonSettings();
             _starSettings = new StarSettings();
+            _gradientSettings = new GradientSettings();
+            _noiseSettings = new NoiseSettings();
 
             // [ShapeType][FillType] 순서로 배열 - 동일한 Settings 인스턴스 공유
-            _generators = new IShapeGenerator[3, 3]
+            _generators = new IShapeGenerator[5, 3]
             {
                 // Circle: Fill, Outline, FillOutline (모두 _circleSettings 공유)
                 { new CircleGenerator(_circleSettings), new CircleOutlineGenerator(_circleSettings), new CircleWithOutlineGenerator(_circleSettings) },
                 // Polygon: Fill, Outline, FillOutline (모두 _polygonSettings 공유)
                 { new PolygonGenerator(_polygonSettings), new PolygonOutlineGenerator(_polygonSettings), new PolygonWithOutlineGenerator(_polygonSettings) },
                 // Star: Fill, Outline, FillOutline (모두 _starSettings 공유)
-                { new StarGenerator(_starSettings), new StarOutlineGenerator(_starSettings), new StarWithOutlineGenerator(_starSettings) }
+                { new StarGenerator(_starSettings), new StarOutlineGenerator(_starSettings), new StarWithOutlineGenerator(_starSettings) },
+                // Gradient: Color, Alpha, (미사용) (모두 _gradientSettings 공유)
+                { new GradientGenerator(_gradientSettings), new GradientAlphaGenerator(_gradientSettings), null },
+                // Noise: Fill만 사용 (모두 _noiseSettings 공유)
+                { new NoiseGenerator(_noiseSettings), null, null }
             };
         }
 
@@ -179,6 +187,19 @@ namespace CAT.Utility.ShapeGenerator
             if (newShapeType != _shapeType)
             {
                 _shapeType = newShapeType;
+
+                // Gradient 타입 선택 시 FillOutline이면 Fill로 자동 전환
+                if (_shapeType == ShapeType.Gradient && _fillType == FillType.FillOutline)
+                {
+                    _fillType = FillType.Fill;
+                }
+
+                // Noise 타입 선택 시 Fill이 아니면 Fill로 자동 전환
+                if (_shapeType == ShapeType.Noise && _fillType != FillType.Fill)
+                {
+                    _fillType = FillType.Fill;
+                }
+
                 SaveSettings();
             }
 
@@ -187,8 +208,17 @@ namespace CAT.Utility.ShapeGenerator
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PrefixLabel("Type");
 
+            bool isGradient = _shapeType == ShapeType.Gradient;
+            bool isNoise = _shapeType == ShapeType.Noise;
+
             for (int i = 0; i < _fillTypeNames.Length; i++)
             {
+                // Gradient 타입일 때 FillOutline 비활성화
+                // Noise 타입일 때 Outline, FillOutline 비활성화
+                bool isDisabled = (isGradient && i == (int)FillType.FillOutline) ||
+                                  (isNoise && i != (int)FillType.Fill);
+
+                EditorGUI.BeginDisabledGroup(isDisabled);
                 bool isSelected = (int)_fillType == i;
                 bool newSelected = GUILayout.Toggle(isSelected, _fillTypeNames[i], EditorStyles.miniButtonMid);
                 if (newSelected && !isSelected)
@@ -196,6 +226,7 @@ namespace CAT.Utility.ShapeGenerator
                     _fillType = (FillType)i;
                     SaveSettings();
                 }
+                EditorGUI.EndDisabledGroup();
             }
             EditorGUILayout.EndHorizontal();
 
@@ -384,7 +415,7 @@ namespace CAT.Utility.ShapeGenerator
                 }
             }
 
-            _shapeType = (ShapeType)Mathf.Clamp(EditorPrefs.GetInt(PREFS_KEY_SHAPE_TYPE, 0), 0, 2);
+            _shapeType = (ShapeType)Mathf.Clamp(EditorPrefs.GetInt(PREFS_KEY_SHAPE_TYPE, 0), 0, 4);
             _fillType = (FillType)Mathf.Clamp(EditorPrefs.GetInt(PREFS_KEY_FILL_TYPE, 0), 0, 2);
         }
     }
