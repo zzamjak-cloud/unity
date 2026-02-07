@@ -8,11 +8,12 @@ Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너�
 
 ```
 Assets/Scripts/SoftMask/
-├── SoftMask.cs                   # 메인 컴포넌트 (680줄)
+├── SoftMask.cs                       # 메인 컴포넌트 (1097줄)
 ├── Shader/
-│   └── CAT_SoftMask.shader       # UI + Sprite 통합 셰이더 (283줄)
+│   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (283줄)
+│   └── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
 └── Editor/
-    └── SoftMaskEditor.cs         # 커스텀 인스펙터 (165줄)
+    └── SoftMaskEditor.cs             # 커스텀 인스펙터 (165줄)
 ```
 
 ## 주요 기능
@@ -21,14 +22,16 @@ Assets/Scripts/SoftMask/
 |------|------|
 | **알파 마스킹** | 자신의 UI Graphic 알파 채널을 마스크로 사용 |
 | **Softness 조절** | `smoothstep` 기반으로 마스크 엣지 부드러움 0~1 조절 |
-| **Invert Mask** | 마스크 영역 반전 (밝은 영역 ↔ 어두운 영역 교환) |
+| **Invert Mask** | 마스크 영역 반전 (밝은 영역 <-> 어두운 영역 교환) |
 | **Show/Hide Mask Graphic** | 마스킹은 유지하면서 마스크 이미지 표시/숨김 토글 |
 | **중첩 마스크** | 최대 2단계 중첩 SoftMask 지원 (`_SOFTMASK_NESTED` 키워드) |
-| **회전/스케일 대응** | `Matrix4x4` 기반 월드→UV 변환으로 회전, 스케일 완전 지원 |
+| **회전/스케일 대응** | `Matrix4x4` 기반 월드->UV 변환으로 회전, 스케일 완전 지원 |
 | **Sprite Atlas 호환** | `DataUtility.GetOuterUV()` + 트리밍 보정으로 Atlas 스프라이트 정확한 UV 매핑 |
 | **ScrollView 호환** | `UNITY_UI_CLIP_RECT` 지원으로 ScrollView 내 정상 동작 |
 | **UI Mask 호환** | Stencil 래핑 Material에 프로퍼티 전파로 UI Mask 내 정상 동작 |
 | **자식 자동 마스킹** | 하위 Graphic 컴포넌트에 자동으로 마스크 Material 적용 |
+| **TextMeshPro 지원** | TMP 전용 셰이더로 SDF 텍스트 마스킹 (Outline, Underlay 호환) |
+| **TMP Material Preset 자동 감지** | 외부 Material 변경 시 마스크 자동 재적용 |
 | **에디터 실시간 프리뷰** | `[ExecuteAlways]`로 에디터에서 즉시 결과 확인 |
 
 ## 아키텍처
@@ -36,40 +39,49 @@ Assets/Scripts/SoftMask/
 ### 렌더링 파이프라인
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ SoftMask (부모)                                              │
-│  ├─ 자신의 UI.Graphic 알파 → 마스크 텍스처로 사용            │
-│  ├─ ComputeWorldToMaskUV() → Matrix4x4 (worldToLocal × UV)  │
-│  └─ 1개 공유 Material 생성 → 모든 자식에 적용                │
-│                                                              │
-│  자식 Graphic들                                              │
-│  ├─ Vertex Shader: 월드좌표 → 마스크 UV 계산                 │
-│  └─ Fragment Shader: tex2D(마스크) → smoothstep → alpha 곱   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ SoftMask (부모)                                               │
+│  ├─ 자신의 UI.Graphic 알파 -> 마스크 텍스처로 사용             │
+│  ├─ ComputeWorldToMaskUV() -> Matrix4x4 (worldToLocal x UV)  │
+│  └─ 1개 공유 Material 생성 -> 모든 자식에 적용                 │
+│                                                               │
+│  자식 Graphic들 (일반)                                        │
+│  ├─ Vertex Shader: 월드좌표 -> 마스크 UV 계산                  │
+│  └─ Fragment Shader: tex2D(마스크) -> smoothstep -> alpha 곱   │
+│                                                               │
+│  자식 TMP_Text (TextMeshPro)                                  │
+│  ├─ 폰트별 개별 Material 생성 (CopyShaderProperties)           │
+│  ├─ TMP SDF 렌더링 + SoftMask 샘플링 (premultiplied alpha)    │
+│  └─ Material Preset 변경 자동 감지 및 재적용                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 핵심 설계 원칙
 
 1. **1-Pass 렌더링**: RenderTexture 없이 기존 렌더링 패스에서 마스크 샘플링 수행
-2. **SoftMask당 1개 공유 Material**: 모든 자식이 동일 Material 공유 (N개 Material → 1개)
-3. **더티 체크**: `Matrix4x4` 비교, 텍스처 ID 비교, 프로퍼티 값 비교로 불필요한 업데이트 스킵
-4. **버텍스 셰이더 UV 계산**: 마스크 UV를 버텍스에서 계산하여 프래그먼트 비용 절감
-5. **분기 없는 셰이더**: `step()`, `smoothstep()`, `lerp()`로 GPU 분기 완전 회피
+2. **SoftMask당 1개 공유 Material**: 모든 일반 자식이 동일 Material 공유 (N개 Material -> 1개)
+3. **TMP 개별 Material**: TMP는 폰트 아틀라스별 전용 Material 생성 (SDF 파라미터 보존)
+4. **더티 체크**: `Matrix4x4` 비교, 텍스처 ID 비교, 프로퍼티 값 비교로 불필요한 업데이트 스킵
+5. **버텍스 셰이더 UV 계산**: 마스크 UV를 버텍스에서 계산하여 프래그먼트 비용 절감
+6. **분기 없는 셰이더**: `step()`, `smoothstep()`, `lerp()`로 GPU 분기 완전 회피
 
 ### Material 업데이트 흐름
 
 ```
 LateUpdate()
+  ├── DetectTMPMaterialChanges()    ← TMP Material Preset 외부 변경 감지
+  │    └── 변경됨? → 기존 Material 파괴 → CreateTMPMaskMaterial(새 Material)
   └── UpdateSharedMaterial()
-       ├── ComputeWorldToMaskUV() → Matrix4x4 비교
-       │   └── 변경됨? → _sharedMaskMaterial.SetMatrix()
-       ├── GetMaskTexture() → InstanceID 비교
-       │   └── 변경됨? → _sharedMaskMaterial.SetTexture()
-       ├── Softness / InvertMask → float/bool 비교
-       │   └── 변경됨? → _sharedMaskMaterial.SetFloat()
+       ├── ComputeWorldToMaskUV() -> Matrix4x4 비교
+       │   └── 변경됨? -> _sharedMaskMaterial.SetMatrix()
+       ├── GetMaskTexture() -> InstanceID 비교
+       │   └── 변경됨? -> _sharedMaskMaterial.SetTexture()
+       ├── Softness / InvertMask -> float/bool 비교
+       │   └── 변경됨? -> _sharedMaskMaterial.SetFloat()
        ├── 부모 마스크 프로퍼티 (중첩 시)
-       │   └── 변경됨? → _sharedMaskMaterial.Set*2()
+       │   └── 변경됨? -> _sharedMaskMaterial.Set*2()
        └── anyChange?
+            ├── UpdateTMPMaterials()         ← TMP Material에 마스크 프로퍼티 전파
             └── PropagateToStencilMaterials()
                  └── 각 자식의 materialForRendering에도 프로퍼티 복사
                      (UI Mask의 StencilMaterial 복사본 대응)
@@ -81,29 +93,32 @@ LateUpdate()
 
 | 항목 | 비용 |
 |------|------|
-| Material 인스턴스 | SoftMask당 1개 (자식 수 무관) |
+| Material 인스턴스 (일반) | SoftMask당 1개 (일반 자식 수 무관) |
+| Material 인스턴스 (TMP) | TMP 자식 수만큼 추가 (폰트별 개별 Material) |
 | RenderTexture | **없음** (1-Pass 방식) |
-| Dictionary 오버헤드 | 자식 수 × (Graphic ref + Material ref) |
-| 셰이더 Variant | 2개 (기본 + `_SOFTMASK_NESTED`) × 2 SubShader |
+| Dictionary 오버헤드 | 자식 수 x (Graphic ref + Material ref) |
+| 셰이더 Variant | 일반: 2개 x 2 SubShader / TMP: 2개 (기본 + nested) |
 
 ### CPU (프레임당)
 
 | 상황 | 비용 |
 |------|------|
-| **정적 UI (변화 없음)** | Matrix4x4 비교 1회 + 텍스처 ID 비교 1회 + float 비교 2회 → **거의 무비용** |
-| **Transform 변경** | Matrix4x4 계산 + `Material.SetMatrix()` 1회 + Stencil 전파 |
-| **프로퍼티 변경** | `Material.SetFloat()` 2회 + Stencil 전파 |
-| **Stencil 전파** | 자식 수 × `materialForRendering` 접근 (UI Mask 내에서만) |
+| **정적 UI (변화 없음)** | Matrix4x4 비교 1회 + 텍스처 ID 비교 1회 + float 비교 2회 + TMP 변경 감지 -> **거의 무비용** |
+| **Transform 변경** | Matrix4x4 계산 + `Material.SetMatrix()` 1회 + TMP/Stencil 전파 |
+| **프로퍼티 변경** | `Material.SetFloat()` 2회 + TMP/Stencil 전파 |
+| **TMP Material 전파** | TMP Material 수 x `Material.Set*()` 호출 (Matrix + Float + Texture) |
+| **Stencil 전파** | 자식 수 x `materialForRendering` 접근 (UI Mask 내에서만) |
 
 ### GPU (프래그먼트당)
 
 | 연산 | 비용 |
 |------|------|
 | `tex2D(_MaskTex)` | 텍스처 샘플링 1회 |
-| `step()` × 4 | 경계 검사 (분기 없음) |
+| `step()` x 4 | 경계 검사 (분기 없음) |
 | `smoothstep()` | 소프트 엣지 |
 | `lerp()` | 반전 처리 |
-| **중첩 마스크 추가** | 위 연산 × 2 (키워드 비활성 시 제거됨) |
+| **TMP 추가 비용** | SDF 렌더링(기존) + 위 마스크 샘플링 (추가 tex2D 1회) |
+| **중첩 마스크 추가** | 위 연산 x 2 (키워드 비활성 시 제거됨) |
 
 ### 주의 사항
 
@@ -115,6 +130,64 @@ LateUpdate()
 
 4. **Atlas 스프라이트 트리밍**: `GetContentLocalRect()`에서 `sprite.textureRectOffset`, `sprite.textureRect` 접근이 매 프레임 발생하지만, 이는 Unity 내부 캐싱된 프로퍼티로 오버헤드가 거의 없습니다.
 
+5. **TMP Material 개수**: TMP 자식은 일반 Graphic과 달리 공유 Material을 사용할 수 없습니다 (폰트 아틀라스, SDF 파라미터가 다름). TMP 자식이 많은 경우 Material 인스턴스가 비례하여 증가합니다.
+
+## TextMeshPro 지원
+
+### 개요
+
+TMP(TextMeshProUGUI)는 SDF(Signed Distance Field) 기반 텍스트 렌더링을 사용하며, 일반 UI Graphic과 다른 Material 시스템을 가집니다. CAT SoftMask는 TMP 전용 셰이더(`CAT/UI/TMP_SoftMask`)를 통해 TMP 텍스트에도 소프트 마스킹을 지원합니다.
+
+### 동작 방식
+
+1. `ApplyMaskToChildren()` 시 자식이 `TMP_Text`인 경우 자동 감지
+2. 원본 TMP Material의 프로퍼티를 `CopyShaderProperties()`로 개별 복사
+3. SoftMask 전용 셰이더(`CAT/UI/TMP_SoftMask`)로 교체된 새 Material 생성
+4. `fontSharedMaterial`을 통해 TMP에 적용
+5. TMP_SubMeshUI (멀티 아틀라스) 자동 대응
+
+### TMP 셰이더 구조
+
+```hlsl
+// CAT_TMP_SoftMask.shader 구조
+Shader "CAT/UI/TMP_SoftMask"
+{
+    Properties
+    {
+        // TMP 프로퍼티 (TMP_SDF-Mobile.shader 동일 - 36개)
+        _FaceColor, _OutlineColor, _UnderlayColor, _MainTex(Font Atlas), ...
+
+        // SoftMask 프로퍼티 (_SoftMask 접두사 - TMP의 _MaskTex 충돌 방지)
+        _SoftMaskTex, _SoftMaskSoftness, _SoftMaskInvert, _SoftMaskUVRect
+        _SoftMaskTex2, _SoftMaskSoftness2, _SoftMaskInvert2, _SoftMaskUVRect2
+    }
+
+    // #include "TMPro_Properties.cginc"  (TMP 유니폼 직접 포함)
+    // SampleSoftMask1/2() -> TMP SDF 렌더링 후 premultiplied alpha 적용
+    // Blend One OneMinusSrcAlpha (TMP premultiplied alpha 블렌딩)
+}
+```
+
+### TMP 기술적 주의사항
+
+| 항목 | 설명 |
+|------|------|
+| **프로퍼티 접두사** | `_SoftMask*` 사용 (TMPro_Properties.cginc의 `_MaskTex` 충돌 방지) |
+| **Material 복사** | `CopyShaderProperties()` 사용 (`CopyPropertiesFromMaterial()`은 프로퍼티 시트를 통째로 교체하여 SoftMask 프로퍼티 제거) |
+| **Material 접근** | `fontSharedMaterial` 사용 (`Graphic.material`은 TMP가 무시) |
+| **Premultiplied Alpha** | `c *= softMask` (RGB+A 모두 적용, `Blend One OneMinusSrcAlpha`) |
+| **Preset 변경 감지** | `DetectTMPMaterialChanges()`에서 매 프레임 현재 Material과 적용 Material 비교 |
+| **Metal 호환** | sampler2D를 함수 매개변수로 전달하지 않고 전역 유니폼 직접 접근 |
+
+### TMP 지원 기능
+
+- Outline (OUTLINE_ON)
+- Underlay / Inner Underlay (UNDERLAY_ON, UNDERLAY_INNER)
+- RectMask2D 클리핑 (UNITY_UI_CLIP_RECT)
+- UI Mask (Stencil) 호환
+- Material Preset 동적 변경
+- 중첩 SoftMask
+
 ## mob-sakai SoftMaskForUGUI와 비교
 
 ### 아키텍처 차이
@@ -123,11 +196,12 @@ LateUpdate()
 |------|-------------|----------------------------|
 | **렌더링 방식** | 1-Pass (기존 패스에서 마스크 샘플링) | RenderTexture에 마스크 렌더링 후 자식이 샘플링 |
 | **추가 GPU 패스** | 없음 | CommandBuffer로 마스크 버퍼 렌더링 (별도 패스) |
-| **RenderTexture** | 불필요 | ARGB32 버퍼 필수 (1024×576 @ 1080p ≈ 2.25MB) |
-| **Material 관리** | SoftMask당 1개 공유 | `MaterialRepository` Hash128 기반 캐싱 (자식별 variant) |
-| **마스크 UV 계산** | 버텍스 셰이더 (Matrix4x4 변환) | 프래그먼트 셰이더 (스크린 UV → 버퍼 샘플링) |
+| **RenderTexture** | 불필요 | ARGB32 버퍼 필수 (1024x576 @ 1080p ~ 2.25MB) |
+| **Material 관리** | SoftMask당 1개 공유 (+ TMP별 개별) | `MaterialRepository` Hash128 기반 캐싱 (자식별 variant) |
+| **마스크 UV 계산** | 버텍스 셰이더 (Matrix4x4 변환) | 프래그먼트 셰이더 (스크린 UV -> 버퍼 샘플링) |
 | **셰이더 수정** | 전용 셰이더 필요 (`CAT/UI/SoftMask`) | `SoftMask.cginc` include + `SOFTMASKABLE` 키워드 |
 | **Stencil 지원** | Stencil Material 전파 방식 | `Mask` 클래스 상속 (네이티브 Stencil) |
+| **TMP 지원** | 전용 셰이더 자동 적용 | 샘플 임포트 필요 + include 경로 수동 설정 |
 
 ### 기능 비교
 
@@ -141,11 +215,12 @@ LateUpdate()
 | Sprite Atlas | O (트리밍 보정 포함) | O |
 | ScrollView | O (UNITY_UI_CLIP_RECT) | O |
 | UI Mask 호환 | O (Stencil 전파) | O (Mask 상속) |
-| SpriteRenderer | O (SubShader 분리) | X (UI 전용) |
+| SpriteRenderer | X (셰이더만 준비, C# 미구현) | X (UI 전용) |
+| TextMeshPro | O (전용 셰이더 자동 적용) | O (샘플 임포트 + 경로 설정) |
+| TMP Material Preset 동적 변경 | O (자동 감지) | O |
 | MaskingShape (가산/감산) | X | O |
 | Anti-Aliasing 모드 | X | O (Stencil+Vertex 방식) |
 | Alpha Hit Test (Raycast) | X | O |
-| TextMeshPro 전용 셰이더 | X | O (샘플 임포트) |
 | ShaderGraph 지원 | X | O (v3.3.0+) |
 | VR Stereo | X | O |
 | World Space Canvas | O | O |
@@ -155,12 +230,12 @@ LateUpdate()
 
 | 항목 | CAT SoftMask | mob-sakai |
 |------|-------------|-----------|
-| **메모리 (마스크당)** | Material 1개 (~1KB) | RenderTexture (~144KB~2.25MB) + Material N개 |
+| **메모리 (마스크당)** | Material 1개 (~1KB) + TMP Material N개 | RenderTexture (~144KB~2.25MB) + Material N개 |
 | **GPU 패스** | 0 추가 | 1 CommandBuffer 패스 (마스크 버퍼 렌더링) |
-| **프래그먼트 비용** | tex2D 1회 + step×4 + smoothstep | tex2D 1회 + pow() |
+| **프래그먼트 비용** | tex2D 1회 + step x4 + smoothstep | tex2D 1회 + pow() |
 | **타일 GPU 영향** | 없음 (1-Pass) | RenderTarget 전환 비용 (모바일 타일 GPU에 불리) |
 | **배칭** | 공유 Material로 배칭 가능 | SoftMaskable variant가 배칭 차단 |
-| **중첩 비용** | tex2D 1회 추가 (키워드 분기) | Blit(부모→자식) + CommandBuffer 추가 |
+| **중첩 비용** | tex2D 1회 추가 (키워드 분기) | Blit(부모->자식) + CommandBuffer 추가 |
 | **정적 UI** | 더티 체크로 거의 무비용 | isDirty 플래그로 버퍼 렌더링 스킵 |
 
 ### CAT SoftMask를 선택하는 이점
@@ -171,20 +246,21 @@ LateUpdate()
 
 3. **Draw Call 영향 최소**: SoftMask당 1개 공유 Material로 배칭이 가능하며, mob-sakai처럼 자식별 Material variant를 생성하지 않습니다.
 
-4. **코드 투명성**: 전체 소스 코드가 프로젝트 내에 있어 디버깅, 커스터마이징, 최적화가 자유롭습니다. mob-sakai는 3000줄 이상의 복잡한 코드베이스입니다.
+4. **TMP 자동 적용**: mob-sakai는 TMP 지원을 위해 별도 샘플을 임포트해야 하고, TMPro_Properties.cginc의 include 경로를 프로젝트에 맞게 수정해야 합니다. CAT SoftMask는 TMP 자식을 자동 감지하여 전용 셰이더를 적용하므로 추가 설정이 불필요합니다.
 
-5. **SpriteRenderer 지원**: UI뿐만 아니라 2D Sprite에도 마스킹을 적용할 수 있습니다.
+5. **Material Preset 자동 감지**: TMP Material Preset(Outline, Underlay 등)을 변경하면 CAT SoftMask가 자동으로 감지하여 마스크를 재적용합니다.
 
-6. **의존성 없음**: 외부 패키지 의존 없이 독립적으로 동작합니다.
+6. **코드 투명성**: 전체 소스 코드가 프로젝트 내에 있어 디버깅, 커스터마이징, 최적화가 자유롭습니다. mob-sakai는 3000줄 이상의 복잡한 코드베이스입니다.
+
+7. **의존성 없음**: 외부 패키지 의존 없이 독립적으로 동작합니다.
 
 ### mob-sakai를 선택해야 하는 경우
 
 1. **4단계 이상 중첩 마스크**가 필요한 경우
 2. **MaskingShape** (가산/감산 마스크 영역)이 필요한 경우
-3. **TextMeshPro 전용 SoftMask 셰이더**가 필요한 경우
-4. **ShaderGraph와의 통합**이 필요한 경우
-5. **Alpha Hit Test** (마스크 영역 기반 터치 판정)이 필요한 경우
-6. **기존 셰이더를 변경하지 않고** `SoftMask.cginc` include만으로 적용하고 싶은 경우
+3. **ShaderGraph와의 통합**이 필요한 경우
+4. **Alpha Hit Test** (마스크 영역 기반 터치 판정)이 필요한 경우
+5. **기존 셰이더를 변경하지 않고** `SoftMask.cginc` include만으로 적용하고 싶은 경우
 
 ## 사용법
 
@@ -195,18 +271,18 @@ LateUpdate()
 3. 하위 Graphic 컴포넌트들에 자동으로 마스크가 적용됩니다
 
 ```
-[SoftMask + Image (마스크 이미지)]    ← 부모: 알파가 마스킹 영역
-  ├── [Image (자식 1)]                ← 자동으로 마스킹됨
-  ├── [Text (자식 2)]                 ← 자동으로 마스킹됨
-  └── [RawImage (자식 3)]             ← 자동으로 마스킹됨
+[SoftMask + Image (마스크 이미지)]    <- 부모: 알파가 마스킹 영역
+  ├── [Image (자식 1)]                <- 자동으로 마스킹됨
+  ├── [TextMeshProUGUI (자식 2)]      <- TMP 자동 감지, 전용 셰이더 적용
+  └── [RawImage (자식 3)]             <- 자동으로 마스킹됨
 ```
 
 ### 중첩 마스크
 
 ```
 [SoftMask A (외부 마스크)]
-  └── [SoftMask B (내부 마스크)]      ← 자동으로 부모 마스크 감지
-       └── [Image (자식)]             ← A와 B 마스크 모두 적용
+  └── [SoftMask B (내부 마스크)]      <- 자동으로 부모 마스크 감지
+       └── [Image (자식)]             <- A와 B 마스크 모두 적용
 ```
 
 ### 인스펙터 설정
@@ -238,9 +314,9 @@ SoftMask parent = mask.ParentSoftMask;
 
 ## 셰이더 구조
 
-```hlsl
-// CAT_SoftMask.shader 구조
+### CAT_SoftMask.shader (일반 UI/Sprite)
 
+```hlsl
 CGINCLUDE
   // 공유 변수: _MaskTex, _Softness, _InvertMask, _MaskWorldToUV, _MaskUVRect
   // 중첩 전용 (#if _SOFTMASK_NESTED): _MaskTex2, _Softness2, ...
@@ -253,6 +329,23 @@ SubShader 0: UI     // UNITY_UI_CLIP_RECT, Stencil, ZTest [unity_GUIZTestMode]
 SubShader 1: Sprite  // PIXELSNAP_ON, GPU Instancing
 ```
 
+### CAT_TMP_SoftMask.shader (TextMeshPro)
+
+```hlsl
+#include "TMPro_Properties.cginc"    // TMP 유니폼 직접 포함
+
+// SoftMask 유니폼 (_SoftMask* 접두사)
+sampler2D _SoftMaskTex;
+half _SoftMaskSoftness;
+...
+
+SampleSoftMask1(uv)  // 마스크 샘플링 (전역 유니폼 직접 접근, Metal 호환)
+SampleSoftMask2(uv)  // 중첩 마스크 (키워드 분기)
+
+// TMP SDF 렌더링 + SoftMask 적용 (premultiplied alpha)
+c *= SampleSoftMask1(input.softMaskUV);
+```
+
 ### 셰이더 키워드
 
 | 키워드 | 타입 | 설명 |
@@ -260,6 +353,8 @@ SubShader 1: Sprite  // PIXELSNAP_ON, GPU Instancing
 | `_SOFTMASK_NESTED` | `multi_compile_local` | 중첩 마스크 활성화 (비활성 시 추가 코드 완전 제거) |
 | `UNITY_UI_CLIP_RECT` | `multi_compile_local` | RectMask2D/ScrollView 클리핑 |
 | `UNITY_UI_ALPHACLIP` | `multi_compile_local` | 알파 클리핑 |
+| `OUTLINE_ON` | `shader_feature` | TMP Outline (TMP 셰이더 전용) |
+| `UNDERLAY_ON` / `UNDERLAY_INNER` | `shader_feature` | TMP Underlay (TMP 셰이더 전용) |
 
 ## 호환성
 
@@ -272,12 +367,17 @@ SubShader 1: Sprite  // PIXELSNAP_ON, GPU Instancing
 | RectMask2D | O |
 | ScrollView | O |
 | 중첩 Canvas | O |
-| SpriteRenderer | O |
+| SpriteRenderer | X (셰이더만 준비, C# 미구현) |
+| TextMeshPro | O (자동 감지 + 전용 셰이더) |
+| TMP Outline/Underlay | O |
+| TMP Material Preset | O (동적 변경 감지) |
 | 에디터 실시간 편집 | O |
 
 ## 제한사항
 
 - 최대 **2단계** 중첩 마스크 (셰이더 키워드 제한)
 - 자식의 기존 Material을 SoftMask 전용 셰이더로 교체하므로, **커스텀 셰이더를 사용하는 자식**에는 별도 대응 필요
-- TextMeshPro는 별도 셰이더가 필요 (현재 미지원)
+- SpriteRenderer 미지원 (셰이더 SubShader는 준비되어 있으나 C# 로직 미구현)
 - MaskingShape (가산/감산 영역) 미지원
+- TMP 자식은 폰트별 개별 Material 생성 필요 (공유 Material 불가)
+- TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)

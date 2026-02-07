@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using TMPro;
 
 namespace CAT.UI
 {
@@ -18,12 +19,14 @@ namespace CAT.UI
     public class SoftMask : MonoBehaviour
     {
         public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
+        public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
         private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
 
         // 셰이더 캐싱
         private static Shader s_cachedShader;
+        private static Shader s_cachedTMPShader;
 
-        // Shader Property ID 캐싱
+        // Shader Property ID 캐싱 (일반 CAT/UI/SoftMask 셰이더용)
         private static readonly int PropMaskTex = Shader.PropertyToID("_MaskTex");
         private static readonly int PropSoftness = Shader.PropertyToID("_Softness");
         private static readonly int PropInvertMask = Shader.PropertyToID("_InvertMask");
@@ -34,6 +37,18 @@ namespace CAT.UI
         private static readonly int PropInvertMask2 = Shader.PropertyToID("_InvertMask2");
         private static readonly int PropMaskWorldToUV2 = Shader.PropertyToID("_MaskWorldToUV2");
         private static readonly int PropMaskUVRect2 = Shader.PropertyToID("_MaskUVRect2");
+
+        // TMP 셰이더용 프로퍼티 ID (_SoftMask* 접두사: TMP의 _MaskTex 충돌 방지)
+        private static readonly int PropTMPMaskTex = Shader.PropertyToID("_SoftMaskTex");
+        private static readonly int PropTMPSoftness = Shader.PropertyToID("_SoftMaskSoftness");
+        private static readonly int PropTMPInvertMask = Shader.PropertyToID("_SoftMaskInvert");
+        private static readonly int PropTMPMaskWorldToUV = Shader.PropertyToID("_SoftMaskWorldToUV");
+        private static readonly int PropTMPMaskUVRect = Shader.PropertyToID("_SoftMaskUVRect");
+        private static readonly int PropTMPMaskTex2 = Shader.PropertyToID("_SoftMaskTex2");
+        private static readonly int PropTMPSoftness2 = Shader.PropertyToID("_SoftMaskSoftness2");
+        private static readonly int PropTMPInvertMask2 = Shader.PropertyToID("_SoftMaskInvert2");
+        private static readonly int PropTMPMaskWorldToUV2 = Shader.PropertyToID("_SoftMaskWorldToUV2");
+        private static readonly int PropTMPMaskUVRect2 = Shader.PropertyToID("_SoftMaskUVRect2");
 
         // ─────────────────────────────────────────────
         // 직렬화 필드
@@ -107,6 +122,14 @@ namespace CAT.UI
         private int _cachedParentMaskTexId;
         private bool _materialDirty;
 
+        // TMP 전용 Material 리스트 (폰트 아틀라스별 개별 Material 필요)
+        private readonly List<Material> _tmpMaskMaterials = new List<Material>(2);
+
+        // TMP Graphic → 적용 중인 마스크 Material 매핑
+        // 외부에서 TMP Material 변경 시 감지 및 자동 재적용에 사용
+        private readonly Dictionary<UnityEngine.UI.Graphic, Material> _tmpAppliedMaskMats =
+            new Dictionary<UnityEngine.UI.Graphic, Material>(2);
+
         // GC 방지: 재사용 리스트
         private readonly List<UnityEngine.UI.Graphic> _toRemove = new List<UnityEngine.UI.Graphic>(4);
 
@@ -173,6 +196,9 @@ namespace CAT.UI
         private void LateUpdate()
         {
             if (!_initialized) return;
+
+            // TMP 외부 Material 변경 감지 (Material Preset 교체 등)
+            DetectTMPMaterialChanges();
 
             UpdateSharedMaterial();
 
@@ -481,7 +507,8 @@ namespace CAT.UI
         /// </summary>
         private void UpdateSharedMaterial()
         {
-            if (_sharedMaskMaterial == null || _originalChildMaterials.Count == 0) return;
+            if (_originalChildMaterials.Count == 0) return;
+            if (_sharedMaskMaterial == null && _tmpMaskMaterials.Count == 0) return;
 
             bool anyChange = false;
 
@@ -489,7 +516,8 @@ namespace CAT.UI
             Matrix4x4 currentWorldToUV = ComputeWorldToMaskUV();
             if (currentWorldToUV != _cachedWorldToUV)
             {
-                _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV, currentWorldToUV);
+                if (_sharedMaskMaterial != null)
+                    _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV, currentWorldToUV);
                 _cachedWorldToUV = currentWorldToUV;
                 anyChange = true;
             }
@@ -500,16 +528,22 @@ namespace CAT.UI
             if (texId != _cachedMaskTexId)
             {
                 _cachedMaskTexId = texId;
-                if (maskTex != null) _sharedMaskMaterial.SetTexture(PropMaskTex, maskTex);
-                _sharedMaskMaterial.SetVector(PropMaskUVRect, GetMaskUVRect());
+                if (_sharedMaskMaterial != null)
+                {
+                    if (maskTex != null) _sharedMaskMaterial.SetTexture(PropMaskTex, maskTex);
+                    _sharedMaskMaterial.SetVector(PropMaskUVRect, GetMaskUVRect());
+                }
                 anyChange = true;
             }
 
             // Softness / InvertMask 변경 체크
             if (_materialDirty || _softness != _cachedSoftness || _invertMask != _cachedInvertMask)
             {
-                _sharedMaskMaterial.SetFloat(PropSoftness, _softness);
-                _sharedMaskMaterial.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
+                if (_sharedMaskMaterial != null)
+                {
+                    _sharedMaskMaterial.SetFloat(PropSoftness, _softness);
+                    _sharedMaskMaterial.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
+                }
                 _cachedSoftness = _softness;
                 _cachedInvertMask = _invertMask;
                 anyChange = true;
@@ -521,7 +555,8 @@ namespace CAT.UI
                 Matrix4x4 parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
                 if (parentWorldToUV != _cachedParentWorldToUV)
                 {
-                    _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
+                    if (_sharedMaskMaterial != null)
+                        _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
                     _cachedParentWorldToUV = parentWorldToUV;
                     anyChange = true;
                 }
@@ -531,25 +566,32 @@ namespace CAT.UI
                 if (parentTexId != _cachedParentMaskTexId)
                 {
                     _cachedParentMaskTexId = parentTexId;
-                    if (parentTex != null) _sharedMaskMaterial.SetTexture(PropMaskTex2, parentTex);
-                    _sharedMaskMaterial.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+                    if (_sharedMaskMaterial != null)
+                    {
+                        if (parentTex != null) _sharedMaskMaterial.SetTexture(PropMaskTex2, parentTex);
+                        _sharedMaskMaterial.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+                    }
                     anyChange = true;
                 }
 
                 if (_parentSoftMask._softness != _cachedParentSoftness ||
                     _parentSoftMask._invertMask != _cachedParentInvertMask)
                 {
-                    _sharedMaskMaterial.SetFloat(PropSoftness2, _parentSoftMask._softness);
-                    _sharedMaskMaterial.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
+                    if (_sharedMaskMaterial != null)
+                    {
+                        _sharedMaskMaterial.SetFloat(PropSoftness2, _parentSoftMask._softness);
+                        _sharedMaskMaterial.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
+                    }
                     _cachedParentSoftness = _parentSoftMask._softness;
                     _cachedParentInvertMask = _parentSoftMask._invertMask;
                     anyChange = true;
                 }
             }
 
-            // UI Mask의 StencilMaterial 복사본에 마스크 프로퍼티 전파
+            // TMP Material 및 Stencil Material에 마스크 프로퍼티 전파
             if (anyChange || _materialDirty)
             {
+                UpdateTMPMaterials();
                 PropagateToStencilMaterials();
             }
 
@@ -566,34 +608,69 @@ namespace CAT.UI
         /// </summary>
         private void PropagateToStencilMaterials()
         {
+            Texture maskTex = GetMaskTexture();
+            Vector4 maskUVRect = GetMaskUVRect();
+
             foreach (var kvp in _originalChildMaterials)
             {
                 if (kvp.Key == null) continue;
 
                 Material rendered = kvp.Key.materialForRendering;
-                if (rendered == null || rendered == _sharedMaskMaterial) continue;
+                if (rendered == null) continue;
+
+                // 기본 Material 자체는 이미 업데이트됨 → 스킵
+                if (rendered == _sharedMaskMaterial) continue;
+                if (_tmpMaskMaterials.Contains(rendered)) continue;
+
+                // 셰이더 이름 기반으로 일반/TMP 프로퍼티 ID 결정
+                // (CopyPropertiesFromMaterial이 HasProperty에 영향을 줄 수 있으므로 셰이더 이름 사용)
+                int pTex, pSoftness, pInvert, pWorldToUV, pUVRect;
+                int pTex2, pSoftness2, pInvert2, pWorldToUV2, pUVRect2;
+
+                string shaderName = rendered.shader != null ? rendered.shader.name : "";
+                if (shaderName == TMP_SHADER_NAME)
+                {
+                    // CAT/UI/TMP_SoftMask 셰이더 (_SoftMask* 접두사)
+                    pTex = PropTMPMaskTex; pSoftness = PropTMPSoftness; pInvert = PropTMPInvertMask;
+                    pWorldToUV = PropTMPMaskWorldToUV; pUVRect = PropTMPMaskUVRect;
+                    pTex2 = PropTMPMaskTex2; pSoftness2 = PropTMPSoftness2; pInvert2 = PropTMPInvertMask2;
+                    pWorldToUV2 = PropTMPMaskWorldToUV2; pUVRect2 = PropTMPMaskUVRect2;
+                }
+                else if (shaderName == SHADER_NAME)
+                {
+                    // 일반 CAT/UI/SoftMask 셰이더
+                    pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
+                    pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
+                    pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
+                    pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
+                }
+                else
+                {
+                    // SoftMask 셰이더가 아닌 Material → 스킵
+                    continue;
+                }
 
                 // Stencil 래핑된 Material에 마스크 프로퍼티 복사
-                rendered.SetMatrix(PropMaskWorldToUV, _cachedWorldToUV);
-                rendered.SetFloat(PropSoftness, _cachedSoftness);
-                rendered.SetFloat(PropInvertMask, _cachedInvertMask ? 1f : 0f);
+                rendered.SetMatrix(pWorldToUV, _cachedWorldToUV);
+                rendered.SetFloat(pSoftness, _cachedSoftness);
+                rendered.SetFloat(pInvert, _cachedInvertMask ? 1f : 0f);
 
-                Texture maskTex = _sharedMaskMaterial.GetTexture(PropMaskTex);
-                if (maskTex != null) rendered.SetTexture(PropMaskTex, maskTex);
-                rendered.SetVector(PropMaskUVRect, _sharedMaskMaterial.GetVector(PropMaskUVRect));
+                if (maskTex != null) rendered.SetTexture(pTex, maskTex);
+                rendered.SetVector(pUVRect, maskUVRect);
 
                 if (_hasParentMask)
                 {
                     if (!rendered.IsKeywordEnabled(KEYWORD_NESTED))
                         rendered.EnableKeyword(KEYWORD_NESTED);
 
-                    rendered.SetMatrix(PropMaskWorldToUV2, _cachedParentWorldToUV);
-                    rendered.SetFloat(PropSoftness2, _cachedParentSoftness);
-                    rendered.SetFloat(PropInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+                    rendered.SetMatrix(pWorldToUV2, _cachedParentWorldToUV);
+                    rendered.SetFloat(pSoftness2, _cachedParentSoftness);
+                    rendered.SetFloat(pInvert2, _cachedParentInvertMask ? 1f : 0f);
 
-                    Texture parentTex = _sharedMaskMaterial.GetTexture(PropMaskTex2);
-                    if (parentTex != null) rendered.SetTexture(PropMaskTex2, parentTex);
-                    rendered.SetVector(PropMaskUVRect2, _sharedMaskMaterial.GetVector(PropMaskUVRect2));
+                    Texture parentTex = _parentSoftMask != null ? _parentSoftMask.GetMaskTexture() : null;
+                    if (parentTex != null) rendered.SetTexture(pTex2, parentTex);
+                    if (_parentSoftMask != null)
+                        rendered.SetVector(pUVRect2, _parentSoftMask.GetMaskUVRect());
                 }
             }
         }
@@ -612,6 +689,7 @@ namespace CAT.UI
             for (int i = 0; i < _toRemove.Count; i++)
             {
                 _originalChildMaterials.Remove(_toRemove[i]);
+                _tmpAppliedMaskMats.Remove(_toRemove[i]);
             }
         }
 
@@ -639,10 +717,44 @@ namespace CAT.UI
                 if (!BelongsToThisMask(child.transform)) continue;
                 if (_originalChildMaterials.ContainsKey(child)) continue;
 
-                // 원본 Material 저장 후 공유 Material 적용
-                _originalChildMaterials[child] = child.material;
+                // TMP_Text (TextMeshProUGUI 포함)
+                // TMP는 materialForRendering이 m_sharedMaterial을 사용하므로
+                // Graphic.material 대신 fontSharedMaterial로 접근해야 함
+                if (child is TMP_Text tmpText)
+                {
+                    Material originalFontMat = tmpText.fontSharedMaterial;
+                    if (originalFontMat == null) continue;
+
+                    _originalChildMaterials[child] = originalFontMat;
+
+                    Material tmpMat = CreateTMPMaskMaterial(originalFontMat);
+                    if (tmpMat != null)
+                    {
+                        tmpText.fontSharedMaterial = tmpMat;
+                        _tmpAppliedMaskMats[child] = tmpMat;
+                        child.SetAllDirty();
+                    }
+                    continue;
+                }
+
+                // 일반 Graphic (TMP_SubMeshUI 포함)
+                Material originalMat = child.material;
+                _originalChildMaterials[child] = originalMat;
+
+                // TMP_SubMeshUI는 material 세터가 m_sharedMaterial도 설정함
+                if (IsTMPMaterial(originalMat))
+                {
+                    Material tmpMat = CreateTMPMaskMaterial(originalMat);
+                    if (tmpMat != null)
+                    {
+                        child.material = tmpMat;
+                        _tmpAppliedMaskMats[child] = tmpMat;
+                        child.SetAllDirty();
+                        continue;
+                    }
+                }
+
                 child.material = mat;
-                // Stencil Material 재생성을 위한 Canvas 강제 리빌드
                 child.SetAllDirty();
             }
         }
@@ -654,10 +766,13 @@ namespace CAT.UI
         {
             foreach (var kvp in _originalChildMaterials)
             {
-                if (kvp.Key != null && kvp.Value != null)
-                {
+                if (kvp.Key == null || kvp.Value == null) continue;
+
+                // TMP_Text는 fontSharedMaterial로 복원
+                if (kvp.Key is TMP_Text tmpText)
+                    tmpText.fontSharedMaterial = kvp.Value;
+                else
                     kvp.Key.material = kvp.Value;
-                }
             }
 
             _originalChildMaterials.Clear();
@@ -670,6 +785,235 @@ namespace CAT.UI
                 else
                     DestroyImmediate(_sharedMaskMaterial);
                 _sharedMaskMaterial = null;
+            }
+
+            // TMP Material 파괴
+            for (int i = 0; i < _tmpMaskMaterials.Count; i++)
+            {
+                if (_tmpMaskMaterials[i] != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(_tmpMaskMaterials[i]);
+                    else
+                        DestroyImmediate(_tmpMaskMaterials[i]);
+                }
+            }
+            _tmpMaskMaterials.Clear();
+            _tmpAppliedMaskMats.Clear();
+        }
+
+        // ─────────────────────────────────────────────
+        // TMP 지원
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Material이 TextMeshPro 셰이더를 사용하는지 판별
+        /// 셰이더 이름 기반으로 TMP/SubMeshUI 등 모든 TMP 변형 감지
+        /// </summary>
+        private static bool IsTMPMaterial(Material mat)
+        {
+            return mat != null && mat.shader != null &&
+                   mat.shader.name.Contains("TextMeshPro");
+        }
+
+        /// <summary>
+        /// TMP 외부 Material 변경 감지 및 마스크 자동 재적용
+        /// 사용자가 TMP Material Preset을 변경했을 때 (Outline, Underlay 등)
+        /// 새 Material에 마스크를 자동 적용하고 원본 참조를 갱신
+        /// </summary>
+        private void DetectTMPMaterialChanges()
+        {
+            if (_tmpAppliedMaskMats.Count == 0) return;
+
+            _toRemove.Clear();
+
+            foreach (var kvp in _tmpAppliedMaskMats)
+            {
+                if (kvp.Key == null) { _toRemove.Add(kvp.Key); continue; }
+
+                // 현재 Material 가져오기
+                Material currentMat;
+                if (kvp.Key is TMP_Text tmpText)
+                    currentMat = tmpText.fontSharedMaterial;
+                else
+                    currentMat = kvp.Key.material;
+
+                // 적용한 마스크 Material과 동일 → 변경 없음
+                if (currentMat == kvp.Value || currentMat == null) continue;
+
+                // 사용자가 외부에서 Material을 변경함
+                _toRemove.Add(kvp.Key);
+            }
+
+            if (_toRemove.Count == 0) return;
+
+            for (int i = 0; i < _toRemove.Count; i++)
+            {
+                var child = _toRemove[i];
+
+                // null 오브젝트 정리
+                if (child == null)
+                {
+                    _tmpAppliedMaskMats.Remove(child);
+                    _originalChildMaterials.Remove(child);
+                    continue;
+                }
+
+                // 기존 마스크 Material 정리
+                if (_tmpAppliedMaskMats.TryGetValue(child, out Material oldMaskMat) && oldMaskMat != null)
+                {
+                    _tmpMaskMaterials.Remove(oldMaskMat);
+                    if (Application.isPlaying) Destroy(oldMaskMat);
+                    else DestroyImmediate(oldMaskMat);
+                }
+
+                // 사용자의 새 Material 가져오기
+                Material userMat;
+                if (child is TMP_Text tmp)
+                    userMat = tmp.fontSharedMaterial;
+                else
+                    userMat = child.material;
+
+                if (userMat == null)
+                {
+                    _tmpAppliedMaskMats.Remove(child);
+                    _originalChildMaterials.Remove(child);
+                    continue;
+                }
+
+                // 원본 Material 갱신 (비활성화 시 이 Material로 복원됨)
+                _originalChildMaterials[child] = userMat;
+
+                // 새 마스크 Material 생성 및 적용
+                Material newMaskMat = CreateTMPMaskMaterial(userMat);
+                if (newMaskMat != null)
+                {
+                    if (child is TMP_Text tmpChild)
+                        tmpChild.fontSharedMaterial = newMaskMat;
+                    else
+                        child.material = newMaskMat;
+
+                    _tmpAppliedMaskMats[child] = newMaskMat;
+                    child.SetAllDirty();
+                }
+                else
+                {
+                    _tmpAppliedMaskMats.Remove(child);
+                }
+            }
+
+            _materialDirty = true;
+        }
+
+        /// <summary>
+        /// TMP 전용 SoftMask Material 생성
+        /// 원본 TMP Material의 폰트 아틀라스, 색상, SDF 파라미터를 복사하고
+        /// SoftMask 프로퍼티를 추가 설정
+        /// </summary>
+        private Material CreateTMPMaskMaterial(Material originalTMPMat)
+        {
+            Shader shader = GetCachedTMPShader();
+            if (shader == null) return null;
+
+            Material tmpMat = new Material(shader)
+            {
+                name = $"{TMP_SHADER_NAME} (SoftMask: {gameObject.name})",
+                hideFlags = HideFlags.DontSave
+            };
+
+            // TMP 프로퍼티 개별 복사 (CopyPropertiesFromMaterial 대신)
+            // CopyPropertiesFromMaterial()은 Material 프로퍼티 시트를 통째로 교체하여
+            // 우리 셰이더의 _SoftMask* 프로퍼티를 제거하는 부작용이 있음
+            // 원본 셰이더의 프로퍼티만 개별 복사하면 대상 셰이더 고유 프로퍼티가 보존됨
+            CopyShaderProperties(tmpMat, originalTMPMat);
+
+            // TMP 셰이더 키워드 유지 (OUTLINE_ON, UNDERLAY_ON 등)
+            foreach (string keyword in originalTMPMat.shaderKeywords)
+            {
+                tmpMat.EnableKeyword(keyword);
+            }
+
+            // 렌더 큐 보존
+            tmpMat.renderQueue = originalTMPMat.renderQueue;
+
+            // 셰이더 컴파일 실패 시 폴백
+            if (!shader.isSupported)
+            {
+                Debug.LogWarning($"[SoftMask] TMP 셰이더가 지원되지 않습니다: {TMP_SHADER_NAME}");
+                _tmpMaskMaterials.Add(tmpMat);
+                return tmpMat;
+            }
+
+            // CopyPropertiesFromMaterial() 후 SoftMask 프로퍼티 재설정
+            // CopyPropertiesFromMaterial이 Material 내부 프로퍼티 시트를
+            // 원본 TMP Material 기준으로 덮어쓰므로, SoftMask 프로퍼티를 항상 재설정해야 함
+            Texture maskTex = GetMaskTexture();
+            if (maskTex != null) tmpMat.SetTexture(PropTMPMaskTex, maskTex);
+            tmpMat.SetMatrix(PropTMPMaskWorldToUV, _cachedWorldToUV);
+            tmpMat.SetFloat(PropTMPSoftness, _softness);
+            tmpMat.SetFloat(PropTMPInvertMask, _invertMask ? 1f : 0f);
+            tmpMat.SetVector(PropTMPMaskUVRect, GetMaskUVRect());
+
+            // 중첩 마스크 설정
+            if (_hasParentMask && _parentSoftMask != null)
+            {
+                tmpMat.EnableKeyword(KEYWORD_NESTED);
+
+                Texture parentTex = _parentSoftMask.GetMaskTexture();
+                if (parentTex != null) tmpMat.SetTexture(PropTMPMaskTex2, parentTex);
+                tmpMat.SetMatrix(PropTMPMaskWorldToUV2, _parentSoftMask.ComputeWorldToMaskUV());
+                tmpMat.SetFloat(PropTMPSoftness2, _parentSoftMask._softness);
+                tmpMat.SetFloat(PropTMPInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
+                tmpMat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+            }
+            else
+            {
+                tmpMat.DisableKeyword(KEYWORD_NESTED);
+            }
+
+            _tmpMaskMaterials.Add(tmpMat);
+            return tmpMat;
+        }
+
+        /// <summary>
+        /// TMP Material에 현재 마스크 프로퍼티 일괄 전파
+        /// </summary>
+        private void UpdateTMPMaterials()
+        {
+            Texture maskTex = GetMaskTexture();
+            Vector4 maskUVRect = GetMaskUVRect();
+
+            for (int i = _tmpMaskMaterials.Count - 1; i >= 0; i--)
+            {
+                Material tmpMat = _tmpMaskMaterials[i];
+                if (tmpMat == null)
+                {
+                    _tmpMaskMaterials.RemoveAt(i);
+                    continue;
+                }
+
+                // TMP 셰이더는 _SoftMask* 접두사 프로퍼티 사용
+                // (HasProperty 대신 shader 기준 체크 - CopyPropertiesFromMaterial이 프로퍼티 시트를 덮어쓸 수 있음)
+                if (tmpMat.shader == null || !tmpMat.shader.isSupported) continue;
+                tmpMat.SetMatrix(PropTMPMaskWorldToUV, _cachedWorldToUV);
+                tmpMat.SetFloat(PropTMPSoftness, _cachedSoftness);
+                tmpMat.SetFloat(PropTMPInvertMask, _cachedInvertMask ? 1f : 0f);
+                if (maskTex != null) tmpMat.SetTexture(PropTMPMaskTex, maskTex);
+                tmpMat.SetVector(PropTMPMaskUVRect, maskUVRect);
+
+                if (_hasParentMask && _parentSoftMask != null)
+                {
+                    if (!tmpMat.IsKeywordEnabled(KEYWORD_NESTED))
+                        tmpMat.EnableKeyword(KEYWORD_NESTED);
+
+                    tmpMat.SetMatrix(PropTMPMaskWorldToUV2, _cachedParentWorldToUV);
+                    tmpMat.SetFloat(PropTMPSoftness2, _cachedParentSoftness);
+                    tmpMat.SetFloat(PropTMPInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+
+                    Texture parentTex = _parentSoftMask.GetMaskTexture();
+                    if (parentTex != null) tmpMat.SetTexture(PropTMPMaskTex2, parentTex);
+                    tmpMat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+                }
             }
         }
 
@@ -688,6 +1032,55 @@ namespace CAT.UI
                 }
             }
             return s_cachedShader;
+        }
+
+        private static Shader GetCachedTMPShader()
+        {
+            if (s_cachedTMPShader == null)
+            {
+                s_cachedTMPShader = Shader.Find(TMP_SHADER_NAME);
+                if (s_cachedTMPShader == null)
+                {
+                    Debug.LogError($"[SoftMask] TMP 셰이더를 찾을 수 없습니다: {TMP_SHADER_NAME}");
+                }
+            }
+            return s_cachedTMPShader;
+        }
+
+        /// <summary>
+        /// 원본 Material의 셰이더 프로퍼티 값만 개별 복사
+        /// CopyPropertiesFromMaterial()과 달리 대상 Material의 프로퍼티 시트를
+        /// 통째로 교체하지 않으므로, 대상 셰이더 고유 프로퍼티가 보존됨
+        /// </summary>
+        private static void CopyShaderProperties(Material dest, Material src)
+        {
+            Shader srcShader = src.shader;
+            if (srcShader == null) return;
+
+            int count = srcShader.GetPropertyCount();
+            for (int i = 0; i < count; i++)
+            {
+                int nameId = srcShader.GetPropertyNameId(i);
+                switch (srcShader.GetPropertyType(i))
+                {
+                    case UnityEngine.Rendering.ShaderPropertyType.Color:
+                        dest.SetColor(nameId, src.GetColor(nameId));
+                        break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Float:
+                    case UnityEngine.Rendering.ShaderPropertyType.Range:
+                        dest.SetFloat(nameId, src.GetFloat(nameId));
+                        break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Texture:
+                        dest.SetTexture(nameId, src.GetTexture(nameId));
+                        break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Vector:
+                        dest.SetVector(nameId, src.GetVector(nameId));
+                        break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Int:
+                        dest.SetInteger(nameId, src.GetInteger(nameId));
+                        break;
+                }
+            }
         }
 
         /// <summary>
