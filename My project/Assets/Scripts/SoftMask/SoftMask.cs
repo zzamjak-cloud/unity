@@ -22,6 +22,11 @@ namespace CAT.UI
         public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
         private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
 
+        // 셰이더 직렬화 참조 (빌드에서 Shader.Find() 실패 방지)
+        // 직렬화된 참조가 있으면 빌드에 셰이더가 자동 포함됨
+        [SerializeField, HideInInspector] private Shader _maskShader;
+        [SerializeField, HideInInspector] private Shader _tmpMaskShader;
+
         // 셰이더 캐싱
         private static Shader s_cachedShader;
         private static Shader s_cachedTMPShader;
@@ -138,6 +143,18 @@ namespace CAT.UI
         // 2프레임 동안 PropagateToStencilMaterials() 강제 실행 필요
         private int _stencilRefreshCountdown;
 
+        // TMP 원본 Material 직렬화 백업 (플레이모드 전환 시 DontSave Material 유실 대응)
+        // 에디터 모드에서 저장 → 씬 직렬화에 포함 → 플레이모드에서 프리셋 복원
+        [System.Serializable]
+        private struct TMPOriginalEntry
+        {
+            public UnityEngine.UI.Graphic graphic;
+            public Material material;
+        }
+
+        [SerializeField, HideInInspector]
+        private List<TMPOriginalEntry> _tmpOriginalBackup = new List<TMPOriginalEntry>(2);
+
 #if UNITY_EDITOR
         private int _lastChildCount;
 #endif
@@ -245,9 +262,19 @@ namespace CAT.UI
         }
 
 #if UNITY_EDITOR
+        private void Reset()
+        {
+            _maskShader = Shader.Find(SHADER_NAME);
+            _tmpMaskShader = Shader.Find(TMP_SHADER_NAME);
+        }
+
         private void OnValidate()
         {
             if (!gameObject.scene.IsValid()) return;
+
+            // 셰이더 직렬화 참조 자동 설정 (빌드 시 Shader.Find() 실패 방지)
+            if (_maskShader == null) _maskShader = Shader.Find(SHADER_NAME);
+            if (_tmpMaskShader == null) _tmpMaskShader = Shader.Find(TMP_SHADER_NAME);
 
             if (!_initialized) Initialize();
 
@@ -723,9 +750,21 @@ namespace CAT.UI
                 if (child is TMP_Text tmpText)
                 {
                     Material originalFontMat = tmpText.fontSharedMaterial;
+
+                    // 플레이모드 진입 시 DontSave 마스크 Material이 유실되어
+                    // fontSharedMaterial이 null 또는 폰트 기본 Material로 폴백된 경우
+                    // 직렬화된 백업에서 원본 프리셋 Material 복원
+                    Material backup = FindTMPOriginalBackup(child);
+                    if (backup != null && originalFontMat != backup)
+                    {
+                        originalFontMat = backup;
+                        tmpText.fontSharedMaterial = backup;
+                    }
+
                     if (originalFontMat == null) continue;
 
                     _originalChildMaterials[child] = originalFontMat;
+                    SaveTMPOriginalBackup(child, originalFontMat);
 
                     Material tmpMat = CreateTMPMaskMaterial(originalFontMat);
                     if (tmpMat != null)
@@ -739,11 +778,21 @@ namespace CAT.UI
 
                 // 일반 Graphic (TMP_SubMeshUI 포함)
                 Material originalMat = child.material;
+
+                // TMP_SubMeshUI도 동일한 DontSave Material 유실 문제 대응
+                Material subBackup = FindTMPOriginalBackup(child);
+                if (subBackup != null && originalMat != subBackup)
+                {
+                    originalMat = subBackup;
+                    child.material = subBackup;
+                }
+
                 _originalChildMaterials[child] = originalMat;
 
                 // TMP_SubMeshUI는 material 세터가 m_sharedMaterial도 설정함
                 if (IsTMPMaterial(originalMat))
                 {
+                    SaveTMPOriginalBackup(child, originalMat);
                     Material tmpMat = CreateTMPMaskMaterial(originalMat);
                     if (tmpMat != null)
                     {
@@ -883,6 +932,7 @@ namespace CAT.UI
 
                 // 원본 Material 갱신 (비활성화 시 이 Material로 복원됨)
                 _originalChildMaterials[child] = userMat;
+                SaveTMPOriginalBackup(child, userMat);
 
                 // 새 마스크 Material 생성 및 적용
                 Material newMaskMat = CreateTMPMaskMaterial(userMat);
@@ -1021,28 +1071,78 @@ namespace CAT.UI
         // 유틸리티
         // ─────────────────────────────────────────────
 
-        private static Shader GetCachedShader()
+        /// <summary>
+        /// TMP 원본 Material을 직렬화 백업에 저장
+        /// 값이 변경된 경우에만 업데이트 (불필요한 씬 dirty 방지)
+        /// </summary>
+        private void SaveTMPOriginalBackup(UnityEngine.UI.Graphic g, Material mat)
         {
+            for (int i = 0; i < _tmpOriginalBackup.Count; i++)
+            {
+                if (_tmpOriginalBackup[i].graphic == g)
+                {
+                    if (_tmpOriginalBackup[i].material == mat) return;
+                    _tmpOriginalBackup[i] = new TMPOriginalEntry { graphic = g, material = mat };
+                    return;
+                }
+            }
+            _tmpOriginalBackup.Add(new TMPOriginalEntry { graphic = g, material = mat });
+        }
+
+        /// <summary>
+        /// 직렬화 백업에서 TMP 원본 Material 검색
+        /// </summary>
+        private Material FindTMPOriginalBackup(UnityEngine.UI.Graphic g)
+        {
+            for (int i = 0; i < _tmpOriginalBackup.Count; i++)
+            {
+                if (_tmpOriginalBackup[i].graphic == g)
+                    return _tmpOriginalBackup[i].material;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// SoftMask 셰이더 가져오기
+        /// 직렬화 참조 → 정적 캐시 → Shader.Find() 순으로 폴백
+        /// 직렬화 참조가 있으면 빌드에 셰이더가 자동 포함되어 Shader.Find() 실패를 방지
+        /// </summary>
+        private Shader GetCachedShader()
+        {
+            if (_maskShader != null)
+            {
+                s_cachedShader = _maskShader;
+                return _maskShader;
+            }
+
+            if (s_cachedShader != null) return s_cachedShader;
+
+            s_cachedShader = Shader.Find(SHADER_NAME);
             if (s_cachedShader == null)
             {
-                s_cachedShader = Shader.Find(SHADER_NAME);
-                if (s_cachedShader == null)
-                {
-                    Debug.LogError($"[SoftMask] 셰이더를 찾을 수 없습니다: {SHADER_NAME}");
-                }
+                Debug.LogError($"[SoftMask] 셰이더를 찾을 수 없습니다: {SHADER_NAME}");
             }
             return s_cachedShader;
         }
 
-        private static Shader GetCachedTMPShader()
+        /// <summary>
+        /// TMP SoftMask 셰이더 가져오기
+        /// 직렬화 참조 → 정적 캐시 → Shader.Find() 순으로 폴백
+        /// </summary>
+        private Shader GetCachedTMPShader()
         {
+            if (_tmpMaskShader != null)
+            {
+                s_cachedTMPShader = _tmpMaskShader;
+                return _tmpMaskShader;
+            }
+
+            if (s_cachedTMPShader != null) return s_cachedTMPShader;
+
+            s_cachedTMPShader = Shader.Find(TMP_SHADER_NAME);
             if (s_cachedTMPShader == null)
             {
-                s_cachedTMPShader = Shader.Find(TMP_SHADER_NAME);
-                if (s_cachedTMPShader == null)
-                {
-                    Debug.LogError($"[SoftMask] TMP 셰이더를 찾을 수 없습니다: {TMP_SHADER_NAME}");
-                }
+                Debug.LogError($"[SoftMask] TMP 셰이더를 찾을 수 없습니다: {TMP_SHADER_NAME}");
             }
             return s_cachedTMPShader;
         }
@@ -1094,3 +1194,4 @@ namespace CAT.UI
         public SoftMask ParentSoftMask => _parentSoftMask;
     }
 }
+

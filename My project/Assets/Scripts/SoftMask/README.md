@@ -8,7 +8,7 @@ Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너�
 
 ```
 Assets/Scripts/SoftMask/
-├── SoftMask.cs                       # 메인 컴포넌트 (1097줄)
+├── SoftMask.cs                       # 메인 컴포넌트 (1197줄)
 ├── Shader/
 │   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (283줄)
 │   └── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
@@ -32,6 +32,7 @@ Assets/Scripts/SoftMask/
 | **자식 자동 마스킹** | 하위 Graphic 컴포넌트에 자동으로 마스크 Material 적용 |
 | **TextMeshPro 지원** | TMP 전용 셰이더로 SDF 텍스트 마스킹 (Outline, Underlay 호환) |
 | **TMP Material Preset 자동 감지** | 외부 Material 변경 시 마스크 자동 재적용 |
+| **TMP Material Preset 플레이모드 보존** | 직렬화 백업으로 플레이모드 전환 시 프리셋 유실 방지 |
 | **에디터 실시간 프리뷰** | `[ExecuteAlways]`로 에디터에서 즉시 결과 확인 |
 
 ## 아키텍처
@@ -52,7 +53,8 @@ Assets/Scripts/SoftMask/
 │  자식 TMP_Text (TextMeshPro)                                  │
 │  ├─ 폰트별 개별 Material 생성 (CopyShaderProperties)           │
 │  ├─ TMP SDF 렌더링 + SoftMask 샘플링 (premultiplied alpha)    │
-│  └─ Material Preset 변경 자동 감지 및 재적용                   │
+│  ├─ Material Preset 변경 자동 감지 및 재적용                   │
+│  └─ 원본 Preset Material 직렬화 백업 (플레이모드 보존)         │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,6 +73,7 @@ Assets/Scripts/SoftMask/
 LateUpdate()
   ├── DetectTMPMaterialChanges()    ← TMP Material Preset 외부 변경 감지
   │    └── 변경됨? → 기존 Material 파괴 → CreateTMPMaskMaterial(새 Material)
+  │                 → SaveTMPOriginalBackup(새 Material) ← 직렬화 백업 갱신
   └── UpdateSharedMaterial()
        ├── ComputeWorldToMaskUV() -> Matrix4x4 비교
        │   └── 변경됨? -> _sharedMaskMaterial.SetMatrix()
@@ -97,7 +100,7 @@ LateUpdate()
 | Material 인스턴스 (TMP) | TMP 자식 수만큼 추가 (폰트별 개별 Material) |
 | RenderTexture | **없음** (1-Pass 방식) |
 | Dictionary 오버헤드 | 자식 수 x (Graphic ref + Material ref) |
-| 셰이더 Variant | 일반: 2개 x 2 SubShader / TMP: 2개 (기본 + nested) |
+| 셰이더 Variant | 일반: 2개 x 2 SubShader / TMP: 48개 (Outline x Underlay x ClipRect x AlphaClip x Nested) |
 
 ### CPU (프레임당)
 
@@ -177,6 +180,7 @@ Shader "CAT/UI/TMP_SoftMask"
 | **Material 접근** | `fontSharedMaterial` 사용 (`Graphic.material`은 TMP가 무시) |
 | **Premultiplied Alpha** | `c *= softMask` (RGB+A 모두 적용, `Blend One OneMinusSrcAlpha`) |
 | **Preset 변경 감지** | `DetectTMPMaterialChanges()`에서 매 프레임 현재 Material과 적용 Material 비교 |
+| **Preset 플레이모드 보존** | `_tmpOriginalBackup` 직렬화 리스트에 원본 프리셋 백업 → 플레이모드에서 `FindTMPOriginalBackup()`으로 복원 |
 | **Metal 호환** | sampler2D를 함수 매개변수로 전달하지 않고 전역 유니폼 직접 접근 |
 
 ### TMP 지원 기능
@@ -186,7 +190,79 @@ Shader "CAT/UI/TMP_SoftMask"
 - RectMask2D 클리핑 (UNITY_UI_CLIP_RECT)
 - UI Mask (Stencil) 호환
 - Material Preset 동적 변경
+- Material Preset 플레이모드 보존
 - 중첩 SoftMask
+
+### TMP Material Preset 플레이모드 보존
+
+#### 문제
+
+`[ExecuteAlways]`로 에디터 모드에서 SoftMask가 활성 상태일 때, TMP의 `fontSharedMaterial`을 `HideFlags.DontSave` 마스크 Material로 교체합니다. 플레이모드 전환 시 Unity가 씬을 직렬화하는데, `DontSave` Material은 직렬화에서 **null로 저장**됩니다. 역직렬화 후 TMP가 `fontSharedMaterial = null`을 감지하면 폰트 기본 Material로 폴백하여 **프리셋(Outline, Underlay 등)이 유실**됩니다.
+
+```
+에디터 모드:
+  TMP fontSharedMaterial = [Outline Preset] → SoftMask → [Mask Material (DontSave)]
+
+플레이모드 전환 (문제):
+  씬 직렬화: [Mask Material (DontSave)] → null
+  역직렬화: fontSharedMaterial = null → 폰트 기본 Material로 폴백
+  결과: Outline 프리셋 유실 ✗
+```
+
+#### 해결: 직렬화 백업 (`_tmpOriginalBackup`)
+
+원본 프리셋 Material 참조를 `[SerializeField]` 리스트에 백업합니다. 프리셋 Material은 에셋이므로 직렬화에서 유실되지 않습니다.
+
+```csharp
+// 직렬화 필드: TMP 원본 Material 백업
+[System.Serializable]
+private struct TMPOriginalEntry
+{
+    public UnityEngine.UI.Graphic graphic;
+    public Material material;
+}
+
+[SerializeField, HideInInspector]
+private List<TMPOriginalEntry> _tmpOriginalBackup;
+```
+
+#### 동작 흐름
+
+```
+에디터 모드:
+  1. ApplyMaskToChildren()
+     └── originalFontMat = fontSharedMaterial  → [Outline Preset]
+     └── SaveTMPOriginalBackup(child, mat)     → 백업 저장 ✓
+     └── fontSharedMaterial = [Mask Material]   → 마스크 적용
+
+  2. DetectTMPMaterialChanges() (프리셋 변경 시)
+     └── SaveTMPOriginalBackup(child, newMat)   → 백업 갱신 ✓
+
+플레이모드 전환:
+  씬 직렬화:
+     [Mask Material (DontSave)] → null          (마스크 Material 유실)
+     _tmpOriginalBackup → [Outline Preset]      (백업은 정상 직렬화 ✓)
+
+  역직렬화 + OnEnable → ApplyMaskToChildren():
+     fontSharedMaterial = [폰트 기본 Material]  (TMP 자동 폴백)
+     backup = FindTMPOriginalBackup(child)       → [Outline Preset]
+     기본 Material ≠ backup → fontSharedMaterial = backup  (프리셋 복원 ✓)
+     CreateTMPMaskMaterial(backup)               → 프리셋 기반 마스크 적용 ✓
+```
+
+#### 백업 갱신 시점
+
+| 시점 | 메서드 | 설명 |
+|------|--------|------|
+| 마스크 최초 적용 | `ApplyMaskToChildren()` | 원본 프리셋 Material 백업 |
+| 프리셋 변경 | `DetectTMPMaterialChanges()` | 변경된 프리셋으로 백업 갱신 |
+
+#### 주의사항
+
+- 에디터 모드에서 프리셋 변경 후 **씬 저장(Ctrl+S)** 필요 (백업이 직렬화에 포함되려면)
+- TMP_SubMeshUI(멀티 아틀라스)도 동일한 백업 메커니즘 적용
+- 플레이모드 중 프리셋 변경은 런타임 전용 (플레이모드 종료 시 자동 폐기)
+- 백업 데이터는 `[HideInInspector]`로 인스펙터에 노출되지 않음
 
 ## mob-sakai SoftMaskForUGUI와 비교
 
@@ -217,7 +293,7 @@ Shader "CAT/UI/TMP_SoftMask"
 | UI Mask 호환 | O (Stencil 전파) | O (Mask 상속) |
 | SpriteRenderer | X (셰이더만 준비, C# 미구현) | X (UI 전용) |
 | TextMeshPro | O (전용 셰이더 자동 적용) | O (샘플 임포트 + 경로 설정) |
-| TMP Material Preset 동적 변경 | O (자동 감지) | O |
+| TMP Material Preset 동적 변경 | O (자동 감지 + 플레이모드 보존) | O |
 | MaskingShape (가산/감산) | X | O |
 | Anti-Aliasing 모드 | X | O (Stencil+Vertex 방식) |
 | Alpha Hit Test (Raycast) | X | O |
@@ -353,8 +429,8 @@ c *= SampleSoftMask1(input.softMaskUV);
 | `_SOFTMASK_NESTED` | `multi_compile_local` | 중첩 마스크 활성화 (비활성 시 추가 코드 완전 제거) |
 | `UNITY_UI_CLIP_RECT` | `multi_compile_local` | RectMask2D/ScrollView 클리핑 |
 | `UNITY_UI_ALPHACLIP` | `multi_compile_local` | 알파 클리핑 |
-| `OUTLINE_ON` | `shader_feature` | TMP Outline (TMP 셰이더 전용) |
-| `UNDERLAY_ON` / `UNDERLAY_INNER` | `shader_feature` | TMP Underlay (TMP 셰이더 전용) |
+| `OUTLINE_ON` | `multi_compile` | TMP Outline (TMP 셰이더 전용, 빌드 variant 보호) |
+| `UNDERLAY_ON` / `UNDERLAY_INNER` | `multi_compile` | TMP Underlay (TMP 셰이더 전용, 빌드 variant 보호) |
 
 ## 호환성
 
@@ -370,8 +446,46 @@ c *= SampleSoftMask1(input.softMaskUV);
 | SpriteRenderer | X (셰이더만 준비, C# 미구현) |
 | TextMeshPro | O (자동 감지 + 전용 셰이더) |
 | TMP Outline/Underlay | O |
-| TMP Material Preset | O (동적 변경 감지) |
+| TMP Material Preset | O (동적 변경 감지 + 플레이모드 보존) |
 | 에디터 실시간 편집 | O |
+
+## 빌드 안정성
+
+### 해결된 빌드 이슈
+
+#### 1. Shader.Find() 빌드 실패 방지
+
+**문제**: `Shader.Find()`는 빌드에 포함된 셰이더만 검색합니다. SoftMask 셰이더는 런타임에서 `new Material(shader)`로 생성하는 `DontSave` Material만 사용하므로, 빌드 시 영구 에셋에서 참조되지 않아 **셰이더가 빌드에서 제외**될 수 있습니다.
+
+**해결**: `[SerializeField]` 셰이더 참조를 컴포넌트에 추가하여, 씬에 SoftMask가 있으면 셰이더가 자동으로 빌드에 포함됩니다.
+
+```csharp
+[SerializeField, HideInInspector] private Shader _maskShader;      // CAT/UI/SoftMask
+[SerializeField, HideInInspector] private Shader _tmpMaskShader;    // CAT/UI/TMP_SoftMask
+```
+
+- `OnValidate()`에서 null이면 자동으로 `Shader.Find()`로 설정
+- `Reset()`에서 컴포넌트 추가 시 자동 설정
+- `GetCachedShader()`가 직렬화 참조 → 정적 캐시 → `Shader.Find()` 순으로 폴백
+
+#### 2. TMP 셰이더 Variant 스트리핑 방지
+
+**문제**: `shader_feature`로 선언된 키워드는 빌드 시 영구 Material에서 활성화된 variant만 포함합니다. `CAT/UI/TMP_SoftMask` 셰이더의 Material은 모두 런타임 생성이므로, `OUTLINE_ON`과 `UNDERLAY_ON` variant가 빌드에서 **스트리핑**되어 Outline/Underlay가 표시되지 않을 수 있습니다.
+
+**해결**: `shader_feature` → `multi_compile`로 변경하여 모든 variant를 빌드에 포함합니다.
+
+```hlsl
+// 변경 전 (빌드에서 variant 스트리핑 가능)
+#pragma shader_feature __ OUTLINE_ON
+#pragma shader_feature __ UNDERLAY_ON UNDERLAY_INNER
+
+// 변경 후 (모든 variant 빌드 포함)
+#pragma multi_compile __ OUTLINE_ON
+#pragma multi_compile __ UNDERLAY_ON UNDERLAY_INNER
+```
+
+- Variant 수: 2(Outline) × 3(Underlay) × 2(ClipRect) × 2(AlphaClip) × 2(Nested) = **48개**
+- TMP 전용 셰이더이므로 variant 증가가 전체 빌드에 미치는 영향은 미미
 
 ## 제한사항
 

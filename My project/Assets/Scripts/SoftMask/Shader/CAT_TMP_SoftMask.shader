@@ -100,8 +100,8 @@ Shader "CAT/UI/TMP_SoftMask"
             CGPROGRAM
             #pragma vertex VertShader
             #pragma fragment PixShader
-            #pragma shader_feature __ OUTLINE_ON
-            #pragma shader_feature __ UNDERLAY_ON UNDERLAY_INNER
+            #pragma multi_compile __ OUTLINE_ON
+            #pragma multi_compile __ UNDERLAY_ON UNDERLAY_INNER
             #pragma multi_compile __ UNITY_UI_CLIP_RECT
             #pragma multi_compile __ UNITY_UI_ALPHACLIP
             #pragma multi_compile_local _ _SOFTMASK_NESTED
