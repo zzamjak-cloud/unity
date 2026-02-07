@@ -1,4 +1,4 @@
-# CAT SoftMask
+# CAT SoftMask v1.0.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
@@ -495,3 +495,43 @@ c *= SampleSoftMask1(input.softMaskUV);
 - MaskingShape (가산/감산 영역) 미지원
 - TMP 자식은 폰트별 개별 Material 생성 필요 (공유 Material 불가)
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
+
+## 변경 이력
+
+### v1.0.0 (2025-02-07)
+
+초기 안정 릴리스
+
+**핵심 기능**
+- 알파 채널 기반 1-Pass 소프트 마스킹 (RenderTexture 없음)
+- Matrix4x4 기반 월드→UV 변환 (회전/스케일 대응)
+- SoftMask당 1개 공유 Material (배칭 최적화)
+- 더티 체크로 불필요한 Material 업데이트 스킵
+- Softness, Invert Mask, Show/Hide Mask Graphic
+- 최대 2단계 중첩 마스크 (`_SOFTMASK_NESTED` 키워드)
+
+**Atlas/호환성**
+- Sprite Atlas 트리밍 보정 (`GetContentLocalRect()`)
+- Atlas UV 보정 (`DataUtility.GetOuterUV()`)
+- UI Mask (Stencil) 호환 - Stencil Material 프로퍼티 전파
+- RectMask2D / ScrollView 호환 (`UNITY_UI_CLIP_RECT`)
+
+**TextMeshPro 지원**
+- TMP 전용 셰이더 (`CAT/UI/TMP_SoftMask`) 자동 적용
+- `CopyShaderProperties()` 개별 프로퍼티 복사 (프로퍼티 시트 보존)
+- Outline, Underlay, Inner Underlay 키워드 호환
+- TMP Material Preset 외부 변경 자동 감지 및 재적용
+- TMP Material Preset 플레이모드 보존 (`_tmpOriginalBackup` 직렬화 백업)
+- TMP_SubMeshUI (멀티 아틀라스) 대응
+- `_SoftMask*` 접두사로 TMPro `_MaskTex` 충돌 방지
+- Premultiplied alpha 블렌딩 호환 (`Blend One OneMinusSrcAlpha`)
+
+**빌드 안정성**
+- `[SerializeField]` 셰이더 참조로 `Shader.Find()` 빌드 실패 방지
+- TMP 셰이더 `shader_feature` → `multi_compile` (variant 스트리핑 방지)
+- `OnValidate()` / `Reset()`에서 셰이더 참조 자동 설정
+
+**에디터**
+- `[ExecuteAlways]` 에디터 실시간 프리뷰
+- 자식 오브젝트 변경 자동 감지 (`CheckForChildChanges()`)
+- 커스텀 인스펙터 (`SoftMaskEditor.cs`)

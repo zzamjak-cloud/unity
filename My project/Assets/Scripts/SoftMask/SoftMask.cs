@@ -18,6 +18,8 @@ namespace CAT.UI
     [AddComponentMenu("CAT/UI/SoftMask")]
     public class SoftMask : MonoBehaviour
     {
+        public const string VERSION = "1.0.0";
+
         public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
         public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
         private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
