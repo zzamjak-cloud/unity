@@ -54,8 +54,8 @@ namespace CAT.UI
         /// <summary>Shadow 오프셋 (픽셀, fontSize 기준 스케일)</summary>
         Vector2 ShadowOffset { get; }
 
-        /// <summary>Shadow 색상 (버텍스 컬러)</summary>
-        Color ShadowColor { get; }
+        /// <summary>Shadow 알파값 (0~1, RGB는 Underlay 색상을 따름)</summary>
+        float ShadowAlpha { get; }
 
         // ─────────────────────────────────────────────
         // Material 공유

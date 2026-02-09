@@ -50,7 +50,7 @@ namespace CAT.UI
         [Header("Shadow Settings")]
         [SerializeField] private bool _enableShadow = false;
         [SerializeField] private Vector2 _shadowOffset = new Vector2(0.1f, -0.1f);
-        [SerializeField] private Color _shadowColor = new Color(0, 0, 0, 0.5f);
+        [SerializeField, Range(0f, 1f)] private float _shadowAlpha = 0.5f;
 
         // ─────────────────────────────────────────────
         // 더티 체크 최적화 (BitMask)
@@ -84,7 +84,7 @@ namespace CAT.UI
         private float _prevFaceDilate;
         private bool _prevEnableShadow;
         private Vector2 _prevShadowOffset;
-        private Color _prevShadowColor;
+        private float _prevShadowAlpha;
 
         // ─────────────────────────────────────────────
         // Static 캐시 최적화 (GC 제거)
@@ -270,12 +270,12 @@ namespace CAT.UI
             }
         }
 
-        public Color ShadowColor
+        public float ShadowAlpha
         {
-            get => _shadowColor;
+            get => _shadowAlpha;
             set
             {
-                _shadowColor = value;
+                _shadowAlpha = Mathf.Clamp01(value);
                 if (_enableShadow && _tmpText != null)
                 {
                     _tmpText.SetVerticesDirty();
@@ -363,7 +363,7 @@ namespace CAT.UI
             _prevFaceDilate = _faceDilate;
             _prevEnableShadow = _enableShadow;
             _prevShadowOffset = _shadowOffset;
-            _prevShadowColor = _shadowColor;
+            _prevShadowAlpha = _shadowAlpha;
 
             // 초기화 플래그 설정 (LateUpdate에서 처리)
             _needsInitialization = true;
@@ -494,10 +494,10 @@ namespace CAT.UI
                 _prevShadowOffset = _shadowOffset;
             }
 
-            if (_enableShadow && _shadowColor != _prevShadowColor)
+            if (_enableShadow && !Mathf.Approximately(_shadowAlpha, _prevShadowAlpha))
             {
                 _dirtyFlags |= DirtyFlags.ShadowColor;
-                _prevShadowColor = _shadowColor;
+                _prevShadowAlpha = _shadowAlpha;
             }
         }
 
@@ -691,8 +691,10 @@ namespace CAT.UI
                 // 위치 오프셋 (fontSize 기준으로 스케일)
                 shadowVertex.position += new Vector3(_shadowOffset.x * scale, _shadowOffset.y * scale, 0);
 
-                // Shadow 색상
-                shadowVertex.color = _shadowColor;
+                // Shadow 알파 적용 (RGB는 Underlay 색상을 따름)
+                Color32 c = shadowVertex.color;
+                c.a = (byte)(_shadowAlpha * 255f);
+                shadowVertex.color = c;
 
                 shadowVertices.Add(shadowVertex);
             }
@@ -753,12 +755,12 @@ namespace CAT.UI
         /// </summary>
         /// <param name="outlineColor">Outline 색상</param>
         /// <param name="outlineWidth">Outline 두께 (0~1)</param>
-        /// <param name="shadowColor">Shadow 색상</param>
+        /// <param name="shadowAlpha">Shadow 알파값 (0~1)</param>
         /// <param name="shadowOffset">Shadow 오프셋</param>
         public void SetOutlineWithShadow(
             Color outlineColor,
             float outlineWidth,
-            Color shadowColor,
+            float shadowAlpha,
             Vector2 shadowOffset)
         {
             // Outline (GPU)
@@ -770,7 +772,7 @@ namespace CAT.UI
 
             // Shadow (CPU)
             EnableShadow = true;
-            ShadowColor = shadowColor;
+            ShadowAlpha = shadowAlpha;
             ShadowOffset = shadowOffset;
         }
 
@@ -787,7 +789,7 @@ namespace CAT.UI
             FaceDilate = 0f;
             EnableShadow = false;
             ShadowOffset = Vector2.zero;
-            ShadowColor = Color.clear;
+            ShadowAlpha = 0f;
         }
 
         /// <summary>

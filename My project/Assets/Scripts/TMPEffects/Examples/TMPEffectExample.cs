@@ -70,7 +70,7 @@ namespace CAT.UI.Examples
             // Mesh Shadow 추가
             effect.EnableShadow = true;
             effect.ShadowOffset = new Vector2(0.1f, -0.1f);
-            effect.ShadowColor = new Color(0, 0, 0, 0.3f);
+            effect.ShadowAlpha = 0.3f;
 
             // Face 조절
             effect.FaceDilate = 0.05f;  // 약간 굵게
@@ -133,7 +133,7 @@ namespace CAT.UI.Examples
             // Shadow: 진한 그림자
             effect.EnableShadow = true;
             effect.ShadowOffset = new Vector2(0.15f, -0.15f);
-            effect.ShadowColor = new Color(0, 0, 0, 0.6f);
+            effect.ShadowAlpha = 0.6f;
         }
 
         // ─────────────────────────────────────────────

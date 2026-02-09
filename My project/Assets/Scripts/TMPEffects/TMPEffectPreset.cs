@@ -51,7 +51,7 @@ namespace CAT.UI
         [Header("Shadow Settings")]
         [SerializeField] private bool _enableShadow = false;
         [SerializeField] private Vector2 _shadowOffset = new Vector2(0.1f, -0.1f);
-        [SerializeField] private Color _shadowColor = new Color(0, 0, 0, 0.5f);
+        [SerializeField, Range(0f, 1f)] private float _shadowAlpha = 0.5f;
 
         [Header("Preset Info")]
         [SerializeField] private PresetCategory _category = PresetCategory.Custom;
@@ -69,7 +69,7 @@ namespace CAT.UI
         public float FaceDilate => _faceDilate;
         public bool EnableShadow => _enableShadow;
         public Vector2 ShadowOffset => _shadowOffset;
-        public Color ShadowColor => _shadowColor;
+        public float ShadowAlpha => _shadowAlpha;
         public PresetCategory Category => _category;
         public string Description => _description;
 
@@ -92,7 +92,7 @@ namespace CAT.UI
             effect.FaceDilate = _faceDilate;
             effect.EnableShadow = _enableShadow;
             effect.ShadowOffset = _shadowOffset;
-            effect.ShadowColor = _shadowColor;
+            effect.ShadowAlpha = _shadowAlpha;
         }
 
         /// <summary>
@@ -110,7 +110,7 @@ namespace CAT.UI
             _faceDilate = effect.FaceDilate;
             _enableShadow = effect.EnableShadow;
             _shadowOffset = effect.ShadowOffset;
-            _shadowColor = effect.ShadowColor;
+            _shadowAlpha = effect.ShadowAlpha;
 
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);
@@ -209,7 +209,7 @@ namespace CAT.UI
             preset._faceDilate = 0.1f;
             preset._enableShadow = true;
             preset._shadowOffset = new Vector2(0.15f, -0.15f);
-            preset._shadowColor = new Color(0, 0, 0, 0.6f);
+            preset._shadowAlpha = 0.6f;
             return preset;
         }
     }

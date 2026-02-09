@@ -6,6 +6,10 @@ namespace CAT.UI
     [CustomEditor(typeof(TMPOutlineEffect))]
     public class TMPOutlineEffectEditor : Editor
     {
+        // EditorPrefs 키
+        private const string PREF_PRESET_FOLDER = "TMPOutlineEffect_PresetFolder";
+        private const string DEFAULT_PRESET_FOLDER = "Assets";
+
         // 다음 프레임에 실행할 액션 (GUI 에러 방지)
         private System.Action _delayedAction;
         private TMPOutlineEffect _target;
@@ -13,11 +17,32 @@ namespace CAT.UI
         private TMPEffectPreset[] _availablePresets;
         private string[] _presetNames;
         private int _selectedPresetIndex = 0;
-        private PresetCategory _filterCategory = (PresetCategory)(-1);  // -1 = All
+        private int _filterCategoryIndex = 0;  // 0 = 전체
+
+        // 카테고리 옵션 (첫 번째가 "전체")
+        private static readonly string[] CATEGORY_OPTIONS = new string[]
+        {
+            "전체",
+            "Outline",
+            "DropShadow",
+            "Title",
+            "Button",
+            "Dialogue",
+            "GameUI",
+            "Custom"
+        };
+
+        // 저장 폴더
+        private DefaultAsset _presetFolder;
+        private string _presetFolderPath;
 
         private void OnEnable()
         {
             _target = (TMPOutlineEffect)target;
+
+            // 저장된 폴더 경로 불러오기
+            LoadPresetFolder();
+
             RefreshPresetList();
 
             // 현재 할당된 Preset 확인
@@ -40,6 +65,28 @@ namespace CAT.UI
             Repaint();
         }
 
+        private void LoadPresetFolder()
+        {
+            _presetFolderPath = EditorPrefs.GetString(PREF_PRESET_FOLDER, DEFAULT_PRESET_FOLDER);
+
+            // 폴더가 유효한지 확인
+            if (!string.IsNullOrEmpty(_presetFolderPath) && AssetDatabase.IsValidFolder(_presetFolderPath))
+            {
+                _presetFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(_presetFolderPath);
+            }
+            else
+            {
+                _presetFolderPath = DEFAULT_PRESET_FOLDER;
+                _presetFolder = null;
+            }
+        }
+
+        private void SavePresetFolder(string path)
+        {
+            _presetFolderPath = path;
+            EditorPrefs.SetString(PREF_PRESET_FOLDER, path);
+        }
+
         /// <summary>
         /// 현재 값이 선택된 프리셋과 다른지 확인
         /// </summary>
@@ -55,7 +102,7 @@ namespace CAT.UI
                    !Mathf.Approximately(_target.FaceDilate, _selectedPreset.FaceDilate) ||
                    _target.EnableShadow != _selectedPreset.EnableShadow ||
                    _target.ShadowOffset != _selectedPreset.ShadowOffset ||
-                   _target.ShadowColor != _selectedPreset.ShadowColor;
+                   !Mathf.Approximately(_target.ShadowAlpha, _selectedPreset.ShadowAlpha);
         }
 
         public override void OnInspectorGUI()
@@ -92,7 +139,7 @@ namespace CAT.UI
             {
                 EditorGUILayout.Space(5);
                 EditorGUILayout.HelpBox(
-                    $"값이 변경되었습니다. '{_selectedPreset.name}' 프리셋을 업데이트하려면 '프리셋 갱신' 버튼을 클릭하세요.",
+                    $"값이 변경되었습니다. '{_selectedPreset.name}' 프리셋을 업데이트하려면 '갱신' 버튼을 클릭하세요.",
                     MessageType.Info
                 );
             }
@@ -104,13 +151,47 @@ namespace CAT.UI
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-            // 카테고리 필터
+            // 저장 폴더 지정
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("저장 폴더", "프리셋이 저장될 기본 폴더입니다. 폴더를 드래그&드롭하세요."),
+                GUILayout.Width(100));
+
+            EditorGUI.BeginChangeCheck();
+            var newFolder = EditorGUILayout.ObjectField(
+                new GUIContent("", "클릭하여 폴더를 선택하거나 Project 창에서 드래그&드롭하세요."),
+                _presetFolder, typeof(DefaultAsset), false) as DefaultAsset;
+            if (EditorGUI.EndChangeCheck() && newFolder != null)
+            {
+                string path = AssetDatabase.GetAssetPath(newFolder);
+                if (AssetDatabase.IsValidFolder(path))
+                {
+                    _presetFolder = newFolder;
+                    SavePresetFolder(path);
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("오류", "폴더만 지정할 수 있습니다.", "확인");
+                }
+            }
+
+            // 폴더 경로 표시
+            if (_presetFolder != null)
+            {
+                EditorGUILayout.LabelField(_presetFolderPath, EditorStyles.miniLabel, GUILayout.Width(150));
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(3);
+
+            // 카테고리 필터 (첫 번째 옵션이 "전체")
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("카테고리", GUILayout.Width(100));
-            var newCategory = (PresetCategory)EditorGUILayout.EnumPopup(_filterCategory);
-            if (newCategory != _filterCategory)
+            int newCategoryIndex = EditorGUILayout.Popup(_filterCategoryIndex, CATEGORY_OPTIONS);
+            if (newCategoryIndex != _filterCategoryIndex)
             {
-                _filterCategory = newCategory;
+                _filterCategoryIndex = newCategoryIndex;
                 RefreshPresetList();
             }
             EditorGUILayout.EndHorizontal();
@@ -128,7 +209,7 @@ namespace CAT.UI
             }
 
             // 새로고침 버튼
-            if (GUILayout.Button("⟳", GUILayout.Width(30)))
+            if (GUILayout.Button(new GUIContent("⟳", "프리셋 목록 새로고침"), GUILayout.Width(30)))
             {
                 RefreshPresetList();
             }
@@ -140,9 +221,11 @@ namespace CAT.UI
             // 프리셋 저장/갱신 버튼
             EditorGUILayout.BeginHorizontal();
 
+            bool valuesChanged = HasValuesChanged();
+
             if (_selectedPresetIndex == 0)
             {
-                // None 선택 시 → 새 프리셋 저장
+                // None 선택 시 → 새 프리셋 저장만 표시
                 GUI.backgroundColor = new Color(0.5f, 1f, 0.5f);
                 if (GUILayout.Button("💾 새 프리셋 저장", GUILayout.Height(30)))
                 {
@@ -153,12 +236,22 @@ namespace CAT.UI
             }
             else
             {
-                // 프리셋 선택 시 → 프리셋 갱신
-                bool valuesChanged = HasValuesChanged();
+                // 프리셋 선택 시 → '신규 저장' + '갱신' 버튼을 한 라인에 배치
+
+                // 신규 저장 버튼 (항상 활성화)
+                GUI.backgroundColor = new Color(0.5f, 1f, 0.5f);
+                if (GUILayout.Button("💾 신규 저장", GUILayout.Height(30)))
+                {
+                    _delayedAction = SaveAsNewPreset;
+                    Repaint();
+                }
+                GUI.backgroundColor = Color.white;
+
+                // 갱신 버튼 (값이 변경되었을 때만 활성화)
                 GUI.enabled = valuesChanged;
                 GUI.backgroundColor = valuesChanged ? new Color(1f, 0.8f, 0.5f) : Color.white;
 
-                if (GUILayout.Button($"📝 '{_selectedPreset.name}' 프리셋 갱신", GUILayout.Height(30)))
+                if (GUILayout.Button($"📝 갱신", GUILayout.Height(30)))
                 {
                     _delayedAction = UpdateExistingPreset;
                     Repaint();
@@ -246,16 +339,31 @@ namespace CAT.UI
 
         private void SaveAsNewPreset()
         {
+            // 저장 폴더 확인
+            string folder = _presetFolderPath;
+            if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder))
+            {
+                folder = DEFAULT_PRESET_FOLDER;
+            }
+
             string path = EditorUtility.SaveFilePanelInProject(
                 "새 프리셋 저장",
                 "NewEffectPreset",
                 "asset",
                 "프리셋 이름을 입력하세요",
-                "Assets"
+                folder
             );
 
             if (!string.IsNullOrEmpty(path))
             {
+                // 저장된 폴더 경로 업데이트
+                string savedFolder = System.IO.Path.GetDirectoryName(path).Replace("\\", "/");
+                if (savedFolder != _presetFolderPath)
+                {
+                    SavePresetFolder(savedFolder);
+                    _presetFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(savedFolder);
+                }
+
                 // 새 프리셋 생성
                 var newPreset = ScriptableObject.CreateInstance<TMPEffectPreset>();
                 newPreset.CopyFrom(_target);
@@ -298,7 +406,6 @@ namespace CAT.UI
             if (_selectedPreset == null) return;
 
             string path = AssetDatabase.GetAssetPath(_selectedPreset);
-            string presetName = _selectedPreset.name;
 
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.SaveAssets();
@@ -316,13 +423,14 @@ namespace CAT.UI
             // 모든 TMPEffectPreset 에셋 찾기
             var allPresets = FindAllPresets();
 
-            // 카테고리 필터 적용
-            if ((int)_filterCategory >= 0)  // -1이 아니면 필터링
+            // 카테고리 필터 적용 (0 = 전체, 1+ = 특정 카테고리)
+            if (_filterCategoryIndex > 0)
             {
+                PresetCategory filterCategory = (PresetCategory)(_filterCategoryIndex - 1);
                 var filtered = new System.Collections.Generic.List<TMPEffectPreset>();
                 foreach (var preset in allPresets)
                 {
-                    if (preset.Category == _filterCategory)
+                    if (preset.Category == filterCategory)
                     {
                         filtered.Add(preset);
                     }
@@ -336,8 +444,8 @@ namespace CAT.UI
 
             // 드롭다운 이름 배열 생성
             _presetNames = new string[_availablePresets.Length + 1];
-            _presetNames[0] = (int)_filterCategory >= 0
-                ? $"None (새로 만들기 - {_filterCategory})"
+            _presetNames[0] = _filterCategoryIndex > 0
+                ? $"None (새로 만들기 - {CATEGORY_OPTIONS[_filterCategoryIndex]})"
                 : "None (새로 만들기)";
 
             for (int i = 0; i < _availablePresets.Length; i++)

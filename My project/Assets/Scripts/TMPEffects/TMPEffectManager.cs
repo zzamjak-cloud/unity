@@ -115,7 +115,7 @@ namespace CAT.UI
             public float FaceDilate { get; set; }
             public bool EnableShadow => false;
             public Vector2 ShadowOffset => Vector2.zero;
-            public Color ShadowColor => Color.clear;
+            public float ShadowAlpha => 0f;
 
             public int GetMaterialHash()
             {

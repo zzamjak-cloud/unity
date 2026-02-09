@@ -10,7 +10,6 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 - **♻️ GC 제거**: static 캐싱으로 GC Alloc 100% 제거
 - **📱 모바일 타겟**: Galaxy S10, iPhone 11 @ 60 FPS
 - **🎨 프리셋 시스템**: ScriptableObject 기반 스타일 관리
-- **🎬 애니메이션 지원**: DOTween 통합
 
 ## 📦 제공 효과
 
@@ -29,7 +28,7 @@ TMP의 **Underlay 시스템**을 활용한 All-in-One 효과 컴포넌트입니�
 - Enable Shadow 토글로 활성화
 - 정점 2배 복제로 그림자 레이어 생성
 - static 캐싱으로 GC Alloc 제거
-- Underlay와 독립적으로 동작 (동시 사용 가능)
+- **Shadow Alpha**: 알파값만 제어 (0~1), RGB는 Underlay 색상을 따름
 
 #### 3. Face Dilate
 - 텍스트 본체 두께 조절
@@ -65,13 +64,23 @@ TMPOutlineEffect는 **강력한 프리셋 관리 시스템**을 제공합니다.
 ```
 1. 프리셋이 적용된 TMPOutlineEffect 선택
 2. 인스펙터에서 값 수정 (예: 색상 변경)
-3. "📝 '[프리셋 이름]' 프리셋 갱신" 버튼 클릭 (주황색으로 활성화됨)
-4. 해당 프리셋을 사용하는 모든 텍스트에 자동 반영! 🔄
+3. "📝 갱신" 버튼 클릭 (주황색으로 활성화됨)
+4. 또는 "💾 신규 저장" 버튼으로 새 프리셋으로 저장
+5. 해당 프리셋을 사용하는 모든 텍스트에 자동 반영! 🔄
 ```
 
-#### 4️⃣ 프리셋 카테고리 관리
+#### 4️⃣ 저장 폴더 지정
 
-**카테고리 필터**:
+```
+1. "저장 폴더" 필드에 폴더를 드래그&드롭
+2. 이후 프리셋 저장 시 해당 폴더가 기본 경로로 사용됨
+3. 폴더 경로는 EditorPrefs에 저장되어 모든 컴포넌트에서 공유됨
+```
+
+#### 5️⃣ 프리셋 카테고리 관리
+
+**카테고리 필터** (기본값: 전체):
+- 전체 - 모든 프리셋 표시
 - Outline - 외곽선 효과
 - DropShadow - 그림자 효과
 - Title - 타이틀용 복합 효과
@@ -88,8 +97,8 @@ TMPOutlineEffect는 **강력한 프리셋 관리 시스템**을 제공합니다.
 
 **버튼 동작**:
 - None 선택 시 → "💾 새 프리셋 저장" 버튼 표시
-- 프리셋 선택 시 → "📝 프리셋 갱신" 버튼 표시
-- 값 변경 시 → 버튼 주황색 활성화 (즉시 감지)
+- 프리셋 선택 시 → "💾 신규 저장" + "📝 갱신" 버튼 표시
+- 값 변경 시 → 갱신 버튼 주황색 활성화 (즉시 감지)
 - ⟳ 버튼 → 프리셋 리스트 새로고침
 - ✖ 버튼 → 프리셋 삭제 (확인 대화상자)
 
@@ -123,7 +132,7 @@ public class OutlineExample : MonoBehaviour
         effect.UnderlayOffsetY = 0f;
         effect.UnderlaySoftness = 0.05f;
 
-        // 방법 2: 편의 메서드 사용 (v2.0+)
+        // 방법 2: 편의 메서드 사용
         effect.SetOutline(Color.black, 0.2f, 0.05f);
     }
 }
@@ -143,7 +152,7 @@ void Start()
     effect.UnderlayDilate = 0.1f;
     effect.UnderlayColor = new Color(0, 0, 0, 0.5f);
 
-    // 방법 2: 편의 메서드 사용 (v2.0+)
+    // 방법 2: 편의 메서드 사용
     effect.SetDropShadow(new Color(0, 0, 0, 0.5f), 0.1f, -0.1f, 0.1f);
 }
 ```
@@ -163,12 +172,12 @@ void Start()
     effect.UnderlayOffsetY = 0f;
     effect.EnableShadow = true;
     effect.ShadowOffset = new Vector2(0.1f, -0.1f);
-    effect.ShadowColor = new Color(0, 0, 0, 0.3f);
+    effect.ShadowAlpha = 0.3f;
 
-    // 방법 2: 편의 메서드 사용 (v2.0+)
+    // 방법 2: 편의 메서드 사용
     effect.SetOutlineWithShadow(
         Color.black, 0.2f,
-        new Color(0, 0, 0, 0.3f), new Vector2(0.1f, -0.1f)
+        0.3f, new Vector2(0.1f, -0.1f)
     );
 }
 ```
@@ -184,27 +193,6 @@ void Start()
     // ScriptableObject 프리셋 로드
     var preset = Resources.Load<TMPEffectPreset>("Presets/TitleOutline");
     effect.ApplyPreset(preset);
-}
-```
-
-#### DOTween 애니메이션 (v2.0+)
-
-```csharp
-using CAT.UI;
-using DG.Tweening;
-
-void Start()
-{
-    var effect = GetComponent<TMPOutlineEffect>();
-
-    // 개별 파라미터 애니메이션
-    effect.DOUnderlayDilate(0.3f, 1f).SetEase(Ease.OutBack);
-    effect.DOUnderlayColor(Color.red, 0.5f);
-    effect.DOShadowOffset(new Vector2(5, -5), 1f).SetLoops(-1, LoopType.Yoyo);
-
-    // 프리셋으로 전체 애니메이션
-    var targetPreset = Resources.Load<TMPEffectPreset>("Presets/TitleOutline");
-    effect.DOPreset(targetPreset, 1f).SetEase(Ease.OutQuad);
 }
 ```
 
@@ -224,16 +212,16 @@ effect.FaceDilate = 0f;                 // -1 ~ 1
 // Shadow Settings (CPU 기반, 선택적)
 effect.EnableShadow = true;
 effect.ShadowOffset = new Vector2(0.1f, -0.1f);
-effect.ShadowColor = new Color(0, 0, 0, 0.5f);
+effect.ShadowAlpha = 0.5f;              // 0 ~ 1 (알파값만 제어)
 ```
 
-### Runtime API (v2.0+)
+### Runtime API
 
 ```csharp
 // 편의 메서드
 effect.SetOutline(Color.black, 0.2f);
 effect.SetDropShadow(new Color(0,0,0,0.5f), 0.1f, -0.1f);
-effect.SetOutlineWithShadow(Color.black, 0.2f, Color.gray, new Vector2(2,-2));
+effect.SetOutlineWithShadow(Color.black, 0.2f, 0.5f, new Vector2(2,-2));
 
 // 효과 초기화
 effect.ResetEffect();
@@ -305,7 +293,12 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 - Underlay Offset으로 대체 가능한 경우 Shadow 비활성화
 - 많은 텍스트가 동시에 보이는 화면에서는 Shadow 자제
 
-### 3. Font Asset Padding 요구사항
+### 3. Shadow 색상 제한
+**참고**: Shadow의 RGB 색상은 Underlay 색상을 따릅니다.
+- Shadow Alpha 슬라이더로 투명도만 제어 가능
+- 이는 TMP 셰이더의 정점 색상 처리 방식 때문
+
+### 4. Font Asset Padding 요구사항
 **문제**: Underlay Dilate가 크면 Font Asset Padding이 충분해야 합니다.
 
 **해결**:
@@ -313,7 +306,7 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 - Atlas 재생성 시 Padding 고려
 - Dilate 값을 과도하게 크게 설정하지 않기
 
-### 4. Editor 성능
+### 5. Editor 성능
 **문제**: ExecuteAlways로 Edit 모드에서도 실행됩니다.
 
 **해결**:
@@ -345,22 +338,17 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 
 ```
 Assets/Scripts/TMPEffects/
-├── Core/
-│   ├── TMPEffect.cs                    # 베이스 클래스
-│   ├── ITMPEffectSettings.cs           # 설정 인터페이스
-│   ├── TMPMaterialCache.cs             # Material 공유 시스템
-│   └── TMPEffectManager.cs             # Manager (래퍼)
-├── Components/
-│   └── TMPOutlineEffect.cs             # 통합 효과 컴포넌트
-├── Data/
-│   └── TMPEffectPreset.cs              # ScriptableObject 프리셋
-├── Extensions/
-│   └── TMPOutlineEffectExtensions.cs   # DOTween 확장
+├── TMPEffect.cs                    # 베이스 클래스
+├── ITMPEffectSettings.cs           # 설정 인터페이스
+├── TMPMaterialCache.cs             # Material 공유 시스템
+├── TMPEffectManager.cs             # Manager (래퍼)
+├── TMPOutlineEffect.cs             # 통합 효과 컴포넌트
+├── TMPEffectPreset.cs              # ScriptableObject 프리셋
 ├── Editor/
-│   └── TMPOutlineEffectEditor.cs       # 커스텀 인스펙터
+│   └── TMPOutlineEffectEditor.cs   # 커스텀 인스펙터
 ├── Examples/
-│   └── TMPEffectExample.cs             # 사용 예제
-└── README.md                            # 문서
+│   └── TMPEffectExample.cs         # 사용 예제
+└── README.md                        # 문서
 ```
 
 ## 🎨 예제 조합
@@ -381,7 +369,7 @@ effect.UnderlaySoftness = 0.5f;
 ```csharp
 effect.SetOutlineWithShadow(
     new Color(0.2f, 0.1f, 0f), 0.25f,
-    new Color(0, 0, 0, 0.6f), new Vector2(0.15f, -0.15f)
+    0.6f, new Vector2(0.15f, -0.15f)
 );
 effect.FaceDilate = 0.1f;
 ```
@@ -391,23 +379,11 @@ effect.FaceDilate = 0.1f;
 effect.SetOutline(Color.black, 0.2f, 0f);  // Softness = 0
 ```
 
-### 5. 애니메이션 효과
-```csharp
-// 펄스 효과
-effect.DOUnderlayDilate(0.3f, 0.5f)
-    .SetLoops(-1, LoopType.Yoyo)
-    .SetEase(Ease.InOutSine);
-
-// 색상 변경
-effect.DOUnderlayColor(Color.red, 1f);
-```
-
 ## 📝 요구사항
 
 - Unity 6 (6000.0.x) 이상
 - TextMeshPro 패키지
 - URP (Universal Render Pipeline) 17.2.0 이상
-- DOTween (애니메이션 기능 사용 시)
 
 ## 🐛 알려진 이슈 및 해결
 
@@ -417,17 +393,24 @@ effect.DOUnderlayColor(Color.red, 1f);
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.0.0)
+### 현재 안정 버전 (v2.1.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.1.0 (2026-02-10)
+**기능 개선**
+- ✅ 프리셋 저장 폴더 지정 기능 (EditorPrefs 저장)
+- ✅ 프리셋 선택 시 "신규 저장" + "갱신" 버튼 한 라인 배치
+- ✅ 카테고리 기본값 "전체"로 변경
+- ✅ Shadow Color → Shadow Alpha 슬라이더로 변경 (혼란 방지)
+- 🗑️ DOTween 애니메이션 확장 기능 제거 (Material 공유 이슈)
 
 ### v2.0.0 (2026-02-10)
 **리팩토링 및 기능 확장**
 - ✅ Material 자동 공유 시스템 (TMPMaterialCache)
 - ✅ 프리셋 시스템 (ScriptableObject + 커스텀 에디터)
 - ✅ 프리셋 카테고리 관리 (7개 카테고리)
-- ✅ DOTween 애니메이션 지원
 - ✅ Runtime API 개선 (편의 메서드)
 - ✅ BitMask 기반 Dirty Check 최적화
 - ✅ FNV-1a Hash 알고리즘 적용
@@ -448,7 +431,6 @@ effect.DOUnderlayColor(Color.red, 1f);
 
 ---
 
-**버전**: 2.0.0
+**버전**: 2.1.0
 **최종 수정**: 2026-02-10
 **작성자**: Claude Code (with Unity TMP Underlay system)
-**리팩토링**: Phase A-D 완료
