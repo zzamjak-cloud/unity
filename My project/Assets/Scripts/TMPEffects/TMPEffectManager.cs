@@ -5,104 +5,74 @@ namespace CAT.UI
 {
     /// <summary>
     /// TMP 효과 Material 공유 시스템
-    /// - SoftMask 패턴 기반 Material 캐싱
-    /// - 해시 기반 공유로 Draw Call 최소화
-    /// - 모바일 최적화: Material 인스턴스 수 최소화
+    /// - 해시 기반 Material 캐싱으로 인스턴스 수 최소화
+    /// - 같은 설정 = 같은 Material 공유
+    /// - 모바일 최적화: Draw Call 감소
+    /// - TMPMaterialCache 래퍼 역할 (하위 호환성 유지)
     /// </summary>
     public static class TMPEffectManager
     {
-        // ─────────────────────────────────────────────
-        // Material 캐시
-        // ─────────────────────────────────────────────
-
-        private static Dictionary<int, Material> s_sharedMaterials = new Dictionary<int, Material>();
 
         // ─────────────────────────────────────────────
-        // Shader Property ID 캐싱 (Outline용)
+        // Shader Property ID 캐싱 (성능 최적화)
         // ─────────────────────────────────────────────
 
-        public static readonly int PropOutlineWidth = Shader.PropertyToID("_OutlineWidth");
-        public static readonly int PropOutlineColor = Shader.PropertyToID("_OutlineColor");
-        public static readonly int PropOutlineSoftness = Shader.PropertyToID("_OutlineSoftness");
+        /// <summary>TMP Shader Property: _UnderlayColor (Underlay/Outline 색상)</summary>
+        public static readonly int PropUnderlayColor = Shader.PropertyToID("_UnderlayColor");
+
+        /// <summary>TMP Shader Property: _UnderlayOffsetX (X 오프셋, 0=Outline)</summary>
+        public static readonly int PropUnderlayOffsetX = Shader.PropertyToID("_UnderlayOffsetX");
+
+        /// <summary>TMP Shader Property: _UnderlayOffsetY (Y 오프셋, 0=Outline)</summary>
+        public static readonly int PropUnderlayOffsetY = Shader.PropertyToID("_UnderlayOffsetY");
+
+        /// <summary>TMP Shader Property: _UnderlayDilate (Underlay 두께)</summary>
+        public static readonly int PropUnderlayDilate = Shader.PropertyToID("_UnderlayDilate");
+
+        /// <summary>TMP Shader Property: _UnderlaySoftness (Underlay 부드러움)</summary>
+        public static readonly int PropUnderlaySoftness = Shader.PropertyToID("_UnderlaySoftness");
+
+        /// <summary>TMP Shader Property: _FaceDilate (Face 두께)</summary>
+        public static readonly int PropFaceDilate = Shader.PropertyToID("_FaceDilate");
 
         // ─────────────────────────────────────────────
-        // 퍼블릭 API
+        // 퍼블릭 API (TMPMaterialCache 래퍼)
         // ─────────────────────────────────────────────
 
         /// <summary>
         /// Material 캐시에서 가져오거나 새로 생성
-        /// - 같은 Shader + Texture + Parameters = 동일 Material 공유
+        /// - 같은 원본 Material + 효과 설정 = 동일 Material 공유
+        /// - TMPMaterialCache에 위임
         /// </summary>
         public static Material GetOrCreateMaterial(
-            Shader shader,
-            Texture mainTex,
-            int parametersHash)
+            Material baseMaterial,
+            Color underlayColor,
+            float underlayDilate,
+            float underlayOffsetX,
+            float underlayOffsetY,
+            float underlaySoftness,
+            float faceDilate)
         {
-            if (shader == null)
+            // 임시 설정 객체 생성
+            var settings = new TempEffectSettings
             {
-                Debug.LogError("[TMPEffectManager] Shader is null!");
-                return null;
-            }
-
-            // 해시 계산 (Shader + Texture + Parameters)
-            int hash = CombineHash(
-                shader.GetInstanceID(),
-                mainTex != null ? mainTex.GetInstanceID() : 0,
-                parametersHash
-            );
-
-            // 캐시 확인
-            if (s_sharedMaterials.TryGetValue(hash, out Material mat))
-            {
-                if (mat != null)
-                {
-                    return mat;
-                }
-                else
-                {
-                    // Material이 파괴된 경우 캐시에서 제거
-                    s_sharedMaterials.Remove(hash);
-                }
-            }
-
-            // 새 Material 생성
-            mat = new Material(shader)
-            {
-                mainTexture = mainTex,
-                hideFlags = HideFlags.DontSave  // 필수! (씬 저장 제외)
+                UnderlayColor = underlayColor,
+                UnderlayDilate = underlayDilate,
+                UnderlayOffsetX = underlayOffsetX,
+                UnderlayOffsetY = underlayOffsetY,
+                UnderlaySoftness = underlaySoftness,
+                FaceDilate = faceDilate
             };
 
-            s_sharedMaterials[hash] = mat;
-
-            return mat;
+            return TMPMaterialCache.Instance.GetOrCreate(baseMaterial, settings);
         }
 
         /// <summary>
-        /// Material 캐시에서 제거
+        /// Preset을 사용한 Material 가져오기 (편의 메서드)
         /// </summary>
-        public static void ReleaseMaterial(Material mat)
+        public static Material GetOrCreateMaterial(Material baseMaterial, ITMPEffectSettings settings)
         {
-            if (mat == null) return;
-
-            // 캐시에서 찾아서 제거
-            foreach (var kvp in s_sharedMaterials)
-            {
-                if (kvp.Value == mat)
-                {
-                    s_sharedMaterials.Remove(kvp.Key);
-                    break;
-                }
-            }
-
-            // Material 파괴
-            if (Application.isPlaying)
-            {
-                Object.Destroy(mat);
-            }
-            else
-            {
-                Object.DestroyImmediate(mat);
-            }
+            return TMPMaterialCache.Instance.GetOrCreate(baseMaterial, settings);
         }
 
         /// <summary>
@@ -110,68 +80,72 @@ namespace CAT.UI
         /// </summary>
         public static void ClearCache()
         {
-            foreach (var mat in s_sharedMaterials.Values)
-            {
-                if (mat != null)
-                {
-                    if (Application.isPlaying)
-                    {
-                        Object.Destroy(mat);
-                    }
-                    else
-                    {
-                        Object.DestroyImmediate(mat);
-                    }
-                }
-            }
-            s_sharedMaterials.Clear();
-        }
-
-        // ─────────────────────────────────────────────
-        // 내부 유틸리티
-        // ─────────────────────────────────────────────
-
-        private static int CombineHash(int hash1, int hash2, int hash3)
-        {
-            unchecked
-            {
-                int hash = 17;
-                hash = hash * 31 + hash1;
-                hash = hash * 31 + hash2;
-                hash = hash * 31 + hash3;
-                return hash;
-            }
-        }
-
-        // ─────────────────────────────────────────────
-        // 정리 (애플리케이션 종료 시)
-        // ─────────────────────────────────────────────
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void Cleanup()
-        {
-            ClearCache();
+            TMPMaterialCache.Instance.Clear();
         }
 
 #if UNITY_EDITOR
         /// <summary>
         /// 에디터 전용: 캐시 통계
         /// </summary>
-        public static int CachedMaterialCount => s_sharedMaterials.Count;
+        public static int CachedMaterialCount => TMPMaterialCache.Instance.GetStats().CachedCount;
 
         /// <summary>
-        /// 에디터 전용: 모든 캐시된 Material 가져오기
+        /// 에디터 전용: 캐시 통계 가져오기
         /// </summary>
-        public static IEnumerable<Material> GetAllCachedMaterials()
+        public static TMPMaterialCache.CacheStats GetCacheStats()
         {
-            foreach (var mat in s_sharedMaterials.Values)
+            return TMPMaterialCache.Instance.GetStats();
+        }
+#endif
+
+        // ─────────────────────────────────────────────
+        // 내부 구조체
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 임시 설정 객체 (레거시 API용)
+        /// </summary>
+        private struct TempEffectSettings : ITMPEffectSettings
+        {
+            public Color UnderlayColor { get; set; }
+            public float UnderlayDilate { get; set; }
+            public float UnderlayOffsetX { get; set; }
+            public float UnderlayOffsetY { get; set; }
+            public float UnderlaySoftness { get; set; }
+            public float FaceDilate { get; set; }
+            public bool EnableShadow => false;
+            public Vector2 ShadowOffset => Vector2.zero;
+            public Color ShadowColor => Color.clear;
+
+            public int GetMaterialHash()
             {
-                if (mat != null)
+                unchecked
                 {
-                    yield return mat;
+                    const uint FNV_PRIME = 16777619;
+                    const uint FNV_OFFSET = 2166136261;
+                    uint hash = FNV_OFFSET;
+
+                    Color32 c = UnderlayColor;
+                    hash = (hash ^ c.r) * FNV_PRIME;
+                    hash = (hash ^ c.g) * FNV_PRIME;
+                    hash = (hash ^ c.b) * FNV_PRIME;
+                    hash = (hash ^ c.a) * FNV_PRIME;
+
+                    int dilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayDilate), 0);
+                    int offsetX = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayOffsetX), 0);
+                    int offsetY = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayOffsetY), 0);
+                    int softness = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlaySoftness), 0);
+                    int faceDilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(FaceDilate), 0);
+
+                    hash = (hash ^ (uint)dilate) * FNV_PRIME;
+                    hash = (hash ^ (uint)offsetX) * FNV_PRIME;
+                    hash = (hash ^ (uint)offsetY) * FNV_PRIME;
+                    hash = (hash ^ (uint)softness) * FNV_PRIME;
+                    hash = (hash ^ (uint)faceDilate) * FNV_PRIME;
+
+                    return (int)hash;
                 }
             }
         }
-#endif
     }
 }
