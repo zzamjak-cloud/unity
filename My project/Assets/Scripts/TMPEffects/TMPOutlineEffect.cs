@@ -1189,7 +1189,7 @@ namespace CAT.UI
         ///
         /// 정점 복제 알고리즘:
         /// 1. 원본 정점 가져오기 (4 정점/글자)
-        /// 2. Shadow 레이어 생성 (위치 오프셋 + 검은색 고정)
+        /// 2. Shadow 레이어 생성 (위치 오프셋 + Underlay Color 기반)
         /// 3. InsertRange(0, shadow) → 원본 앞에 삽입 (먼저 그려지게)
         /// 4. 최종 정점 수 = 원본 × 2
         ///
@@ -1224,6 +1224,14 @@ namespace CAT.UI
 
             float scale = _tmpText != null ? _tmpText.fontSize : 1f;
 
+            // Shadow 색상 계산 (Underlay Color 기반, Alpha만 별도 제어)
+            Color32 shadowColor = new Color32(
+                (byte)(_underlayColor.r * 255f),
+                (byte)(_underlayColor.g * 255f),
+                (byte)(_underlayColor.b * 255f),
+                (byte)(_underlayColor.a * _shadowAlpha * 255f)
+            );
+
             for (int i = 0; i < originalCount; i++)
             {
                 UIVertex shadowVertex = s_vertexCache[i];
@@ -1231,9 +1239,8 @@ namespace CAT.UI
                 // 위치 오프셋 (fontSize 기준으로 스케일)
                 shadowVertex.position += new Vector3(_shadowOffset.x * scale, _shadowOffset.y * scale, 0);
 
-                // Shadow 알파 적용 (검은색 고정)
-                Color32 c = new Color32(0, 0, 0, (byte)(_shadowAlpha * 255f));
-                shadowVertex.color = c;
+                // Shadow 색상 적용 (Underlay Color + Alpha 조절)
+                shadowVertex.color = shadowColor;
 
                 shadowVertices.Add(shadowVertex);
             }

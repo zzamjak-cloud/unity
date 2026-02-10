@@ -260,7 +260,7 @@ effect.FaceDilate = 0f;                 // Dilate (-1 ~ 1)
 // Shadow Settings (Enable 시 표시, CPU 기반)
 effect.EnableShadow = true;             // Enable
 effect.ShadowOffset = new Vector2(0.1f, -0.1f);  // Offset
-effect.ShadowAlpha = 0.5f;              // Alpha (0 ~ 1, 검은색 고정)
+effect.ShadowAlpha = 0.5f;              // Alpha (0 ~ 1, Underlay Color 기반)
 
 // Second Face Settings (Enable 시 표시, 자식 TMP 오브젝트, v2.3.0+)
 effect.EnableSecondFace = true;         // Enable
@@ -659,7 +659,8 @@ limiter.Refresh();          // 강제 갱신
   - RectTransform (Anchor, Size, Pivot)
   - Auto Layout, Content Size Fitter 대응
 - 🐛 Shadow 색상 개선
-  - Shadow를 검은색으로 고정하여 얇은 아웃라인에서도 깔끔한 그림자 표현
+  - Shadow 색상이 Underlay Color를 따르도록 변경 (Alpha만 별도 제어)
+  - Outline과 일관된 색상의 그림자 표현
 
 ### v2.2.1 (2026-02-10)
 **TMPCurve 깜빡임 버그 수정**
