@@ -35,6 +35,9 @@ namespace CAT.UI
         /// <summary>TMP Shader Property: _FaceDilate (Face 두께)</summary>
         public static readonly int PropFaceDilate = Shader.PropertyToID("_FaceDilate");
 
+        /// <summary>TMP Shader Property: _FaceColor (Face 색상)</summary>
+        public static readonly int PropFaceColor = Shader.PropertyToID("_FaceColor");
+
         // ─────────────────────────────────────────────
         // 퍼블릭 API (TMPMaterialCache 래퍼)
         // ─────────────────────────────────────────────

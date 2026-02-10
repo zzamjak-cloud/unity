@@ -37,9 +37,23 @@ TMP의 **Underlay 시스템**을 활용한 All-in-One 효과 컴포넌트입니�
 - Enable Shadow 토글로 활성화
 - 정점 2배 복제로 그림자 레이어 생성
 - static 캐싱으로 GC Alloc 제거
-- **Shadow Alpha**: 알파값만 제어 (0~1), RGB는 Underlay 색상을 따름
+- **Shadow 색상 고정**: 검은색으로 고정, 알파값만 제어 (0~1)
 
-#### 3. Face Dilate
+#### 3. Second Face 효과 (자식 TMP 오브젝트, v2.3.0+)
+- **안쪽 축소 텍스트**: Face Dilate < 0으로 안쪽으로 축소된 내부 텍스트 레이어 생성
+- **자동 자식 오브젝트**: `[Inner Face]` 자식 GameObject 자동 생성/관리
+- **완전 동기화**: 부모의 모든 TMP 속성 자동 동기화
+  - 텍스트, 폰트, 크기, 스타일, Alignment
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+- **TMPCurve 대응**: 부모에 TMPCurve가 있으면 자식에도 자동 적용
+  - Underlay를 투명하게 유지하여 정점 위치 일치
+  - 곡선 효과가 정확히 겹침
+- **사용 시나리오**: 타이틀/강조 텍스트에 강렬한 이중 효과
+  - 예: 바깥쪽 두꺼운 검은 아웃라인 + 안쪽 흰색 얇은 라인
+
+#### 4. Face Dilate
 - 텍스트 본체 두께 조절
 - -1 (가늘게) ~ 1 (굵게)
 
@@ -205,6 +219,27 @@ void Start()
 }
 ```
 
+#### Second Face 효과 (v2.3.0+)
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+    // 바깥쪽: 두꺼운 검은 아웃라인
+    effect.UnderlayColor = Color.black;
+    effect.UnderlayDilate = 0.25f;
+
+    // 안쪽: 흰색 얇은 라인 (Second Face)
+    effect.EnableSecondFace = true;
+    effect.SecondFaceColor = Color.white;
+    effect.SecondFaceDilate = -0.1f;  // 음수로 안쪽 축소
+
+    // Hierarchy에 [Inner Face] 자식 오브젝트 자동 생성됨
+}
+```
+
 ### 모든 속성
 
 ```csharp
@@ -221,7 +256,12 @@ effect.FaceDilate = 0f;                 // -1 ~ 1
 // Shadow Settings (CPU 기반, 선택적)
 effect.EnableShadow = true;
 effect.ShadowOffset = new Vector2(0.1f, -0.1f);
-effect.ShadowAlpha = 0.5f;              // 0 ~ 1 (알파값만 제어)
+effect.ShadowAlpha = 0.5f;              // 0 ~ 1 (검은색 고정)
+
+// Second Face Settings (자식 TMP 오브젝트, v2.3.0+)
+effect.EnableSecondFace = true;
+effect.SecondFaceColor = Color.white;
+effect.SecondFaceDilate = -0.1f;        // -1 ~ 0 (음수로 안쪽 축소)
 ```
 
 ### Runtime API
@@ -315,7 +355,23 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 - Atlas 재생성 시 Padding 고려
 - Dilate 값을 과도하게 크게 설정하지 않기
 
-### 5. Editor 성능
+### 5. Second Face 사용 시 고려사항 (v2.3.0+)
+**Second Face는 자식 TMP 오브젝트를 생성합니다**:
+- `[Inner Face]` 자식 GameObject가 Hierarchy에 생성됨
+- HideFlags.DontSaveInEditor로 설정되어 에디터에서 반투명 표시
+- 자식은 부모의 모든 설정을 자동 동기화 (매 프레임)
+
+**TMPCurve와 함께 사용 시**:
+- ✅ 자동으로 자식에도 TMPCurve 적용됨
+- ✅ Underlay 설정이 투명하게 동기화되어 정점 위치 일치
+- ✅ 곡선 효과가 정확히 겹침
+
+**권장 사용**:
+- 타이틀/강조 텍스트에만 사용 (화면당 5-10개)
+- 일반 UI 텍스트는 Underlay만 사용
+- Second Face는 자식 오브젝트 생성으로 약간의 오버헤드 발생
+
+### 6. Editor 성능
 **문제**: ExecuteAlways로 Edit 모드에서도 실행됩니다.
 
 **해결**:
@@ -555,6 +611,24 @@ limiter.Refresh();          // 강제 갱신
 
 ## 📈 변경 이력
 
+### v2.3.0 (2026-02-10)
+**Second Face 기능 추가**
+- ✅ Second Face 효과 추가 (안쪽 축소 텍스트 레이어)
+  - 자식 TMP 오브젝트 자동 생성/관리 (`[Inner Face]`)
+  - Face Dilate < 0으로 SDF 기반 안쪽 축소
+  - 부모의 모든 TMP 속성 자동 동기화 (매 프레임)
+- ✅ TMPCurve 완전 대응
+  - 부모에 TMPCurve가 있으면 자식에도 자동 적용
+  - Underlay를 투명하게 동기화하여 정점 위치 일치
+  - 곡선 효과가 중심부/외곽 모두 정확히 일치
+- ✅ 레이아웃 완전 동기화
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+  - Auto Layout, Content Size Fitter 대응
+- 🐛 Shadow 색상 개선
+  - Shadow를 검은색으로 고정하여 얇은 아웃라인에서도 깔끔한 그림자 표현
+
 ### v2.2.1 (2026-02-10)
 **TMPCurve 깜빡임 버그 수정**
 - 🐛 텍스트 변경 시 곡선 미적용 상태로 깜빡이는 현상 수정
@@ -611,6 +685,6 @@ limiter.Refresh();          // 강제 갱신
 
 ---
 
-**버전**: 2.2.1
+**버전**: 2.3.0
 **최종 수정**: 2026-02-10
 **작성자**: Claude Code (with Unity TMP Underlay system)

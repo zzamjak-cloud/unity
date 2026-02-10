@@ -102,7 +102,10 @@ namespace CAT.UI
                    !Mathf.Approximately(_target.FaceDilate, _selectedPreset.FaceDilate) ||
                    _target.EnableShadow != _selectedPreset.EnableShadow ||
                    _target.ShadowOffset != _selectedPreset.ShadowOffset ||
-                   !Mathf.Approximately(_target.ShadowAlpha, _selectedPreset.ShadowAlpha);
+                   !Mathf.Approximately(_target.ShadowAlpha, _selectedPreset.ShadowAlpha) ||
+                   _target.EnableSecondFace != _selectedPreset.EnableSecondFace ||
+                   _target.SecondFaceColor != _selectedPreset.SecondFaceColor ||
+                   !Mathf.Approximately(_target.SecondFaceDilate, _selectedPreset.SecondFaceDilate);
         }
 
         public override void OnInspectorGUI()
@@ -131,6 +134,19 @@ namespace CAT.UI
             if (EditorGUI.EndChangeCheck())
             {
                 serializedObject.ApplyModifiedProperties();
+            }
+
+            // Second Face 활성화 시 안내 메시지
+            if (_target.EnableSecondFace)
+            {
+                EditorGUILayout.Space(5);
+                EditorGUILayout.HelpBox(
+                    "✓ Second Face가 활성화되었습니다.\n" +
+                    "• 자식 TMP 오브젝트가 자동 생성되어 안쪽 텍스트를 표시합니다.\n" +
+                    "• Face Dilate < 0 값으로 텍스트가 안쪽으로 축소됩니다.\n" +
+                    "• 타이틀/강조 텍스트에 사용 권장.",
+                    MessageType.Info
+                );
             }
 
             // 프리셋 선택 상태에서 값이 변경되었을 때 안내 메시지

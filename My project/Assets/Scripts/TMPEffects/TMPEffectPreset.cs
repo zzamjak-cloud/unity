@@ -53,6 +53,11 @@ namespace CAT.UI
         [SerializeField] private Vector2 _shadowOffset = new Vector2(0.1f, -0.1f);
         [SerializeField, Range(0f, 1f)] private float _shadowAlpha = 0.5f;
 
+        [Header("Second Face Settings (Inner Text)")]
+        [SerializeField] private bool _enableSecondFace = false;
+        [SerializeField] private Color _secondFaceColor = Color.white;
+        [SerializeField, Range(-1f, 0f)] private float _secondFaceDilate = -0.1f;
+
         [Header("Preset Info")]
         [SerializeField] private PresetCategory _category = PresetCategory.Custom;
         [SerializeField, TextArea] private string _description = "";
@@ -70,6 +75,9 @@ namespace CAT.UI
         public bool EnableShadow => _enableShadow;
         public Vector2 ShadowOffset => _shadowOffset;
         public float ShadowAlpha => _shadowAlpha;
+        public bool EnableSecondFace => _enableSecondFace;
+        public Color SecondFaceColor => _secondFaceColor;
+        public float SecondFaceDilate => _secondFaceDilate;
         public PresetCategory Category => _category;
         public string Description => _description;
 
@@ -93,6 +101,9 @@ namespace CAT.UI
             effect.EnableShadow = _enableShadow;
             effect.ShadowOffset = _shadowOffset;
             effect.ShadowAlpha = _shadowAlpha;
+            effect.EnableSecondFace = _enableSecondFace;
+            effect.SecondFaceColor = _secondFaceColor;
+            effect.SecondFaceDilate = _secondFaceDilate;
         }
 
         /// <summary>
@@ -111,6 +122,9 @@ namespace CAT.UI
             _enableShadow = effect.EnableShadow;
             _shadowOffset = effect.ShadowOffset;
             _shadowAlpha = effect.ShadowAlpha;
+            _enableSecondFace = effect.EnableSecondFace;
+            _secondFaceColor = effect.SecondFaceColor;
+            _secondFaceDilate = effect.SecondFaceDilate;
 
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);
