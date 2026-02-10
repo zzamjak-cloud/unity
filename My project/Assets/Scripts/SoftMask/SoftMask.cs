@@ -18,7 +18,7 @@ namespace CAT.UI
     [AddComponentMenu("CAT/UI/SoftMask")]
     public class SoftMask : MonoBehaviour
     {
-        public const string VERSION = "1.1.0";
+        public const string VERSION = "1.2.0";
 
         public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
         public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
@@ -169,6 +169,17 @@ namespace CAT.UI
         // 자식 수 변경 감지 (에디터 + 플레이모드 공통)
         private int _lastChildCount;
 
+        // Canvas 레이아웃 완료 후 갱신 플래그
+        // OnEnable/OnTransformParentChanged 시점에는 레이아웃이 미완료 상태일 수 있음
+        // Canvas.willRenderCanvases 이벤트에서 레이아웃 완료 후 마스크 갱신
+        private bool _pendingLayoutRefresh;
+
+#if UNITY_EDITOR
+        // 부모 UI Mask의 showMaskGraphic 변경 감지 (에디터 전용)
+        private UnityEngine.UI.Mask _parentUIMask;
+        private bool _cachedParentMaskShowGraphic;
+#endif
+
         // ─────────────────────────────────────────────
         // 생명주기
         // ─────────────────────────────────────────────
@@ -198,6 +209,17 @@ namespace CAT.UI
             _stencilRefreshCountdown = 2;
 
             _lastChildCount = transform.childCount;
+
+            // Canvas 레이아웃 완료 후 마스크 갱신 예약
+            // OnEnable 시점에는 RectTransform 레이아웃이 미완료 상태일 수 있음
+            // (특히 UI Mask 하위에 프리팹 로드 시)
+            _pendingLayoutRefresh = true;
+            Canvas.willRenderCanvases += OnCanvasPreRender;
+
+#if UNITY_EDITOR
+            // 부모 UI Mask 캐싱 (showMaskGraphic 변경 감지용)
+            CacheParentUIMask();
+#endif
         }
 
         private void Initialize()
@@ -251,12 +273,16 @@ namespace CAT.UI
             if (!Application.isPlaying)
             {
                 CheckForChildChanges();
+                CheckParentUIMaskChanges();
             }
 #endif
         }
 
         private void OnDisable()
         {
+            Canvas.willRenderCanvases -= OnCanvasPreRender;
+            _pendingLayoutRefresh = false;
+
             RestoreChildrenMaterials();
 
             if (_originalColorSaved && _uiGraphic != null)
@@ -270,12 +296,70 @@ namespace CAT.UI
 
         private void OnDestroy()
         {
+            Canvas.willRenderCanvases -= OnCanvasPreRender;
+
             RestoreChildrenMaterials();
 
             if (_originalColorSaved && _uiGraphic != null)
             {
                 _uiGraphic.color = _originalMaskColor;
             }
+        }
+
+        /// <summary>
+        /// Canvas 레이아웃 완료 후 마스크 프로퍼티 갱신
+        /// willRenderCanvases 이벤트는 모든 Canvas 레이아웃 계산 완료 후,
+        /// 실제 렌더링 직전에 호출됨
+        /// </summary>
+        private void OnCanvasPreRender()
+        {
+            if (!_pendingLayoutRefresh) return;
+            _pendingLayoutRefresh = false;
+
+            // 레이아웃 완료 후 변환 행렬 재계산
+            _cachedWorldToUV = ComputeWorldToMaskUV();
+            _materialDirty = true;
+
+            // 부모 마스크도 갱신
+            if (_hasParentMask && _parentSoftMask != null)
+            {
+                _cachedParentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
+            }
+
+            // Stencil Material 갱신 카운터 리셋
+            _stencilRefreshCountdown = 2;
+        }
+
+        /// <summary>
+        /// 부모 Transform 변경 시 마스크 갱신
+        /// UI Mask 하위로 이동하거나 스크롤뷰에 배치될 때 호출됨
+        /// </summary>
+        private void OnTransformParentChanged()
+        {
+            if (!_initialized || !enabled) return;
+
+            // 부모 SoftMask 재검색
+            _parentSoftMask = FindParentSoftMask();
+            _hasParentMask = _parentSoftMask != null;
+
+            // 레이아웃 완료 후 갱신 예약
+            _pendingLayoutRefresh = true;
+            _materialDirty = true;
+            _stencilRefreshCountdown = 2;
+
+            // 공유 Material의 중첩 마스크 키워드 갱신
+            if (_sharedMaskMaterial != null)
+            {
+                if (_hasParentMask)
+                    _sharedMaskMaterial.EnableKeyword(KEYWORD_NESTED);
+                else
+                    _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED);
+            }
+
+#if UNITY_EDITOR
+            // 부모 UI Mask 재캐싱
+            CacheParentUIMask();
+#endif
         }
 
 #if UNITY_EDITOR
@@ -322,6 +406,48 @@ namespace CAT.UI
                     ApplyMaskToChildren();
                     return;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 부모 UI Mask 캐싱 (showMaskGraphic 변경 감지용)
+        /// </summary>
+        private void CacheParentUIMask()
+        {
+            _parentUIMask = GetComponentInParent<UnityEngine.UI.Mask>();
+            if (_parentUIMask != null)
+            {
+                _cachedParentMaskShowGraphic = _parentUIMask.showMaskGraphic;
+            }
+        }
+
+        /// <summary>
+        /// 부모 UI Mask의 showMaskGraphic 변경 감지 및 마스크 갱신
+        /// showMaskGraphic 변경 시 Stencil 설정이 변경되어 자식 렌더링에 영향
+        /// </summary>
+        private void CheckParentUIMaskChanges()
+        {
+            if (_parentUIMask == null)
+            {
+                // 부모 Mask가 새로 추가되었을 수 있음
+                var newParentMask = GetComponentInParent<UnityEngine.UI.Mask>();
+                if (newParentMask != null)
+                {
+                    _parentUIMask = newParentMask;
+                    _cachedParentMaskShowGraphic = newParentMask.showMaskGraphic;
+                    _pendingLayoutRefresh = true;
+                    _stencilRefreshCountdown = 2;
+                }
+                return;
+            }
+
+            // showMaskGraphic 변경 감지
+            if (_parentUIMask.showMaskGraphic != _cachedParentMaskShowGraphic)
+            {
+                _cachedParentMaskShowGraphic = _parentUIMask.showMaskGraphic;
+                _pendingLayoutRefresh = true;
+                _materialDirty = true;
+                _stencilRefreshCountdown = 2;
             }
         }
 #endif

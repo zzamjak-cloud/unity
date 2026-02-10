@@ -1,4 +1,4 @@
-# CAT SoftMask v1.1.0
+# CAT SoftMask v1.2.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
@@ -30,6 +30,7 @@ Assets/Scripts/SoftMask/
 | **Sprite Atlas 호환** | `DataUtility.GetOuterUV()` + 트리밍 보정으로 Atlas 스프라이트 정확한 UV 매핑 |
 | **ScrollView 호환** | `UNITY_UI_CLIP_RECT` 지원으로 ScrollView 내 정상 동작 |
 | **UI Mask 호환** | Stencil 래핑 Material에 프로퍼티 전파로 UI Mask 내 정상 동작 |
+| **UI Mask 동적 배치** | UI Mask 하위에 동적 로드/이동 시 자동 갱신 (Canvas 레이아웃 완료 대기) |
 | **자식 자동 마스킹** | 하위 Graphic 컴포넌트에 자동으로 마스크 Material 적용 |
 | **TextMeshPro 지원** | TMP 전용 셰이더로 SDF 텍스트 마스킹 (Outline, Underlay 호환) |
 | **TMP Material Preset 자동 감지** | 외부 Material 변경 시 마스크 자동 재적용 |
@@ -513,6 +514,23 @@ c *= SampleSoftMask1(input.softMaskUV);
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
 
 ## 변경 이력
+
+### v1.2.0 (2025-02-10)
+
+UI Mask 동적 배치 버그 수정
+
+**버그 수정**
+- UI Mask 하위에 SoftMask를 배치하거나 프리팹을 로드할 때 초기 렌더링이 비정상인 버그 수정
+- `Canvas.willRenderCanvases` 이벤트를 활용하여 레이아웃 완료 후 마스크 행렬 갱신
+- `OnTransformParentChanged()` 콜백 추가로 부모 변경 시 즉시 갱신
+- (에디터 전용) UI Mask의 `showMaskGraphic` 변경 시 자식 SoftMask 자동 갱신
+
+**SoftMask.cs 변경**
+- `_pendingLayoutRefresh` 플래그 추가 — Canvas 레이아웃 완료 대기
+- `OnCanvasPreRender()` 메서드 추가 — `willRenderCanvases` 이벤트 핸들러
+- `OnTransformParentChanged()` 메서드 추가 — 부모 Transform 변경 감지
+- (에디터 전용) `_parentUIMask`, `_cachedParentMaskShowGraphic` 필드 추가
+- (에디터 전용) `CacheParentUIMask()`, `CheckParentUIMaskChanges()` 메서드 추가
 
 ### v1.1.0 (2025-02-07)
 
