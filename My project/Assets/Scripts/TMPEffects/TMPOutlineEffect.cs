@@ -34,29 +34,28 @@ namespace CAT.UI
         [SerializeField] private TMPEffectPreset _preset;
 
         // ─────────────────────────────────────────────
-        // Outline Properties
+        // Outline Properties (Header는 에디터에서 그림)
         // ─────────────────────────────────────────────
 
-        [Header("Underlay Settings")]
         [SerializeField] private Color _underlayColor = Color.black;
         [SerializeField, Range(0f, 1f)] private float _underlayDilate = 0.15f;
         [SerializeField, Range(-1f, 1f)] private float _underlayOffsetX = 0f;
         [SerializeField, Range(-1f, 1f)] private float _underlayOffsetY = 0f;
         [SerializeField, Range(0f, 1f)] private float _underlaySoftness = 0.0f;
 
-        [Header("Face Settings")]
+        [SerializeField] private bool _enableFace = false;
         [SerializeField, Range(-1f, 1f)] private float _faceDilate = 0.0f;
 
-        [Header("Shadow Settings")]
         [SerializeField] private bool _enableShadow = false;
         [SerializeField] private Vector2 _shadowOffset = new Vector2(0.1f, -0.1f);
         [SerializeField, Range(0f, 1f)] private float _shadowAlpha = 0.5f;
 
-        [Header("Second Face Settings (Inner Text)")]
         [Tooltip("안쪽으로 축소된 텍스트 활성화. 자식 TMP 오브젝트가 자동 생성됩니다.")]
         [SerializeField] private bool _enableSecondFace = false;
         [SerializeField] private Color _secondFaceColor = Color.white;
         [SerializeField, Range(-1f, 0f)] private float _secondFaceDilate = -0.1f;
+        [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetX = 0f;
+        [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetY = 0f;
 
         // ─────────────────────────────────────────────
         // 자식 TMP 오브젝트 (Second Face용)
@@ -206,6 +205,12 @@ namespace CAT.UI
             }
         }
 
+        public bool EnableFace
+        {
+            get => _enableFace;
+            set => _enableFace = value;
+        }
+
         public float FaceDilate
         {
             get => _faceDilate;
@@ -339,6 +344,26 @@ namespace CAT.UI
             {
                 _secondFaceDilate = Mathf.Clamp(value, -1f, 0f);
                 UpdateSecondFaceMaterial();
+            }
+        }
+
+        public float SecondFaceOffsetX
+        {
+            get => _secondFaceOffsetX;
+            set
+            {
+                _secondFaceOffsetX = Mathf.Clamp(value, -1f, 1f);
+                UpdateSecondFacePosition();
+            }
+        }
+
+        public float SecondFaceOffsetY
+        {
+            get => _secondFaceOffsetY;
+            set
+            {
+                _secondFaceOffsetY = Mathf.Clamp(value, -1f, 1f);
+                UpdateSecondFacePosition();
             }
         }
 
@@ -964,6 +989,27 @@ namespace CAT.UI
                 $"- Face Dilate: {_secondFaceDilate}\n" +
                 $"- Face Color: {_secondFaceColor}", this);
 #endif
+
+            // 위치 오프셋 적용
+            UpdateSecondFacePosition();
+        }
+
+        /// <summary>
+        /// Second Face 위치 오프셋 업데이트
+        /// </summary>
+        private void UpdateSecondFacePosition()
+        {
+            if (!_secondFaceText) return;
+            if (!_tmpText) return;
+
+            RectTransform childRect = _secondFaceText.rectTransform;
+            float scale = _tmpText.fontSize;
+
+            // Offset 적용 (fontSize 기준으로 스케일)
+            childRect.anchoredPosition = new Vector2(
+                _secondFaceOffsetX * scale,
+                _secondFaceOffsetY * scale
+            );
         }
 
         /// <summary>

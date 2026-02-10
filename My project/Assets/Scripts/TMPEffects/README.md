@@ -102,20 +102,23 @@ TMPOutlineEffect는 **강력한 프리셋 관리 시스템**을 제공합니다.
 
 #### 5️⃣ 프리셋 카테고리 관리
 
-**카테고리 필터** (기본값: 전체):
-- 전체 - 모든 프리셋 표시
-- Outline - 외곽선 효과
-- DropShadow - 그림자 효과
+**기본 카테고리** (수정/삭제 불가):
 - Title - 타이틀용 복합 효과
 - Button - 버튼용 효과
-- Dialogue - 대화/스토리용
-- GameUI - 게임 UI용
-- Custom - 사용자 정의
+- Custom - 사용자 정의 (기본값)
+
+**사용자 정의 카테고리** (v2.4.0+):
+- ⚙ 버튼 → 카테고리 관리 패널 열기
+- 새 카테고리 추가: 이름 입력 후 "추가" 클릭
+- 카테고리 이름 변경: ✏ 버튼 클릭
+- 카테고리 삭제: ✖ 버튼 클릭 (확인 대화상자)
+- 삭제된 카테고리를 사용하던 프리셋은 자동으로 Custom으로 변경
+- TMPEffectCategorySettings.asset에 저장됨
 
 **드롭다운 메뉴**:
 - 카테고리 선택 → 해당 카테고리의 프리셋만 표시
 - `None (새로 만들기)` - 프리셋 없이 사용, 저장 가능
-- `TitleOutline [Title]` - 카테고리와 함께 표시
+- `[Title] TitleOutline` - 카테고리가 앞에 표시됨
 - ... (필터링된 프리셋 목록)
 
 **버튼 동작**:
@@ -243,25 +246,28 @@ void Start()
 ### 모든 속성
 
 ```csharp
-// Underlay Settings (GPU 기반)
-effect.UnderlayColor = Color.black;
-effect.UnderlayDilate = 0.2f;           // 0 ~ 1
-effect.UnderlayOffsetX = 0f;            // -1 ~ 1
-effect.UnderlayOffsetY = 0f;            // -1 ~ 1
-effect.UnderlaySoftness = 0.1f;         // 0 ~ 1
+// Outline Settings (GPU 기반, 인스펙터: Outline Settings)
+effect.UnderlayColor = Color.black;     // Color
+effect.UnderlayDilate = 0.2f;           // Width (0 ~ 1)
+effect.UnderlayOffsetX = 0f;            // Offset X (-1 ~ 1)
+effect.UnderlayOffsetY = 0f;            // Offset Y (-1 ~ 1)
+effect.UnderlaySoftness = 0.1f;         // Softness (0 ~ 1)
 
-// Face Settings
-effect.FaceDilate = 0f;                 // -1 ~ 1
+// Face Settings (Enable 시 표시)
+effect.EnableFace = true;               // Enable
+effect.FaceDilate = 0f;                 // Dilate (-1 ~ 1)
 
-// Shadow Settings (CPU 기반, 선택적)
-effect.EnableShadow = true;
-effect.ShadowOffset = new Vector2(0.1f, -0.1f);
-effect.ShadowAlpha = 0.5f;              // 0 ~ 1 (검은색 고정)
+// Shadow Settings (Enable 시 표시, CPU 기반)
+effect.EnableShadow = true;             // Enable
+effect.ShadowOffset = new Vector2(0.1f, -0.1f);  // Offset
+effect.ShadowAlpha = 0.5f;              // Alpha (0 ~ 1, 검은색 고정)
 
-// Second Face Settings (자식 TMP 오브젝트, v2.3.0+)
-effect.EnableSecondFace = true;
-effect.SecondFaceColor = Color.white;
-effect.SecondFaceDilate = -0.1f;        // -1 ~ 0 (음수로 안쪽 축소)
+// Second Face Settings (Enable 시 표시, 자식 TMP 오브젝트, v2.3.0+)
+effect.EnableSecondFace = true;         // Enable
+effect.SecondFaceColor = Color.white;   // Color
+effect.SecondFaceDilate = -0.1f;        // Dilate (-1 ~ 0, 음수로 안쪽 축소)
+effect.SecondFaceOffsetX = 0f;          // Offset X (-1 ~ 1, v2.4.0+)
+effect.SecondFaceOffsetY = 0f;          // Offset Y (-1 ~ 1, v2.4.0+)
 ```
 
 ### Runtime API
@@ -409,10 +415,12 @@ Assets/Scripts/TMPEffects/
 ├── TMPEffectManager.cs             # Manager (래퍼)
 ├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
 ├── TMPEffectPreset.cs              # ScriptableObject 프리셋
+├── TMPEffectCategorySettings.cs    # 카테고리 설정 (v2.4.0+)
 ├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
 ├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
 ├── Editor/
-│   └── TMPOutlineEffectEditor.cs   # 커스텀 인스펙터
+│   ├── TMPOutlineEffectEditor.cs   # 커스텀 인스펙터
+│   └── EditorInputDialog.cs        # 입력 다이얼로그 (v2.4.0+)
 ├── Examples/
 │   └── TMPEffectExample.cs         # 사용 예제
 └── README.md                        # 문서
@@ -606,10 +614,34 @@ limiter.Refresh();          // 강제 갱신
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.2.1)
+### 현재 안정 버전 (v2.4.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.4.0 (2026-02-11)
+**인스펙터 UI 개선 및 카테고리 관리 기능**
+- ✅ 인스펙터 필드 이름 개선
+  - `Underlay Settings` → `Outline Settings`
+  - `Underlay Color` → `Color`
+  - `Underlay Dilate` → `Width`
+  - `Underlay Offset X/Y` → `Offset X/Y`
+  - `Underlay Softness` → `Softness`
+  - `Face Dilate` → `Dilate`
+- ✅ Second Face에 Offset X/Y 추가
+  - Inner Face의 위치를 조정 가능
+  - fontSize 기준으로 스케일됨
+- ✅ 조건부 표시 기능
+  - Face Settings: Enable 체크 시에만 하위 옵션 표시
+  - Second Face Settings: Enable 체크 시에만 하위 옵션 표시
+- ✅ 프리셋 드롭다운 표시 형식 변경
+  - `프리셋명 [카테고리명]` → `[카테고리명] 프리셋명`
+- ✅ 사용자 정의 카테고리 관리 기능
+  - TMPEffectCategorySettings ScriptableObject 추가
+  - 카테고리 추가/이름변경/삭제 UI
+  - 기본 카테고리 3개 (Title, Button, Custom - 삭제 불가)
+  - 삭제된 카테고리를 사용하던 프리셋은 자동으로 Custom으로 변경
+  - 사용자 정의 카테고리 무제한 추가 가능
 
 ### v2.3.0 (2026-02-10)
 **Second Face 기능 추가**
@@ -664,7 +696,7 @@ limiter.Refresh();          // 강제 갱신
 **리팩토링 및 기능 확장**
 - ✅ Material 자동 공유 시스템 (TMPMaterialCache)
 - ✅ 프리셋 시스템 (ScriptableObject + 커스텀 에디터)
-- ✅ 프리셋 카테고리 관리 (7개 카테고리)
+- ✅ 프리셋 카테고리 관리 (3개 기본 카테고리)
 - ✅ Runtime API 개선 (편의 메서드)
 - ✅ BitMask 기반 Dirty Check 최적화
 - ✅ FNV-1a Hash 알고리즘 적용
@@ -685,6 +717,6 @@ limiter.Refresh();          // 강제 갱신
 
 ---
 
-**버전**: 2.3.0
-**최종 수정**: 2026-02-10
+**버전**: 2.4.0
+**최종 수정**: 2026-02-11
 **작성자**: Claude Code (with Unity TMP Underlay system)

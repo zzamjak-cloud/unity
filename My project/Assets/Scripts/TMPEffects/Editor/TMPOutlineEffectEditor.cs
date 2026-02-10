@@ -19,22 +19,16 @@ namespace CAT.UI
         private int _selectedPresetIndex = 0;
         private int _filterCategoryIndex = 0;  // 0 = 전체
 
-        // 카테고리 옵션 (첫 번째가 "전체")
-        private static readonly string[] CATEGORY_OPTIONS = new string[]
-        {
-            "전체",
-            "Outline",
-            "DropShadow",
-            "Title",
-            "Button",
-            "Dialogue",
-            "GameUI",
-            "Custom"
-        };
+        // 카테고리 옵션 (TMPEffectCategorySettings에서 동적으로 가져옴)
+        private string[] _categoryOptions;
 
         // 저장 폴더
         private DefaultAsset _presetFolder;
         private string _presetFolderPath;
+
+        // 카테고리 관리 UI 상태
+        private bool _showCategoryManager = false;
+        private string _newCategoryName = "";
 
         private void OnEnable()
         {
@@ -42,6 +36,9 @@ namespace CAT.UI
 
             // 저장된 폴더 경로 불러오기
             LoadPresetFolder();
+
+            // 카테고리 옵션 로드
+            RefreshCategoryOptions();
 
             RefreshPresetList();
 
@@ -53,6 +50,11 @@ namespace CAT.UI
             }
 
             Undo.undoRedoPerformed += OnUndoRedo;
+        }
+
+        private void RefreshCategoryOptions()
+        {
+            _categoryOptions = TMPEffectCategorySettings.Instance.GetCategoryOptions();
         }
 
         private void OnDisable()
@@ -99,13 +101,16 @@ namespace CAT.UI
                    !Mathf.Approximately(_target.UnderlayOffsetX, _selectedPreset.UnderlayOffsetX) ||
                    !Mathf.Approximately(_target.UnderlayOffsetY, _selectedPreset.UnderlayOffsetY) ||
                    !Mathf.Approximately(_target.UnderlaySoftness, _selectedPreset.UnderlaySoftness) ||
+                   _target.EnableFace != _selectedPreset.EnableFace ||
                    !Mathf.Approximately(_target.FaceDilate, _selectedPreset.FaceDilate) ||
                    _target.EnableShadow != _selectedPreset.EnableShadow ||
                    _target.ShadowOffset != _selectedPreset.ShadowOffset ||
                    !Mathf.Approximately(_target.ShadowAlpha, _selectedPreset.ShadowAlpha) ||
                    _target.EnableSecondFace != _selectedPreset.EnableSecondFace ||
                    _target.SecondFaceColor != _selectedPreset.SecondFaceColor ||
-                   !Mathf.Approximately(_target.SecondFaceDilate, _selectedPreset.SecondFaceDilate);
+                   !Mathf.Approximately(_target.SecondFaceDilate, _selectedPreset.SecondFaceDilate) ||
+                   !Mathf.Approximately(_target.SecondFaceOffsetX, _selectedPreset.SecondFaceOffsetX) ||
+                   !Mathf.Approximately(_target.SecondFaceOffsetY, _selectedPreset.SecondFaceOffsetY);
         }
 
         public override void OnInspectorGUI()
@@ -191,12 +196,6 @@ namespace CAT.UI
                 }
             }
 
-            // 폴더 경로 표시
-            if (_presetFolder != null)
-            {
-                EditorGUILayout.LabelField(_presetFolderPath, EditorStyles.miniLabel, GUILayout.Width(150));
-            }
-
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(3);
@@ -204,13 +203,25 @@ namespace CAT.UI
             // 카테고리 필터 (첫 번째 옵션이 "전체")
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("카테고리", GUILayout.Width(100));
-            int newCategoryIndex = EditorGUILayout.Popup(_filterCategoryIndex, CATEGORY_OPTIONS);
+            int newCategoryIndex = EditorGUILayout.Popup(_filterCategoryIndex, _categoryOptions);
             if (newCategoryIndex != _filterCategoryIndex)
             {
                 _filterCategoryIndex = newCategoryIndex;
                 RefreshPresetList();
             }
+
+            // 카테고리 관리 버튼
+            if (GUILayout.Button(new GUIContent("⚙", "카테고리 관리"), GUILayout.Width(25)))
+            {
+                _showCategoryManager = !_showCategoryManager;
+            }
             EditorGUILayout.EndHorizontal();
+
+            // 카테고리 관리 패널
+            if (_showCategoryManager)
+            {
+                DrawCategoryManager();
+            }
 
             EditorGUILayout.Space(3);
 
@@ -311,20 +322,167 @@ namespace CAT.UI
 
         private void DrawPropertiesExcludingPreset()
         {
-            // Preset 필드를 제외한 모든 속성 그리기
-            SerializedProperty prop = serializedObject.GetIterator();
-            bool enterChildren = true;
+            // Outline Settings
+            EditorGUILayout.LabelField("Outline Settings", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_underlayColor"), new GUIContent("Color"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_underlayDilate"), new GUIContent("Width"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_underlayOffsetX"), new GUIContent("Offset X"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_underlayOffsetY"), new GUIContent("Offset Y"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("_underlaySoftness"), new GUIContent("Softness"));
 
-            while (prop.NextVisible(enterChildren))
+            EditorGUILayout.Space(5);
+
+            // Face Settings (조건부 표시)
+            EditorGUILayout.LabelField("Face Settings", EditorStyles.boldLabel);
+            var enableFaceProp = serializedObject.FindProperty("_enableFace");
+            EditorGUILayout.PropertyField(enableFaceProp, new GUIContent("Enable"));
+            if (enableFaceProp.boolValue)
             {
-                enterChildren = false;
-
-                // Script 필드와 Preset 필드는 건너뛰기
-                if (prop.name == "m_Script" || prop.name == "_preset")
-                    continue;
-
-                EditorGUILayout.PropertyField(prop, true);
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_faceDilate"), new GUIContent("Dilate"));
+                EditorGUI.indentLevel--;
             }
+
+            EditorGUILayout.Space(5);
+
+            // Shadow Settings
+            EditorGUILayout.LabelField("Shadow Settings", EditorStyles.boldLabel);
+            var enableShadowProp = serializedObject.FindProperty("_enableShadow");
+            EditorGUILayout.PropertyField(enableShadowProp, new GUIContent("Enable"));
+            if (enableShadowProp.boolValue)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_shadowOffset"), new GUIContent("Offset"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_shadowAlpha"), new GUIContent("Alpha"));
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.Space(5);
+
+            // Second Face Settings (조건부 표시)
+            EditorGUILayout.LabelField("Second Face Settings", EditorStyles.boldLabel);
+            var enableSecondFaceProp = serializedObject.FindProperty("_enableSecondFace");
+            EditorGUILayout.PropertyField(enableSecondFaceProp, new GUIContent("Enable"));
+            if (enableSecondFaceProp.boolValue)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceColor"), new GUIContent("Color"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceDilate"), new GUIContent("Dilate"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceOffsetX"), new GUIContent("Offset X"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceOffsetY"), new GUIContent("Offset Y"));
+                EditorGUI.indentLevel--;
+            }
+        }
+
+        private void DrawCategoryManager()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("카테고리 관리", EditorStyles.boldLabel);
+
+            var categorySettings = TMPEffectCategorySettings.Instance;
+
+            // 기본 카테고리 표시 (읽기 전용)
+            EditorGUILayout.Space(3);
+            EditorGUILayout.LabelField("기본 카테고리 (수정 불가)", EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            foreach (var category in TMPEffectCategorySettings.DefaultCategories)
+            {
+                EditorGUILayout.LabelField($"• {category}");
+            }
+            EditorGUI.indentLevel--;
+
+            // 사용자 정의 카테고리
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("사용자 정의 카테고리", EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+
+            var customCategories = categorySettings.CustomCategories;
+            if (customCategories.Count == 0)
+            {
+                EditorGUILayout.LabelField("(없음)", EditorStyles.miniLabel);
+            }
+            else
+            {
+                for (int i = 0; i < customCategories.Count; i++)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"• {customCategories[i]}");
+
+                    // 이름 변경 버튼
+                    if (GUILayout.Button("✏", GUILayout.Width(25)))
+                    {
+                        string oldName = customCategories[i];
+                        string newName = EditorInputDialog.Show("카테고리 이름 변경", "새 이름:", oldName);
+                        if (!string.IsNullOrEmpty(newName) && newName != oldName)
+                        {
+                            if (categorySettings.RenameCategory(oldName, newName))
+                            {
+                                // 해당 카테고리를 사용하는 프리셋들의 카테고리명도 업데이트
+                                UpdatePresetsCategory(oldName, newName);
+
+                                RefreshCategoryOptions();
+                                RefreshPresetList();
+                                AssetDatabase.SaveAssets();
+                            }
+                            else
+                            {
+                                EditorUtility.DisplayDialog("오류", "카테고리 이름을 변경할 수 없습니다. 이미 존재하는 이름이거나 유효하지 않습니다.", "확인");
+                            }
+                        }
+                    }
+
+                    // 삭제 버튼
+                    GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
+                    if (GUILayout.Button("✖", GUILayout.Width(25)))
+                    {
+                        string categoryToDelete = customCategories[i];
+                        if (EditorUtility.DisplayDialog("카테고리 삭제",
+                            $"'{categoryToDelete}' 카테고리를 삭제하시겠습니까?\n\n이 카테고리를 사용하는 프리셋은 'Custom'으로 변경됩니다.",
+                            "삭제", "취소"))
+                        {
+                            // 삭제 전에 해당 카테고리를 사용하는 프리셋들을 Custom으로 변경
+                            ResetPresetsWithCategory(categoryToDelete);
+
+                            categorySettings.RemoveCategory(categoryToDelete);
+                            RefreshCategoryOptions();
+                            RefreshPresetList();
+                            AssetDatabase.SaveAssets();
+                            break;  // 리스트가 변경되었으므로 루프 종료
+                        }
+                    }
+                    GUI.backgroundColor = Color.white;
+
+                    EditorGUILayout.EndHorizontal();
+                }
+            }
+            EditorGUI.indentLevel--;
+
+            // 새 카테고리 추가
+            EditorGUILayout.Space(5);
+            EditorGUILayout.BeginHorizontal();
+            _newCategoryName = EditorGUILayout.TextField("새 카테고리", _newCategoryName);
+            GUI.backgroundColor = new Color(0.7f, 1f, 0.7f);
+            if (GUILayout.Button("추가", GUILayout.Width(50)))
+            {
+                if (!string.IsNullOrWhiteSpace(_newCategoryName))
+                {
+                    if (categorySettings.AddCategory(_newCategoryName))
+                    {
+                        RefreshCategoryOptions();
+                        RefreshPresetList();
+                        AssetDatabase.SaveAssets();
+                        _newCategoryName = "";
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("오류", "카테고리를 추가할 수 없습니다. 이미 존재하는 이름이거나 유효하지 않습니다.", "확인");
+                    }
+                }
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
         }
 
         private void OnPresetSelected(int index)
@@ -442,11 +600,12 @@ namespace CAT.UI
             // 카테고리 필터 적용 (0 = 전체, 1+ = 특정 카테고리)
             if (_filterCategoryIndex > 0)
             {
-                PresetCategory filterCategory = (PresetCategory)(_filterCategoryIndex - 1);
+                string filterCategoryName = _categoryOptions[_filterCategoryIndex];
                 var filtered = new System.Collections.Generic.List<TMPEffectPreset>();
                 foreach (var preset in allPresets)
                 {
-                    if (preset.Category == filterCategory)
+                    // 프리셋의 카테고리 이름과 비교
+                    if (preset.GetCategoryName() == filterCategoryName)
                     {
                         filtered.Add(preset);
                     }
@@ -461,12 +620,12 @@ namespace CAT.UI
             // 드롭다운 이름 배열 생성
             _presetNames = new string[_availablePresets.Length + 1];
             _presetNames[0] = _filterCategoryIndex > 0
-                ? $"None (새로 만들기 - {CATEGORY_OPTIONS[_filterCategoryIndex]})"
+                ? $"None (새로 만들기 - {_categoryOptions[_filterCategoryIndex]})"
                 : "None (새로 만들기)";
 
             for (int i = 0; i < _availablePresets.Length; i++)
             {
-                _presetNames[i + 1] = $"{_availablePresets[i].name} [{_availablePresets[i].Category}]";
+                _presetNames[i + 1] = $"[{_availablePresets[i].GetCategoryName()}] {_availablePresets[i].name}";
             }
 
             // 현재 선택된 프리셋이 있다면 인덱스 찾기
@@ -491,6 +650,38 @@ namespace CAT.UI
             System.Array.Sort(presets, (a, b) => string.Compare(a.name, b.name));
 
             return presets;
+        }
+
+        /// <summary>
+        /// 특정 카테고리를 사용하는 모든 프리셋을 Custom으로 리셋
+        /// </summary>
+        private void ResetPresetsWithCategory(string categoryName)
+        {
+            var allPresets = FindAllPresets();
+            foreach (var preset in allPresets)
+            {
+                if (preset.GetCategoryName() == categoryName)
+                {
+                    preset.SetCategoryName(TMPEffectCategorySettings.FALLBACK_CATEGORY);
+                    EditorUtility.SetDirty(preset);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 특정 카테고리를 사용하는 모든 프리셋의 카테고리명 업데이트
+        /// </summary>
+        private void UpdatePresetsCategory(string oldName, string newName)
+        {
+            var allPresets = FindAllPresets();
+            foreach (var preset in allPresets)
+            {
+                if (preset.GetCategoryName() == oldName)
+                {
+                    preset.SetCategoryName(newName);
+                    EditorUtility.SetDirty(preset);
+                }
+            }
         }
 
         private void FindPresetIndex()

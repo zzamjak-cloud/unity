@@ -4,28 +4,17 @@ namespace CAT.UI
 {
     /// <summary>
     /// 프리셋 카테고리 (조직화 및 필터링용)
+    /// 기본 카테고리 3개 (Title, Button, Custom) + 사용자 정의 카테고리
     /// </summary>
     public enum PresetCategory
     {
-        /// <summary>Outline 효과 (Offset = 0)</summary>
-        Outline,
-
-        /// <summary>Drop Shadow 효과 (Offset ≠ 0)</summary>
-        DropShadow,
-
         /// <summary>Title 효과 (Outline + Shadow 복합)</summary>
         Title,
 
         /// <summary>UI 버튼용</summary>
         Button,
 
-        /// <summary>게임 내 대사/스토리</summary>
-        Dialogue,
-
-        /// <summary>게임 UI (상태 표시 등)</summary>
-        GameUI,
-
-        /// <summary>사용자 정의</summary>
+        /// <summary>사용자 정의 (기본값, 삭제된 카테고리의 폴백)</summary>
         Custom
     }
 
@@ -38,7 +27,7 @@ namespace CAT.UI
     [CreateAssetMenu(fileName = "TMPEffectPreset", menuName = "CAT/UI/TMP Effect Preset")]
     public class TMPEffectPreset : ScriptableObject, ITMPEffectSettings
     {
-        [Header("Underlay Settings")]
+        [Header("Outline Settings")]
         [SerializeField] private Color _underlayColor = Color.black;
         [SerializeField, Range(0f, 1f)] private float _underlayDilate = 0.15f;
         [SerializeField, Range(-1f, 1f)] private float _underlayOffsetX = 0f;
@@ -46,6 +35,7 @@ namespace CAT.UI
         [SerializeField, Range(0f, 1f)] private float _underlaySoftness = 0.0f;
 
         [Header("Face Settings")]
+        [SerializeField] private bool _enableFace = false;
         [SerializeField, Range(-1f, 1f)] private float _faceDilate = 0.0f;
 
         [Header("Shadow Settings")]
@@ -53,13 +43,16 @@ namespace CAT.UI
         [SerializeField] private Vector2 _shadowOffset = new Vector2(0.1f, -0.1f);
         [SerializeField, Range(0f, 1f)] private float _shadowAlpha = 0.5f;
 
-        [Header("Second Face Settings (Inner Text)")]
+        [Header("Second Face Settings")]
         [SerializeField] private bool _enableSecondFace = false;
         [SerializeField] private Color _secondFaceColor = Color.white;
         [SerializeField, Range(-1f, 0f)] private float _secondFaceDilate = -0.1f;
+        [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetX = 0f;
+        [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetY = 0f;
 
         [Header("Preset Info")]
         [SerializeField] private PresetCategory _category = PresetCategory.Custom;
+        [SerializeField] private string _customCategoryName = "";  // 사용자 정의 카테고리명 (기본 카테고리가 아닐 경우)
         [SerializeField, TextArea] private string _description = "";
 
         // ─────────────────────────────────────────────
@@ -71,6 +64,7 @@ namespace CAT.UI
         public float UnderlayOffsetX => _underlayOffsetX;
         public float UnderlayOffsetY => _underlayOffsetY;
         public float UnderlaySoftness => _underlaySoftness;
+        public bool EnableFace => _enableFace;
         public float FaceDilate => _faceDilate;
         public bool EnableShadow => _enableShadow;
         public Vector2 ShadowOffset => _shadowOffset;
@@ -78,8 +72,75 @@ namespace CAT.UI
         public bool EnableSecondFace => _enableSecondFace;
         public Color SecondFaceColor => _secondFaceColor;
         public float SecondFaceDilate => _secondFaceDilate;
+        public float SecondFaceOffsetX => _secondFaceOffsetX;
+        public float SecondFaceOffsetY => _secondFaceOffsetY;
         public PresetCategory Category => _category;
+        public string CustomCategoryName => _customCategoryName;
         public string Description => _description;
+
+        /// <summary>
+        /// 카테고리 이름을 문자열로 반환
+        /// - 기본 카테고리: enum 이름
+        /// - 사용자 정의 카테고리: _customCategoryName
+        /// </summary>
+        public string GetCategoryName()
+        {
+            if (!string.IsNullOrEmpty(_customCategoryName))
+            {
+                // 사용자 정의 카테고리가 아직 존재하는지 확인
+                if (TMPEffectCategorySettings.Instance.HasCategory(_customCategoryName))
+                {
+                    return _customCategoryName;
+                }
+                else
+                {
+                    // 카테고리가 삭제되었으면 Custom으로 폴백
+                    return TMPEffectCategorySettings.FALLBACK_CATEGORY;
+                }
+            }
+            return _category.ToString();
+        }
+
+        /// <summary>
+        /// 카테고리 이름 설정 (문자열 기반)
+        /// - 기본 카테고리명이면 enum으로 설정
+        /// - 사용자 정의면 _customCategoryName에 저장
+        /// </summary>
+        public void SetCategoryName(string categoryName)
+        {
+            // 기본 카테고리인지 확인
+            if (System.Enum.TryParse<PresetCategory>(categoryName, out var enumValue))
+            {
+                _category = enumValue;
+                _customCategoryName = "";
+            }
+            else
+            {
+                _category = PresetCategory.Custom;
+                _customCategoryName = categoryName;
+            }
+
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
+
+        /// <summary>
+        /// 삭제된 카테고리를 Custom으로 리셋
+        /// </summary>
+        public void ResetToFallbackCategoryIfNeeded()
+        {
+            if (!string.IsNullOrEmpty(_customCategoryName) &&
+                !TMPEffectCategorySettings.Instance.HasCategory(_customCategoryName))
+            {
+                _customCategoryName = "";
+                _category = PresetCategory.Custom;
+
+#if UNITY_EDITOR
+                UnityEditor.EditorUtility.SetDirty(this);
+#endif
+            }
+        }
 
         // ─────────────────────────────────────────────
         // Apply to Effect
@@ -97,6 +158,7 @@ namespace CAT.UI
             effect.UnderlayOffsetX = _underlayOffsetX;
             effect.UnderlayOffsetY = _underlayOffsetY;
             effect.UnderlaySoftness = _underlaySoftness;
+            effect.EnableFace = _enableFace;
             effect.FaceDilate = _faceDilate;
             effect.EnableShadow = _enableShadow;
             effect.ShadowOffset = _shadowOffset;
@@ -104,6 +166,8 @@ namespace CAT.UI
             effect.EnableSecondFace = _enableSecondFace;
             effect.SecondFaceColor = _secondFaceColor;
             effect.SecondFaceDilate = _secondFaceDilate;
+            effect.SecondFaceOffsetX = _secondFaceOffsetX;
+            effect.SecondFaceOffsetY = _secondFaceOffsetY;
         }
 
         /// <summary>
@@ -118,6 +182,7 @@ namespace CAT.UI
             _underlayOffsetX = effect.UnderlayOffsetX;
             _underlayOffsetY = effect.UnderlayOffsetY;
             _underlaySoftness = effect.UnderlaySoftness;
+            _enableFace = effect.EnableFace;
             _faceDilate = effect.FaceDilate;
             _enableShadow = effect.EnableShadow;
             _shadowOffset = effect.ShadowOffset;
@@ -125,6 +190,8 @@ namespace CAT.UI
             _enableSecondFace = effect.EnableSecondFace;
             _secondFaceColor = effect.SecondFaceColor;
             _secondFaceDilate = effect.SecondFaceDilate;
+            _secondFaceOffsetX = effect.SecondFaceOffsetX;
+            _secondFaceOffsetY = effect.SecondFaceOffsetY;
 
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);
@@ -184,7 +251,8 @@ namespace CAT.UI
         {
             var preset = CreateInstance<TMPEffectPreset>();
             preset.name = "Simple Outline";
-            preset._category = PresetCategory.Outline;
+            preset._category = PresetCategory.Custom;
+            preset._customCategoryName = "Outline";
             preset._description = "간단한 검은색 외곽선";
             preset._underlayDilate = 0.15f;
             preset._underlayColor = Color.black;
@@ -200,7 +268,8 @@ namespace CAT.UI
         {
             var preset = CreateInstance<TMPEffectPreset>();
             preset.name = "Drop Shadow";
-            preset._category = PresetCategory.DropShadow;
+            preset._category = PresetCategory.Custom;
+            preset._customCategoryName = "DropShadow";
             preset._description = "오른쪽 아래 그림자";
             preset._underlayOffsetX = 0.1f;
             preset._underlayOffsetY = -0.1f;
