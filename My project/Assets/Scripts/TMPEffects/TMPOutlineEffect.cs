@@ -342,6 +342,14 @@ namespace CAT.UI
             }
         }
 
+        /// <summary>
+        /// Second Face의 TMP_Text 컴포넌트 가져오기
+        /// </summary>
+        public TMP_Text GetSecondFaceText()
+        {
+            return _secondFaceText;
+        }
+
         // ─────────────────────────────────────────────
         // ITMPEffectSettings 구현
         // ─────────────────────────────────────────────
@@ -744,6 +752,20 @@ namespace CAT.UI
             if (!_tmpText) return;
             if (_secondFaceObject) return; // 이미 존재하면 스킵
 
+            // 기존에 생성된 [Inner Face] 오브젝트가 있는지 확인 (중복 생성 방지)
+            foreach (Transform child in transform)
+            {
+                if (child.name == "[Inner Face]")
+                {
+                    _secondFaceObject = child.gameObject;
+                    _secondFaceText = _secondFaceObject.GetComponent<TextMeshProUGUI>();
+                    _secondFaceCurve = _secondFaceObject.GetComponent<TMPCurve>();
+                    Debug.Log($"[TMPOutlineEffect] 기존 Inner Face 오브젝트 재사용: {_secondFaceObject.name}", this);
+                    UpdateSecondFaceMaterial();
+                    return;
+                }
+            }
+
             // 자식 GameObject 생성
             _secondFaceObject = new GameObject("[Inner Face]");
             _secondFaceObject.hideFlags = HideFlags.DontSaveInEditor;
@@ -825,18 +847,58 @@ namespace CAT.UI
         /// </summary>
         private void DestroySecondFaceObject()
         {
-            if (_secondFaceObject)
+            // 모든 [Inner Face] 자식 찾아서 파괴 (중복 생성된 것들도 제거)
+            var childrenToDestroy = new System.Collections.Generic.List<GameObject>();
+            foreach (Transform child in transform)
             {
-#if UNITY_EDITOR
-                Debug.Log($"[TMPOutlineEffect] Second Face 파괴: {_secondFaceObject.name}", this);
-                DestroyImmediate(_secondFaceObject);
-#else
-                Destroy(_secondFaceObject);
-#endif
-                _secondFaceObject = null;
-                _secondFaceText = null;
-                _secondFaceCurve = null;
+                if (child.name == "[Inner Face]")
+                {
+                    childrenToDestroy.Add(child.gameObject);
+                }
             }
+
+            if (childrenToDestroy.Count == 0 && _secondFaceObject == null) return;
+
+            Debug.Log($"[TMPOutlineEffect] Second Face 파괴: {childrenToDestroy.Count}개", this);
+
+#if UNITY_EDITOR
+            // Edit Mode에서는 EditorApplication.delayCall로 지연 파괴
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorApplication.delayCall += () =>
+                {
+                    foreach (var obj in childrenToDestroy)
+                    {
+                        if (obj != null)
+                        {
+                            DestroyImmediate(obj);
+                        }
+                    }
+                };
+            }
+            else
+            {
+                foreach (var obj in childrenToDestroy)
+                {
+                    if (obj != null)
+                    {
+                        Destroy(obj);
+                    }
+                }
+            }
+#else
+            foreach (var obj in childrenToDestroy)
+            {
+                if (obj != null)
+                {
+                    Destroy(obj);
+                }
+            }
+#endif
+
+            _secondFaceObject = null;
+            _secondFaceText = null;
+            _secondFaceCurve = null;
         }
 
         /// <summary>
