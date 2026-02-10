@@ -6,10 +6,19 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 
 - **🚀 고성능**: Underlay 셰이더 기반 + 선택적 메시 Shadow
 - **💾 메모리 최적화**: Material 자동 공유 (100개 → 5~10개)
-- **🔋 배터리 효율**: BitMask 기반 더티 체크로 Update 비용 최소화
+- **🔋 배터리 효율**: LateUpdate + 더티 체크로 Update 비용 최소화
 - **♻️ GC 제거**: static 캐싱으로 GC Alloc 100% 제거
 - **📱 모바일 타겟**: Galaxy S10, iPhone 11 @ 60 FPS
 - **🎨 프리셋 시스템**: ScriptableObject 기반 스타일 관리
+- **📐 곡선/레이아웃**: 텍스트 변형 및 크기 제한 컴포넌트
+
+## 📦 제공 컴포넌트
+
+| 컴포넌트 | 역할 | 처리 방식 |
+|----------|------|-----------|
+| **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
+| **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
+| **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
 
 ## 📦 제공 효과
 
@@ -342,8 +351,10 @@ Assets/Scripts/TMPEffects/
 ├── ITMPEffectSettings.cs           # 설정 인터페이스
 ├── TMPMaterialCache.cs             # Material 공유 시스템
 ├── TMPEffectManager.cs             # Manager (래퍼)
-├── TMPOutlineEffect.cs             # 통합 효과 컴포넌트
+├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
 ├── TMPEffectPreset.cs              # ScriptableObject 프리셋
+├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
+├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
 ├── Editor/
 │   └── TMPOutlineEffectEditor.cs   # 커스텀 인스펙터
 ├── Examples/
@@ -379,6 +390,152 @@ effect.FaceDilate = 0.1f;
 effect.SetOutline(Color.black, 0.2f, 0f);  // Softness = 0
 ```
 
+---
+
+## 📐 TMPCurve - 텍스트 곡선 효과
+
+AnimationCurve를 따라 텍스트 정점을 변형하는 컴포넌트입니다.
+
+### 특징
+- **TMP 이벤트 기반**: `TEXT_CHANGED_EVENT` 구독으로 깜빡임 없는 즉시 적용
+- **곡선 따라 회전**: 글자가 곡선 접선 방향으로 자연스럽게 회전
+- **편의 메서드**: 아치, 웨이브 등 프리셋 곡선 제공
+- **TMPLayoutLimiter 호환**: 실행 순서 보장으로 함께 사용 가능
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Curve
+3. Curve 에디터에서 곡선 편집
+4. Curve Scale로 높이 조절
+5. Rotate Along Curve 활성화 시 글자 회전
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class CurveExample : MonoBehaviour
+{
+    void Start()
+    {
+        var curve = GetComponent<TMPCurve>();
+
+        // 아치 형태 (높이 50px)
+        curve.SetArchCurve(50f);
+
+        // 웨이브 형태 (진폭 30px, 2주기)
+        curve.SetWaveCurve(30f, 2f);
+
+        // 직선으로 리셋
+        curve.ResetCurve();
+
+        // 커스텀 곡선
+        curve.Curve = new AnimationCurve(
+            new Keyframe(0f, 0f),
+            new Keyframe(0.5f, 1f),
+            new Keyframe(1f, 0f)
+        );
+        curve.CurveScale = 100f;
+
+        // 회전 설정
+        curve.RotateAlongCurve = true;
+        curve.RotationStrength = 0.5f;  // 50% 회전
+    }
+}
+```
+
+### 속성
+
+```csharp
+// 곡선 설정
+curve.Curve = animationCurve;       // AnimationCurve (X: 0~1 위치, Y: 높이)
+curve.CurveScale = 50f;             // 수직 스케일 (픽셀)
+
+// 회전 설정
+curve.RotateAlongCurve = true;      // 접선 방향 회전 여부
+curve.RotationStrength = 1f;        // 회전 강도 (0~1)
+
+// 메서드
+curve.SetArchCurve(height);         // 아치 프리셋
+curve.SetWaveCurve(amplitude, freq);// 웨이브 프리셋
+curve.ResetCurve();                 // 직선으로 리셋
+curve.Refresh();                    // 강제 갱신
+```
+
+### ⚠️ 주의사항
+
+**TMPOutlineEffect와 동시 사용 시**:
+- Shadow 기능 비활성화 권장 (IMeshModifier 충돌 가능)
+- Underlay 효과만 사용하면 정상 동작
+- 두 컴포넌트 모두 정점을 수정하므로 실행 순서에 따라 결과가 달라질 수 있음
+
+**TMPLayoutLimiter와 동시 사용 시**:
+- ✅ 정상 동작 (실행 순서 보장됨)
+- TMPLayoutLimiter (Order: -10) → TMPCurve (Order: 10)
+- RectTransform 크기 변경 자동 감지
+
+---
+
+## 📏 TMPLayoutLimiter - 레이아웃 크기 제한
+
+TMP 텍스트의 최대 너비/높이를 LayoutElement로 제한하는 컴포넌트입니다.
+
+### 특징
+- **Auto Size 호환**: 최대 폰트 크기 기준으로 계산하여 깜빡임 방지
+- **LateUpdate + 더티 체크**: 텍스트 변경 시에만 업데이트
+- **선택적 제한**: 너비만, 높이만, 또는 둘 다 제한 가능
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Layout Limiter
+3. Max Width 설정 (0 = 제한 없음)
+4. Max Height 설정 (0 = 제한 없음)
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class LayoutExample : MonoBehaviour
+{
+    void Start()
+    {
+        var limiter = GetComponent<TMPLayoutLimiter>();
+
+        // 최대 너비 300px, 높이 제한 없음
+        limiter.MaxWidth = 300f;
+        limiter.MaxHeight = 0f;
+
+        // 강제 갱신
+        limiter.Refresh();
+    }
+}
+```
+
+### 속성
+
+```csharp
+limiter.MaxWidth = 300f;    // 최대 너비 (0 = 제한 없음)
+limiter.MaxHeight = 100f;   // 최대 높이 (0 = 제한 없음)
+limiter.Refresh();          // 강제 갱신
+```
+
+### 사용 시나리오
+
+- **채팅 말풍선**: 최대 너비 제한으로 긴 텍스트 자동 줄바꿈
+- **툴팁**: 너비/높이 모두 제한하여 일정 크기 유지
+- **동적 버튼**: 텍스트 길이에 따라 버튼 크기 조절 (최대 제한 포함)
+
 ## 📝 요구사항
 
 - Unity 6 (6000.0.x) 이상
@@ -393,10 +550,33 @@ effect.SetOutline(Color.black, 0.2f, 0f);  // Softness = 0
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.1.0)
+### 현재 안정 버전 (v2.2.1)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.2.1 (2026-02-10)
+**TMPCurve 깜빡임 버그 수정**
+- 🐛 텍스트 변경 시 곡선 미적용 상태로 깜빡이는 현상 수정
+  - LateUpdate 기반 → TMP 이벤트 (`TEXT_CHANGED_EVENT`) 기반으로 변경
+  - TMP 메시 업데이트 직후 즉시 곡선 적용
+- ✅ TMPLayoutLimiter와 함께 사용 시 실행 순서 보장
+  - TMPLayoutLimiter: `DefaultExecutionOrder(-10)`
+  - TMPCurve: `DefaultExecutionOrder(10)`
+- ✅ RectTransform 크기 변경 감지 추가
+
+### v2.2.0 (2026-02-10)
+**신규 컴포넌트 추가**
+- ✅ TMPCurve 추가 (UITMPCurve에서 리팩토링)
+  - Coroutine → LateUpdate + 더티 체크 최적화
+  - angleMultiplier → RotateAlongCurve + RotationStrength로 개선
+  - speedMultiplier 제거 (불명확한 기능)
+  - SetArchCurve, SetWaveCurve, ResetCurve 편의 메서드 추가
+- ✅ TMPLayoutLimiter 추가 (UITMPLayoutLimiter에서 리팩토링)
+  - 네이밍 규칙 통일 (_camelCase)
+  - OnEnable/OnDisable/OnValidate 추가
+  - max 값 0 = 제한 없음 기능 추가
+  - TMP_Text 지원 (UGUI/3D 모두)
 
 ### v2.1.0 (2026-02-10)
 **기능 개선**
@@ -431,6 +611,6 @@ effect.SetOutline(Color.black, 0.2f, 0f);  // Softness = 0
 
 ---
 
-**버전**: 2.1.0
+**버전**: 2.2.1
 **최종 수정**: 2026-02-10
 **작성자**: Claude Code (with Unity TMP Underlay system)
