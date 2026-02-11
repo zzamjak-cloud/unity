@@ -62,6 +62,10 @@ namespace CAT.UI
         [SerializeField]
         private AnimationCurve _appearCustomCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
+        [Tooltip("Appear → Loop 블렌드 비율 (0~1). 0.25 = Appear 마지막 25%와 Loop 시작이 오버랩")]
+        [SerializeField, Range(0f, 0.5f)]
+        private float _appearToLoopBlend = 0f;
+
         [Header("Loop Animation")]
         [Tooltip("반복 애니메이션 활성화")]
         [SerializeField]
@@ -99,13 +103,17 @@ namespace CAT.UI
         [SerializeField]
         private AnimationCurve _loopCustomCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
-        [Tooltip("반복 횟수 (-1 = 무한)")]
+        [Tooltip("반복 횟수 (0 = Loop 비활성화, 1 = 1회, 2 = 2회, -1 = 무한)")]
         [SerializeField]
-        private int _loopCount = -1;
+        private int _loopCount = 1;
 
         [Tooltip("반복 타입 (Yoyo: 왕복 반복, Restart: 처음부터 반복)")]
         [SerializeField]
         private LoopType _loopType = LoopType.Yoyo;
+
+        [Tooltip("Loop → Disappear 블렌드 비율 (0~1). 0.25 = Loop 마지막 25%와 Disappear 시작이 오버랩")]
+        [SerializeField, Range(0f, 0.5f)]
+        private float _loopToDisappearBlend = 0f;
 
         [Header("Disappear Animation")]
         [Tooltip("사라짐 애니메이션 활성화")]
@@ -169,6 +177,7 @@ namespace CAT.UI
         public Ease AppearEase => _appearEase;
         public bool AppearUseCustomCurve => _appearUseCustomCurve;
         public AnimationCurve AppearCustomCurve => _appearCustomCurve;
+        public float AppearToLoopBlend => _appearToLoopBlend;
 
         public bool EnableLoop => _enableLoop;
         public bool LoopRelative => _loopRelative;
@@ -181,6 +190,7 @@ namespace CAT.UI
         public AnimationCurve LoopCustomCurve => _loopCustomCurve;
         public int LoopCount => _loopCount;
         public LoopType LoopType => _loopType;
+        public float LoopToDisappearBlend => _loopToDisappearBlend;
 
         public bool EnableDisappear => _enableDisappear;
         public bool DisappearRelative => _disappearRelative;
@@ -193,7 +203,61 @@ namespace CAT.UI
         public bool DisappearUseCustomCurve => _disappearUseCustomCurve;
         public AnimationCurve DisappearCustomCurve => _disappearCustomCurve;
 
-        public string Description => _description;
+        public string Description
+        {
+            get => _description;
+            set => _description = value;
+        }
+
+        // ─────────────────────────────────────────────
+        // Public Methods
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// TMPCharacterAnimation 컴포넌트의 현재 값을 이 프리셋으로 복사
+        /// </summary>
+        public void CopyFrom(TMPCharacterAnimation source)
+        {
+            if (source == null) return;
+
+            _characterDelay = source.CharacterDelay;
+
+            _enableAppear = source.EnableAppear;
+            _appearRelative = source.AppearRelative;
+            _appearPosition = source.AppearPosition;
+            _appearScale = source.AppearScale;
+            _appearRotation = source.AppearRotation;
+            _appearAlpha = source.AppearAlpha;
+            _appearDuration = source.AppearDuration;
+            _appearEase = source.AppearEase;
+            _appearUseCustomCurve = source.AppearUseCustomCurve;
+            _appearCustomCurve = new AnimationCurve(source.AppearCustomCurve.keys);
+            _appearToLoopBlend = source.AppearToLoopBlend;
+
+            _enableLoop = source.EnableLoop;
+            _loopRelative = source.LoopRelative;
+            _loopPosition = source.LoopPosition;
+            _loopScale = source.LoopScale;
+            _loopRotation = source.LoopRotation;
+            _loopDuration = source.LoopDuration;
+            _loopEase = source.LoopEase;
+            _loopUseCustomCurve = source.LoopUseCustomCurve;
+            _loopCustomCurve = new AnimationCurve(source.LoopCustomCurve.keys);
+            _loopCount = source.LoopCount;
+            _loopType = source.LoopType;
+            _loopToDisappearBlend = source.LoopToDisappearBlend;
+
+            _enableDisappear = source.EnableDisappear;
+            _disappearRelative = source.DisappearRelative;
+            _disappearPosition = source.DisappearPosition;
+            _disappearScale = source.DisappearScale;
+            _disappearRotation = source.DisappearRotation;
+            _disappearAlpha = source.DisappearAlpha;
+            _disappearDuration = source.DisappearDuration;
+            _disappearEase = source.DisappearEase;
+            _disappearUseCustomCurve = source.DisappearUseCustomCurve;
+            _disappearCustomCurve = new AnimationCurve(source.DisappearCustomCurve.keys);
+        }
 
         // ─────────────────────────────────────────────
         // Factory Methods (Built-in Presets)

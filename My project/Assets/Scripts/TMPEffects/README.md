@@ -17,6 +17,7 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 | 컴포넌트 | 역할 | 처리 방식 |
 |----------|------|-----------|
 | **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
+| **TMPCharacterAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
 | **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
 | **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
 
@@ -416,6 +417,8 @@ Assets/Scripts/TMPEffects/
 ├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
 ├── TMPEffectPreset.cs              # ScriptableObject 프리셋
 ├── TMPEffectCategorySettings.cs    # 카테고리 설정 (v2.4.0+)
+├── TMPCharacterAnimation.cs        # 글자별 애니메이션 컴포넌트 (v2.5.0+)
+├── TMPCharacterAnimationPreset.cs  # 애니메이션 프리셋 (v2.5.0+)
 ├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
 ├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
 ├── Editor/
@@ -600,11 +603,152 @@ limiter.Refresh();          // 강제 갱신
 - **툴팁**: 너비/높이 모두 제한하여 일정 크기 유지
 - **동적 버튼**: 텍스트 길이에 따라 버튼 크기 조절 (최대 제한 포함)
 
+---
+
+## 🎬 TMPCharacterAnimation - 글자별 애니메이션
+
+TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 DOTween 기반 컴포넌트입니다.
+
+### 특징
+- **글자별 애니메이션**: 각 글자를 독립적으로 위치/스케일/회전/알파 애니메이션
+- **3단계 구조**: Appear → Loop → Disappear 순차 애니메이션
+- **블렌딩 지원**: Appear↔Loop↔Disappear 전환 시 부드러운 오버랩
+- **프리셋 시스템**: ScriptableObject 기반 스타일 저장/재사용
+- **깜빡임 방지**: CanvasGroup 기반으로 초기 렌더링 차단
+- **TMPOutlineEffect 호환**: Second Face(Inner Face)와 함께 애니메이션
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Character Animation
+3. Appear/Loop/Disappear 애니메이션 설정
+4. Play On Enable 활성화 시 자동 재생
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class AnimationExample : MonoBehaviour
+{
+    void Start()
+    {
+        var anim = GetComponent<TMPCharacterAnimation>();
+
+        // 수동 재생
+        anim.Play();
+
+        // 일시정지/재개
+        anim.Pause();
+        anim.Resume();
+
+        // 정지 (원래 상태로 복원)
+        anim.Stop();
+
+        // 재시작
+        anim.Restart();
+
+        // 프리셋 적용
+        var preset = Resources.Load<TMPCharacterAnimationPreset>("Presets/BounceAppear");
+        anim.ApplyPreset(preset);
+    }
+}
+```
+
+### 속성
+
+```csharp
+// Timing
+anim.CharacterDelay = 0.05f;        // 글자 간 딜레이 (초)
+
+// Appear Animation
+anim.EnableAppear = true;           // 등장 애니메이션 활성화
+anim.AppearRelative = true;         // 상대 좌표 사용
+anim.AppearPosition = new Vector3(0, 50, 0);  // 시작 위치 오프셋
+anim.AppearScale = new Vector3(0.5f, 0.5f, 1);  // 시작 스케일
+anim.AppearRotation = Vector3.zero; // 시작 회전
+anim.AppearAlpha = 0f;              // 시작 알파 (0~1)
+anim.AppearDuration = 0.5f;         // 애니메이션 시간
+anim.AppearEase = Ease.OutBack;     // DOTween 이징
+anim.AppearToLoopBlend = 0f;        // Loop 전환 블렌드 (0~0.5)
+
+// Loop Animation
+anim.EnableLoop = false;            // 반복 애니메이션 활성화
+anim.LoopRelative = true;           // 상대 좌표 사용
+anim.LoopPosition = new Vector3(0, 20, 0);  // 목표 위치
+anim.LoopScale = Vector3.one;       // 목표 스케일
+anim.LoopRotation = Vector3.zero;   // 목표 회전
+anim.LoopDuration = 1f;             // 애니메이션 시간
+anim.LoopEase = Ease.InOutSine;     // DOTween 이징
+anim.LoopCount = 1;                 // 반복 횟수 (-1 = 무한)
+anim.LoopType = LoopType.Yoyo;      // Yoyo 또는 Restart
+anim.LoopToDisappearBlend = 0f;     // Disappear 전환 블렌드
+
+// Disappear Animation
+anim.EnableDisappear = false;       // 사라짐 애니메이션 활성화
+anim.DisappearRelative = true;      // 상대 좌표 사용
+anim.DisappearPosition = new Vector3(0, -50, 0);  // 목표 위치
+anim.DisappearScale = new Vector3(0.5f, 0.5f, 1);  // 목표 스케일
+anim.DisappearRotation = Vector3.zero;  // 목표 회전
+anim.DisappearAlpha = 0f;           // 목표 알파
+anim.DisappearDuration = 0.5f;      // 애니메이션 시간
+anim.DisappearEase = Ease.InBack;   // DOTween 이징
+
+// 상태
+anim.IsPlaying                      // 재생 중 여부 (읽기 전용)
+```
+
+### 빌트인 프리셋
+
+```csharp
+// ScriptableObject 프리셋 생성 (코드)
+var bouncePreset = TMPCharacterAnimationPreset.CreateBounceAppear();
+var wavePreset = TMPCharacterAnimationPreset.CreateWaveLoop();
+var scalePreset = TMPCharacterAnimationPreset.CreateScaleDisappear();
+var rotatePreset = TMPCharacterAnimationPreset.CreateRotateAppear();
+var fadePreset = TMPCharacterAnimationPreset.CreateFadeInOut();
+```
+
+### TMPOutlineEffect와 함께 사용
+
+TMPOutlineEffect의 **Second Face(Inner Face)**를 활성화하면, TMPCharacterAnimation이 자동으로 Inner Face도 함께 애니메이션합니다.
+
+```csharp
+// TMPOutlineEffect + TMPCharacterAnimation 조합
+var outline = GetComponent<TMPOutlineEffect>();
+outline.EnableSecondFace = true;
+outline.SecondFaceColor = Color.white;
+outline.SecondFaceDilate = -0.1f;
+
+var anim = GetComponent<TMPCharacterAnimation>();
+anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
+```
+
+### ⚠️ 주의사항
+
+**CanvasGroup 자동 추가**:
+- 런타임에서 CanvasGroup 컴포넌트가 자동 추가됨
+- 초기 alpha = 0으로 설정하여 깜빡임 방지
+- Play() 완료 후 alpha = 1로 표시
+
+**Loop Count = -1 (무한)**:
+- 무한 루프 시 Disappear 애니메이션 자동 비활성화
+- OnValidate에서 경고 표시
+
+**Shadow 지원**:
+- TMPOutlineEffect의 Shadow도 함께 애니메이션됨
+- 메인 텍스트의 알파값이 Shadow에 자동 적용
+
 ## 📝 요구사항
 
 - Unity 6 (6000.0.x) 이상
 - TextMeshPro 패키지
 - URP (Universal Render Pipeline) 17.2.0 이상
+- DOTween (글자별 애니메이션용)
 
 ## 🐛 알려진 이슈 및 해결
 
@@ -614,10 +758,29 @@ limiter.Refresh();          // 강제 갱신
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.4.0)
+### 현재 안정 버전 (v2.5.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.5.0 (2026-02-11)
+**TMPCharacterAnimation 글자별 애니메이션 추가**
+- ✅ TMPCharacterAnimation 컴포넌트 추가
+  - DOTween 기반 글자별 애니메이션 (Appear, Loop, Disappear)
+  - 위치/스케일/회전/알파 독립 애니메이션
+  - 블렌딩 지원 (Appear↔Loop↔Disappear 부드러운 전환)
+  - 커스텀 이징 곡선 (AnimationCurve) 지원
+- ✅ TMPCharacterAnimationPreset 프리셋 시스템
+  - ScriptableObject 기반 스타일 저장/재사용
+  - 빌트인 프리셋: BounceAppear, WaveLoop, ScaleDisappear, RotateAppear, FadeInOut
+- ✅ CanvasGroup 기반 깜빡임 방지
+  - 런타임에서 CanvasGroup 자동 추가
+  - 초기 alpha = 0으로 렌더링 차단
+  - 정점 초기화 완료 후 alpha = 1로 표시
+- ✅ TMPOutlineEffect 완전 호환
+  - Second Face(Inner Face) 자동 애니메이션
+  - Shadow 알파값 동기화
+  - ForceSyncSecondFace() 호출로 텍스트 변경 시 동기화
 
 ### v2.4.0 (2026-02-11)
 **인스펙터 UI 개선 및 카테고리 관리 기능**
@@ -718,6 +881,6 @@ limiter.Refresh();          // 강제 갱신
 
 ---
 
-**버전**: 2.4.0
+**버전**: 2.5.0
 **최종 수정**: 2026-02-11
 **작성자**: Claude Code (with Unity TMP Underlay system)

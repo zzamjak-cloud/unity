@@ -375,6 +375,30 @@ namespace CAT.UI
             return _secondFaceText;
         }
 
+        /// <summary>
+        /// Second Face 강제 동기화
+        /// TMPCharacterAnimation 등 외부에서 즉시 동기화가 필요할 때 호출
+        /// </summary>
+        public void ForceSyncSecondFace()
+        {
+            if (!_enableSecondFace) return;
+
+            // Second Face 오브젝트가 없으면 생성
+            if (!_secondFaceObject || !_secondFaceText)
+            {
+                CreateSecondFaceObject();
+            }
+
+            // 동기화 실행
+            SyncSecondFace();
+
+            // 메시 강제 업데이트
+            if (_secondFaceText != null)
+            {
+                _secondFaceText.ForceMeshUpdate();
+            }
+        }
+
         // ─────────────────────────────────────────────
         // ITMPEffectSettings 구현
         // ─────────────────────────────────────────────
@@ -428,14 +452,26 @@ namespace CAT.UI
             // 컴포넌트 캐싱
             _tmpText = GetComponent<TextMeshProUGUI>();
 
-            // 진짜 원본 Material 캐싱 (처음 한 번만)
+            // Play 모드 종료 후 에디터 복귀 시 잔여 Second Face 정리
+            // (도메인 리로드로 _secondFaceObject 참조가 null이 되어도 오브젝트는 남아있을 수 있음)
+            CleanupOrphanedSecondFace();
+
+            // 진짜 원본 Material 캐싱
             if (_tmpText && !_originalSharedMaterial)
             {
-                // fontSharedMaterial이 우리가 만든 Material이 아닌지 확인
-                Material sharedMat = _tmpText.fontSharedMaterial;
-                if (sharedMat && sharedMat != _sharedMaterial)
+                // Font Asset의 기본 Material을 원본으로 사용 (가장 확실한 방법)
+                if (_tmpText.font != null && _tmpText.font.material != null)
                 {
-                    _originalSharedMaterial = sharedMat;
+                    _originalSharedMaterial = _tmpText.font.material;
+                }
+                else
+                {
+                    // fallback: fontSharedMaterial 사용
+                    Material sharedMat = _tmpText.fontSharedMaterial;
+                    if (sharedMat && sharedMat != _sharedMaterial)
+                    {
+                        _originalSharedMaterial = sharedMat;
+                    }
                 }
             }
 
@@ -466,6 +502,49 @@ namespace CAT.UI
             _needsInitialization = true;
         }
 
+        /// <summary>
+        /// 도메인 리로드 등으로 인해 참조가 끊어진 Second Face 오브젝트 정리
+        /// </summary>
+        private void CleanupOrphanedSecondFace()
+        {
+            // _enableSecondFace가 false인데 [Inner Face] 오브젝트가 있으면 정리
+            // 또는 _secondFaceObject 참조가 null인데 오브젝트가 있으면 정리
+            if (!_enableSecondFace || _secondFaceObject == null)
+            {
+                var childrenToDestroy = new System.Collections.Generic.List<Transform>();
+                foreach (Transform child in transform)
+                {
+                    if (child.name == "[Inner Face]")
+                    {
+                        childrenToDestroy.Add(child);
+                    }
+                }
+
+                foreach (var child in childrenToDestroy)
+                {
+                    if (child != null)
+                    {
+#if UNITY_EDITOR
+                        if (!Application.isPlaying)
+                        {
+                            DestroyImmediate(child.gameObject);
+                        }
+                        else
+                        {
+                            Destroy(child.gameObject);
+                        }
+#else
+                        Destroy(child.gameObject);
+#endif
+                    }
+                }
+
+                _secondFaceObject = null;
+                _secondFaceText = null;
+                _secondFaceCurve = null;
+            }
+        }
+
         protected override void OnDisable()
         {
             base.OnDisable();
@@ -473,8 +552,13 @@ namespace CAT.UI
             // Material 정리
             CleanupMaterial();
 
-            // Second Face 제거
-            DestroySecondFaceObject();
+            // Second Face는 EnableSecondFace가 true이면 유지
+            // (TMPCharacterAnimation 등에서 비활성화 상태에서도 Inner Face 필요)
+            // OnDestroy()에서 최종 정리
+            if (!_enableSecondFace)
+            {
+                DestroySecondFaceObject();
+            }
 
             // TMP가 기본 Material로 자동 복원
         }
@@ -490,6 +574,14 @@ namespace CAT.UI
         {
             base.OnValidate();
 
+            // Play 모드 전환 중에는 OnValidate에서 Second Face 처리하지 않음
+            // (OnEnable/OnDisable에서 처리)
+            if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode &&
+                !UnityEditor.EditorApplication.isPlaying)
+            {
+                return;
+            }
+
             // Editor에서 값 변경 시 즉시 반영
             if (_tmpText != null)
             {
@@ -499,24 +591,27 @@ namespace CAT.UI
                 _tmpText.SetVerticesDirty();
                 _tmpText.ForceMeshUpdate();
 
-                // Second Face 활성화/비활성화 처리
-                if (_enableSecondFace)
+                // Play 모드가 아닐 때만 Second Face 생성/파괴 처리
+                if (!Application.isPlaying)
                 {
-                    if (!_secondFaceObject)
+                    if (_enableSecondFace)
                     {
-                        CreateSecondFaceObject();
+                        if (!_secondFaceObject)
+                        {
+                            CreateSecondFaceObject();
+                        }
+                        else
+                        {
+                            // 이미 존재하면 Material 업데이트
+                            UpdateSecondFaceMaterial();
+                        }
                     }
                     else
                     {
-                        // 이미 존재하면 Material 업데이트
-                        UpdateSecondFaceMaterial();
-                    }
-                }
-                else
-                {
-                    if (_secondFaceObject)
-                    {
-                        DestroySecondFaceObject();
+                        if (_secondFaceObject)
+                        {
+                            DestroySecondFaceObject();
+                        }
                     }
                 }
             }
@@ -749,10 +844,21 @@ namespace CAT.UI
         private void CleanupMaterial()
         {
             // 공유 Material은 TMPEffectManager가 관리하므로 파괴하지 않음
-            // TMP 참조만 해제
-            if (_tmpText && _sharedMaterial && _tmpText.fontMaterial == _sharedMaterial)
+            // 원본 Material로 복원
+            if (_tmpText)
             {
-                _tmpText.fontMaterial = null;
+                // 원본 Material이 있으면 복원, 없으면 null로 설정
+                if (_originalSharedMaterial != null)
+                {
+                    _tmpText.fontMaterial = _originalSharedMaterial;
+                }
+                else if (_sharedMaterial != null && _tmpText.fontMaterial == _sharedMaterial)
+                {
+                    _tmpText.fontMaterial = null;
+                }
+
+                // TMP 메시 재생성하여 원본 상태로 복원
+                _tmpText.ForceMeshUpdate();
             }
 
             _sharedMaterial = null;
