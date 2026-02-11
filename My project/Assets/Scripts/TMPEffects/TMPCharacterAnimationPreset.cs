@@ -66,6 +66,14 @@ namespace CAT.UI
         [SerializeField, Range(0f, 0.5f)]
         private float _appearToLoopBlend = 0f;
 
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _appearUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _appearPositionCurveOffset = Vector2.zero;
+
         [Header("Loop Animation")]
         [Tooltip("반복 애니메이션 활성화")]
         [SerializeField]
@@ -115,6 +123,14 @@ namespace CAT.UI
         [SerializeField, Range(0f, 0.5f)]
         private float _loopToDisappearBlend = 0f;
 
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _loopUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _loopPositionCurveOffset = Vector2.zero;
+
         [Header("Disappear Animation")]
         [Tooltip("사라짐 애니메이션 활성화")]
         [SerializeField]
@@ -156,6 +172,14 @@ namespace CAT.UI
         [SerializeField]
         private AnimationCurve _disappearCustomCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _disappearUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _disappearPositionCurveOffset = Vector2.zero;
+
         [Header("Preset Info")]
         [Tooltip("프리셋 설명")]
         [SerializeField, TextArea]
@@ -178,6 +202,8 @@ namespace CAT.UI
         public bool AppearUseCustomCurve => _appearUseCustomCurve;
         public AnimationCurve AppearCustomCurve => _appearCustomCurve;
         public float AppearToLoopBlend => _appearToLoopBlend;
+        public bool AppearUsePositionCurve => _appearUsePositionCurve;
+        public Vector2 AppearPositionCurveOffset => _appearPositionCurveOffset;
 
         public bool EnableLoop => _enableLoop;
         public bool LoopRelative => _loopRelative;
@@ -191,6 +217,8 @@ namespace CAT.UI
         public int LoopCount => _loopCount;
         public LoopType LoopType => _loopType;
         public float LoopToDisappearBlend => _loopToDisappearBlend;
+        public bool LoopUsePositionCurve => _loopUsePositionCurve;
+        public Vector2 LoopPositionCurveOffset => _loopPositionCurveOffset;
 
         public bool EnableDisappear => _enableDisappear;
         public bool DisappearRelative => _disappearRelative;
@@ -202,6 +230,8 @@ namespace CAT.UI
         public Ease DisappearEase => _disappearEase;
         public bool DisappearUseCustomCurve => _disappearUseCustomCurve;
         public AnimationCurve DisappearCustomCurve => _disappearCustomCurve;
+        public bool DisappearUsePositionCurve => _disappearUsePositionCurve;
+        public Vector2 DisappearPositionCurveOffset => _disappearPositionCurveOffset;
 
         public string Description
         {
@@ -233,6 +263,8 @@ namespace CAT.UI
             _appearUseCustomCurve = source.AppearUseCustomCurve;
             _appearCustomCurve = new AnimationCurve(source.AppearCustomCurve.keys);
             _appearToLoopBlend = source.AppearToLoopBlend;
+            _appearUsePositionCurve = source.AppearUsePositionCurve;
+            _appearPositionCurveOffset = source.AppearPositionCurveOffset;
 
             _enableLoop = source.EnableLoop;
             _loopRelative = source.LoopRelative;
@@ -246,6 +278,8 @@ namespace CAT.UI
             _loopCount = source.LoopCount;
             _loopType = source.LoopType;
             _loopToDisappearBlend = source.LoopToDisappearBlend;
+            _loopUsePositionCurve = source.LoopUsePositionCurve;
+            _loopPositionCurveOffset = source.LoopPositionCurveOffset;
 
             _enableDisappear = source.EnableDisappear;
             _disappearRelative = source.DisappearRelative;
@@ -257,6 +291,8 @@ namespace CAT.UI
             _disappearEase = source.DisappearEase;
             _disappearUseCustomCurve = source.DisappearUseCustomCurve;
             _disappearCustomCurve = new AnimationCurve(source.DisappearCustomCurve.keys);
+            _disappearUsePositionCurve = source.DisappearUsePositionCurve;
+            _disappearPositionCurveOffset = source.DisappearPositionCurveOffset;
         }
 
         // ─────────────────────────────────────────────

@@ -33,6 +33,9 @@ namespace CAT.UI
         private bool _showPresetSection = true;
         private bool _showPlaybackSection = true;
         private bool _showTimingSection = true;
+        private bool _showAppearSection = true;
+        private bool _showLoopSection = false;
+        private bool _showDisappearSection = false;
 
         // Ease 이름 캐시
         private static string[] _easeNames;
@@ -451,12 +454,14 @@ namespace CAT.UI
         {
             var enableAppear = serializedObject.FindProperty("_enableAppear");
 
-            // Enable 토글이 통합된 헤더
+            // Foldout + Enable 토글 조합 헤더
             EditorGUILayout.BeginHorizontal();
+            _showAppearSection = EditorGUILayout.Foldout(_showAppearSection, "", true);
+            GUILayout.Space(-20);
             enableAppear.boolValue = EditorGUILayout.ToggleLeft("Appear Animation", enableAppear.boolValue, EditorStyles.boldLabel);
             EditorGUILayout.EndHorizontal();
 
-            if (enableAppear.boolValue)
+            if (_showAppearSection && enableAppear.boolValue)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 EditorGUI.indentLevel++;
@@ -475,6 +480,10 @@ namespace CAT.UI
                 // Ease + Custom
                 DrawEaseWithCustomCurve("_appearEase", "_appearUseCustomCurve", "_appearCustomCurve");
 
+                EditorGUILayout.Space(3);
+
+                // Position Curve
+                DrawPositionCurve("_appearUsePositionCurve", "_appearPositionCurveOffset");
 
                 EditorGUI.indentLevel--;
                 EditorGUILayout.EndVertical();
@@ -490,12 +499,14 @@ namespace CAT.UI
             var enableLoop = serializedObject.FindProperty("_enableLoop");
             var loopCount = serializedObject.FindProperty("_loopCount");
 
-            // Enable 토글이 통합된 헤더
+            // Foldout + Enable 토글 조합 헤더
             EditorGUILayout.BeginHorizontal();
+            _showLoopSection = EditorGUILayout.Foldout(_showLoopSection, "", true);
+            GUILayout.Space(-20);
             enableLoop.boolValue = EditorGUILayout.ToggleLeft("Loop Animation", enableLoop.boolValue, EditorStyles.boldLabel);
             EditorGUILayout.EndHorizontal();
 
-            if (enableLoop.boolValue)
+            if (_showLoopSection && enableLoop.boolValue)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 EditorGUI.indentLevel++;
@@ -534,6 +545,10 @@ namespace CAT.UI
                     );
                 }
 
+                EditorGUILayout.Space(3);
+
+                // Position Curve
+                DrawPositionCurve("_loopUsePositionCurve", "_loopPositionCurveOffset");
 
                 EditorGUI.indentLevel--;
                 EditorGUILayout.EndVertical();
@@ -553,8 +568,10 @@ namespace CAT.UI
             // Loop가 무한이면 Disappear 비활성화
             bool isLoopInfinite = enableLoop.boolValue && loopCount.intValue == -1;
 
-            // Enable 토글이 통합된 헤더
+            // Foldout + Enable 토글 조합 헤더
             EditorGUILayout.BeginHorizontal();
+            _showDisappearSection = EditorGUILayout.Foldout(_showDisappearSection, "", true);
+            GUILayout.Space(-20);
             if (isLoopInfinite)
             {
                 GUI.enabled = false;
@@ -574,7 +591,7 @@ namespace CAT.UI
                     MessageType.Warning
                 );
             }
-            else if (enableDisappear.boolValue)
+            else if (_showDisappearSection && enableDisappear.boolValue)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 EditorGUI.indentLevel++;
@@ -592,6 +609,11 @@ namespace CAT.UI
 
                 // Ease + Custom
                 DrawEaseWithCustomCurve("_disappearEase", "_disappearUseCustomCurve", "_disappearCustomCurve");
+
+                EditorGUILayout.Space(3);
+
+                // Position Curve
+                DrawPositionCurve("_disappearUsePositionCurve", "_disappearPositionCurveOffset");
 
                 EditorGUI.indentLevel--;
                 EditorGUILayout.EndVertical();
@@ -676,6 +698,37 @@ namespace CAT.UI
             }
         }
 
+        private void DrawPositionCurve(string usePositionCurveProp, string curveOffsetProp)
+        {
+            var usePositionCurve = serializedObject.FindProperty(usePositionCurveProp);
+            var curveOffset = serializedObject.FindProperty(curveOffsetProp);
+
+            EditorGUILayout.PropertyField(usePositionCurve, new GUIContent("Use Position Curve", "베지어 곡선 이동 (시작점→중간점→도착점)"));
+
+            if (usePositionCurve.boolValue)
+            {
+                EditorGUI.indentLevel++;
+
+                // Vector2를 X, Y로 분리 표시
+                var offset = curveOffset.vector2Value;
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Curve Offset", GUILayout.Width(EditorGUIUtility.labelWidth - 15));
+                EditorGUILayout.LabelField("X", GUILayout.Width(15));
+                offset.x = EditorGUILayout.FloatField(offset.x);
+                EditorGUILayout.LabelField("Y", GUILayout.Width(15));
+                offset.y = EditorGUILayout.FloatField(offset.y);
+                EditorGUILayout.EndHorizontal();
+                curveOffset.vector2Value = offset;
+
+                EditorGUILayout.HelpBox(
+                    "시작점과 도착점의 중간 지점에서 X/Y 만큼 벗어난 곳을 경유하여 이동합니다.",
+                    MessageType.None
+                );
+
+                EditorGUI.indentLevel--;
+            }
+        }
+
         private void DrawLoopCount(SerializedProperty loopCount)
         {
             EditorGUILayout.BeginHorizontal();
@@ -736,6 +789,7 @@ namespace CAT.UI
                    _target.AppearEase != _selectedPreset.AppearEase ||
                    _target.AppearUseCustomCurve != _selectedPreset.AppearUseCustomCurve ||
                    !Mathf.Approximately(_target.AppearToLoopBlend, _selectedPreset.AppearToLoopBlend) ||
+                   _target.AppearUsePositionCurve != _selectedPreset.AppearUsePositionCurve ||
                    _target.EnableLoop != _selectedPreset.EnableLoop ||
                    _target.LoopRelative != _selectedPreset.LoopRelative ||
                    _target.LoopPosition != _selectedPreset.LoopPosition ||
@@ -747,6 +801,7 @@ namespace CAT.UI
                    _target.LoopCount != _selectedPreset.LoopCount ||
                    _target.LoopType != _selectedPreset.LoopType ||
                    !Mathf.Approximately(_target.LoopToDisappearBlend, _selectedPreset.LoopToDisappearBlend) ||
+                   _target.LoopUsePositionCurve != _selectedPreset.LoopUsePositionCurve ||
                    _target.EnableDisappear != _selectedPreset.EnableDisappear ||
                    _target.DisappearRelative != _selectedPreset.DisappearRelative ||
                    _target.DisappearPosition != _selectedPreset.DisappearPosition ||
@@ -755,7 +810,8 @@ namespace CAT.UI
                    !Mathf.Approximately(_target.DisappearAlpha, _selectedPreset.DisappearAlpha) ||
                    !Mathf.Approximately(_target.DisappearDuration, _selectedPreset.DisappearDuration) ||
                    _target.DisappearEase != _selectedPreset.DisappearEase ||
-                   _target.DisappearUseCustomCurve != _selectedPreset.DisappearUseCustomCurve;
+                   _target.DisappearUseCustomCurve != _selectedPreset.DisappearUseCustomCurve ||
+                   _target.DisappearUsePositionCurve != _selectedPreset.DisappearUsePositionCurve;
         }
 
         private void OnPresetSelected(int index)

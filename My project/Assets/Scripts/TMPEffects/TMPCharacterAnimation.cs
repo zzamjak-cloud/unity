@@ -86,6 +86,15 @@ namespace CAT.UI
         [SerializeField, Range(0f, 0.5f)]
         private float _appearToLoopBlend = 0f;
 
+        [Header("Appear Position Curve")]
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _appearUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _appearPositionCurveOffset = Vector2.zero;
+
         [Header("Loop Animation")]
         [Tooltip("반복 애니메이션 활성화")]
         [SerializeField]
@@ -135,6 +144,15 @@ namespace CAT.UI
         [SerializeField, Range(0f, 0.5f)]
         private float _loopToDisappearBlend = 0f;
 
+        [Header("Loop Position Curve")]
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _loopUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _loopPositionCurveOffset = Vector2.zero;
+
         [Header("Disappear Animation")]
         [Tooltip("사라짐 애니메이션 활성화")]
         [SerializeField]
@@ -175,6 +193,15 @@ namespace CAT.UI
         [Tooltip("커스텀 이징 곡선")]
         [SerializeField]
         private AnimationCurve _disappearCustomCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
+
+        [Header("Disappear Position Curve")]
+        [Tooltip("Position 커브 사용 (시작점→중간점→도착점 베지어 곡선 이동)")]
+        [SerializeField]
+        private bool _disappearUsePositionCurve = false;
+
+        [Tooltip("중간 보정 위치 (시작점과 도착점 사이의 커브 제어점)")]
+        [SerializeField]
+        private Vector2 _disappearPositionCurveOffset = Vector2.zero;
 
         // ─────────────────────────────────────────────
         // 캐싱
@@ -232,6 +259,8 @@ namespace CAT.UI
         public bool AppearUseCustomCurve => _appearUseCustomCurve;
         public AnimationCurve AppearCustomCurve => _appearCustomCurve;
         public float AppearToLoopBlend => _appearToLoopBlend;
+        public bool AppearUsePositionCurve => _appearUsePositionCurve;
+        public Vector2 AppearPositionCurveOffset => _appearPositionCurveOffset;
 
         // Loop Animation
         public bool EnableLoop => _enableLoop;
@@ -246,6 +275,8 @@ namespace CAT.UI
         public int LoopCount => _loopCount;
         public LoopType LoopType => _loopType;
         public float LoopToDisappearBlend => _loopToDisappearBlend;
+        public bool LoopUsePositionCurve => _loopUsePositionCurve;
+        public Vector2 LoopPositionCurveOffset => _loopPositionCurveOffset;
 
         // Disappear Animation
         public bool EnableDisappear => _enableDisappear;
@@ -258,6 +289,8 @@ namespace CAT.UI
         public Ease DisappearEase => _disappearEase;
         public bool DisappearUseCustomCurve => _disappearUseCustomCurve;
         public AnimationCurve DisappearCustomCurve => _disappearCustomCurve;
+        public bool DisappearUsePositionCurve => _disappearUsePositionCurve;
+        public Vector2 DisappearPositionCurveOffset => _disappearPositionCurveOffset;
 
         // ─────────────────────────────────────────────
         // 라이프사이클
@@ -665,7 +698,9 @@ namespace CAT.UI
             float fromAlpha, float toAlpha,
             float duration, Ease ease,
             AnimationCurve customCurve = null,
-            bool useCurrentAsFrom = false)
+            bool useCurrentAsFrom = false,
+            bool usePositionCurve = false,
+            Vector2 positionCurveOffset = default)
         {
             // 시작 위치 캡처용 변수 (블렌딩 시 현재 위치에서 시작)
             Vector3 capturedFromPos = fromPos;
@@ -692,7 +727,32 @@ namespace CAT.UI
 
                 float easedT = customCurve != null ? customCurve.Evaluate(t) : t;
 
-                Vector3 currentPos = Vector3.Lerp(capturedFromPos, toPos, easedT);
+                // Position 커브 적용: Quadratic Bezier Curve (시작점→중간점→도착점)
+                Vector3 currentPos;
+                if (usePositionCurve)
+                {
+                    // 중간 제어점 계산: 시작점과 도착점의 중간 + 오프셋
+                    Vector3 midPoint = (capturedFromPos + toPos) * 0.5f;
+                    midPoint.x += positionCurveOffset.x;
+                    midPoint.y += positionCurveOffset.y;
+
+                    // Quadratic Bezier: P(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+                    float oneMinusT = 1f - easedT;
+                    float posX = oneMinusT * oneMinusT * capturedFromPos.x
+                               + 2f * oneMinusT * easedT * midPoint.x
+                               + easedT * easedT * toPos.x;
+                    float posY = oneMinusT * oneMinusT * capturedFromPos.y
+                               + 2f * oneMinusT * easedT * midPoint.y
+                               + easedT * easedT * toPos.y;
+                    float posZ = Mathf.Lerp(capturedFromPos.z, toPos.z, easedT);
+                    currentPos = new Vector3(posX, posY, posZ);
+                }
+                else
+                {
+                    currentPos = Vector3.Lerp(capturedFromPos, toPos, easedT);
+                }
+
+                // Scale, Rotation, Alpha는 기존 Curve(easedT)에 영향을 받음
                 Vector3 currentScale = Vector3.Lerp(capturedFromScale, toScale, easedT);
                 Vector3 currentRot = Vector3.Lerp(capturedFromRot, toRot, easedT);
                 float currentAlpha = Mathf.Lerp(capturedFromAlpha, toAlpha, easedT);
@@ -795,7 +855,8 @@ namespace CAT.UI
                     appearFromScale, appearToScale,
                     appearFromRot, appearToRot,
                     appearFromAlpha, appearToAlpha,
-                    _appearDuration, _appearEase, curve, false));
+                    _appearDuration, _appearEase, curve, false,
+                    _appearUsePositionCurve, _appearPositionCurveOffset));
 
                 // 다음 애니메이션 시작 시간 (블렌딩 적용 - 비율 기반)
                 // 블렌드 비율 0.25 = Appear 마지막 25% 시점에서 Loop 시작
@@ -842,13 +903,15 @@ namespace CAT.UI
                             loopFromScale, loopToScale,
                             loopFromRot, loopToRot,
                             loopFromAlpha, loopToAlpha,
-                            _loopDuration, _loopEase, curve, useBlendFromAppear));
+                            _loopDuration, _loopEase, curve, useBlendFromAppear,
+                            _loopUsePositionCurve, _loopPositionCurveOffset));
                         loopSeq.Append(AnimateCharacter(charIndex,
                             loopToPos, loopFromPos,
                             loopToScale, loopFromScale,
                             loopToRot, loopFromRot,
                             loopToAlpha, loopFromAlpha,
-                            _loopDuration, _loopEase, curve, false));
+                            _loopDuration, _loopEase, curve, false,
+                            _loopUsePositionCurve, _loopPositionCurveOffset));
                         loopSeq.SetLoops(-1, LoopType.Restart);
                         seq.Insert(currentTime, loopSeq);
                     }
@@ -860,7 +923,8 @@ namespace CAT.UI
                             loopFromScale, loopToScale,
                             loopFromRot, loopToRot,
                             loopFromAlpha, loopToAlpha,
-                            _loopDuration, _loopEase, curve, useBlendFromAppear);
+                            _loopDuration, _loopEase, curve, useBlendFromAppear,
+                            _loopUsePositionCurve, _loopPositionCurveOffset);
                         forwardTween.SetLoops(-1, LoopType.Restart);
                         seq.Insert(currentTime, forwardTween);
                     }
@@ -883,7 +947,8 @@ namespace CAT.UI
                         loopFromScale, loopToScale,
                         loopFromRot, loopToRot,
                         loopFromAlpha, loopToAlpha,
-                        _loopDuration, _loopEase, curve, useBlend));
+                        _loopDuration, _loopEase, curve, useBlend,
+                        _loopUsePositionCurve, _loopPositionCurveOffset));
                     currentTime += _loopDuration;
 
                     if (_loopType == LoopType.Yoyo)
@@ -894,7 +959,8 @@ namespace CAT.UI
                             loopToScale, loopFromScale,
                             loopToRot, loopFromRot,
                             loopToAlpha, loopFromAlpha,
-                            _loopDuration, _loopEase, curve, false));
+                            _loopDuration, _loopEase, curve, false,
+                            _loopUsePositionCurve, _loopPositionCurveOffset));
                         currentTime += _loopDuration;
                     }
                 }
@@ -934,7 +1000,8 @@ namespace CAT.UI
                     disappearFromScale, disappearToScale,
                     disappearFromRot, disappearToRot,
                     disappearFromAlpha, disappearToAlpha,
-                    _disappearDuration, _disappearEase, curve, useBlend));
+                    _disappearDuration, _disappearEase, curve, useBlend,
+                    _disappearUsePositionCurve, _disappearPositionCurveOffset));
             }
 
             seq.SetDelay(delay);
@@ -1330,6 +1397,8 @@ namespace CAT.UI
             _appearUseCustomCurve = preset.AppearUseCustomCurve;
             _appearCustomCurve = preset.AppearCustomCurve;
             _appearToLoopBlend = preset.AppearToLoopBlend;
+            _appearUsePositionCurve = preset.AppearUsePositionCurve;
+            _appearPositionCurveOffset = preset.AppearPositionCurveOffset;
 
             _enableLoop = preset.EnableLoop;
             _loopRelative = preset.LoopRelative;
@@ -1343,6 +1412,8 @@ namespace CAT.UI
             _loopCount = preset.LoopCount;
             _loopType = preset.LoopType;
             _loopToDisappearBlend = preset.LoopToDisappearBlend;
+            _loopUsePositionCurve = preset.LoopUsePositionCurve;
+            _loopPositionCurveOffset = preset.LoopPositionCurveOffset;
 
             _enableDisappear = preset.EnableDisappear;
             _disappearRelative = preset.DisappearRelative;
@@ -1354,6 +1425,8 @@ namespace CAT.UI
             _disappearEase = preset.DisappearEase;
             _disappearUseCustomCurve = preset.DisappearUseCustomCurve;
             _disappearCustomCurve = preset.DisappearCustomCurve;
+            _disappearUsePositionCurve = preset.DisappearUsePositionCurve;
+            _disappearPositionCurveOffset = preset.DisappearPositionCurveOffset;
 
             if (_isPlaying) Restart();
         }

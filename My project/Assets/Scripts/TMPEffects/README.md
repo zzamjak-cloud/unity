@@ -675,6 +675,8 @@ anim.AppearAlpha = 0f;              // 시작 알파 (0~1)
 anim.AppearDuration = 0.5f;         // 애니메이션 시간
 anim.AppearEase = Ease.OutBack;     // DOTween 이징
 anim.AppearToLoopBlend = 0f;        // Loop 전환 블렌드 (0~0.5)
+anim.AppearUsePositionCurve = false;  // Position 커브 사용
+anim.AppearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
 
 // Loop Animation
 anim.EnableLoop = false;            // 반복 애니메이션 활성화
@@ -687,6 +689,8 @@ anim.LoopEase = Ease.InOutSine;     // DOTween 이징
 anim.LoopCount = 1;                 // 반복 횟수 (-1 = 무한)
 anim.LoopType = LoopType.Yoyo;      // Yoyo 또는 Restart
 anim.LoopToDisappearBlend = 0f;     // Disappear 전환 블렌드
+anim.LoopUsePositionCurve = false;  // Position 커브 사용
+anim.LoopPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
 
 // Disappear Animation
 anim.EnableDisappear = false;       // 사라짐 애니메이션 활성화
@@ -697,6 +701,8 @@ anim.DisappearRotation = Vector3.zero;  // 목표 회전
 anim.DisappearAlpha = 0f;           // 목표 알파
 anim.DisappearDuration = 0.5f;      // 애니메이션 시간
 anim.DisappearEase = Ease.InBack;   // DOTween 이징
+anim.DisappearUsePositionCurve = false;  // Position 커브 사용
+anim.DisappearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
 
 // 상태
 anim.IsPlaying                      // 재생 중 여부 (읽기 전용)
@@ -758,10 +764,22 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.5.0)
+### 현재 안정 버전 (v2.6.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.6.0 (2026-02-11)
+**TMPCharacterAnimation Position Curve 기능 추가**
+- ✅ Position Curve 기능 추가 (베지어 곡선 이동)
+  - Appear/Loop/Disappear 각각에 Use Position Curve 옵션 추가
+  - Curve Offset (X, Y)로 중간 보정 위치 설정
+  - Quadratic Bezier Curve: 시작점 → 중간점 → 도착점
+  - 중간점 = (시작점 + 도착점) / 2 + Offset
+- ✅ 인스펙터 UI 개선
+  - Appear/Loop/Disappear 섹션 Foldout 접기 기능 추가
+  - 복잡한 설정 시 각 섹션을 접어서 가독성 향상
+  - 기본값: Appear 펼침, Loop/Disappear 접힘
 
 ### v2.5.0 (2026-02-11)
 **TMPCharacterAnimation 글자별 애니메이션 추가**
@@ -881,6 +899,6 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 
 ---
 
-**버전**: 2.5.0
+**버전**: 2.6.0
 **최종 수정**: 2026-02-11
 **작성자**: Claude Code (with Unity TMP Underlay system)
