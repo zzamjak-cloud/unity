@@ -262,24 +262,6 @@ namespace CAT.UI
                     }
                     GUI.backgroundColor = Color.white;
                     GUI.enabled = true;
-
-                    GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
-                    if (GUILayout.Button("X", GUILayout.Width(25), GUILayout.Height(25)))
-                    {
-                        _delayedAction = () =>
-                        {
-                            if (EditorUtility.DisplayDialog(
-                                "프리셋 삭제",
-                                $"'{_selectedPreset.name}' 프리셋을 삭제하시겠습니까?",
-                                "삭제",
-                                "취소"))
-                            {
-                                DeletePreset();
-                            }
-                        };
-                        Repaint();
-                    }
-                    GUI.backgroundColor = Color.white;
                 }
 
                 EditorGUILayout.EndHorizontal();
