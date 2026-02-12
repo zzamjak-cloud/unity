@@ -346,7 +346,6 @@ namespace CAT.UI
                 float curveY = _curve.Evaluate(normalizedX) * _curveScale;
 
                 // 회전 계산 (곡선의 접선 방향)
-                float angle = 0f;
                 if (_rotateAlongCurve && _rotationStrength > 0f)
                 {
                     // 미분을 통한 접선 계산 (작은 델타 사용)
@@ -360,21 +359,30 @@ namespace CAT.UI
                     Vector2 tangent = new Vector2((x1 - x0) * boundsWidth, y1 - y0);
 
                     // 각도 계산 (라디안 → 도)
-                    angle = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg * _rotationStrength;
+                    float angle = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg * _rotationStrength;
+
+                    // 변환 행렬 생성 (위치 이동 + 회전)
+                    Matrix4x4 matrix = Matrix4x4.TRS(
+                        new Vector3(0f, curveY, 0f),
+                        Quaternion.Euler(0f, 0f, angle),
+                        Vector3.one
+                    );
+
+                    // 정점 변환
+                    vertices[vertexIndex + 0] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 0]);
+                    vertices[vertexIndex + 1] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 1]);
+                    vertices[vertexIndex + 2] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 2]);
+                    vertices[vertexIndex + 3] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 3]);
                 }
-
-                // 변환 행렬 생성 (위치 이동 + 회전)
-                Matrix4x4 matrix = Matrix4x4.TRS(
-                    new Vector3(0f, curveY, 0f),
-                    Quaternion.Euler(0f, 0f, angle),
-                    Vector3.one
-                );
-
-                // 정점 변환
-                vertices[vertexIndex + 0] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 0]);
-                vertices[vertexIndex + 1] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 1]);
-                vertices[vertexIndex + 2] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 2]);
-                vertices[vertexIndex + 3] = matrix.MultiplyPoint3x4(vertices[vertexIndex + 3]);
+                else
+                {
+                    // 회전 없음: 단순 위치 오프셋만 (Matrix4x4 생성 회피)
+                    Vector3 offset = new Vector3(0f, curveY, 0f);
+                    vertices[vertexIndex + 0] += offset;
+                    vertices[vertexIndex + 1] += offset;
+                    vertices[vertexIndex + 2] += offset;
+                    vertices[vertexIndex + 3] += offset;
+                }
 
                 // 원래 위치로 복원
                 vertices[vertexIndex + 0] += charCenter;

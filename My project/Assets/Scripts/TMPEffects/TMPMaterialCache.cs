@@ -55,7 +55,6 @@ namespace CAT.UI
         {
             if (!baseMaterial)
             {
-                Debug.LogError("[TMPMaterialCache] Base material is null!");
                 return null;
             }
 

@@ -122,32 +122,14 @@ namespace CAT.UI
 
             public int GetMaterialHash()
             {
-                unchecked
-                {
-                    const uint FNV_PRIME = 16777619;
-                    const uint FNV_OFFSET = 2166136261;
-                    uint hash = FNV_OFFSET;
-
-                    Color32 c = UnderlayColor;
-                    hash = (hash ^ c.r) * FNV_PRIME;
-                    hash = (hash ^ c.g) * FNV_PRIME;
-                    hash = (hash ^ c.b) * FNV_PRIME;
-                    hash = (hash ^ c.a) * FNV_PRIME;
-
-                    int dilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayDilate), 0);
-                    int offsetX = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayOffsetX), 0);
-                    int offsetY = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlayOffsetY), 0);
-                    int softness = System.BitConverter.ToInt32(System.BitConverter.GetBytes(UnderlaySoftness), 0);
-                    int faceDilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(FaceDilate), 0);
-
-                    hash = (hash ^ (uint)dilate) * FNV_PRIME;
-                    hash = (hash ^ (uint)offsetX) * FNV_PRIME;
-                    hash = (hash ^ (uint)offsetY) * FNV_PRIME;
-                    hash = (hash ^ (uint)softness) * FNV_PRIME;
-                    hash = (hash ^ (uint)faceDilate) * FNV_PRIME;
-
-                    return (int)hash;
-                }
+                return TMPEffectUtility.CalculateMaterialHash(
+                    UnderlayColor,
+                    UnderlayDilate,
+                    UnderlayOffsetX,
+                    UnderlayOffsetY,
+                    UnderlaySoftness,
+                    FaceDilate
+                );
             }
         }
     }

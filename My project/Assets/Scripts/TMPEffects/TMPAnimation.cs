@@ -437,13 +437,6 @@ namespace CAT.UI
             if (_enableLoop && _loopCount == -1 && _enableDisappear)
             {
                 _enableDisappear = false;
-                Debug.Log("[TMPAnimation] Loop Count가 무한(-1)이므로 Disappear Animation이 자동으로 비활성화되었습니다.");
-            }
-
-            // Loop Count가 0이면 Loop 비활성화 안내
-            if (_enableLoop && _loopCount == 0)
-            {
-                Debug.Log("[TMPAnimation] Loop Count가 0이므로 Loop Animation이 실행되지 않습니다. 1 이상으로 설정하세요.");
             }
         }
 #endif
@@ -546,6 +539,9 @@ namespace CAT.UI
         private static readonly System.Collections.Generic.List<UIVertex> s_shadowVertexCache =
             new System.Collections.Generic.List<UIVertex>(512);
 
+        // 삼각형 인덱스 (GC 방지)
+        private static readonly int[] s_triangleIndices = { 0, 1, 2, 2, 3, 0 };
+
         // Shadow용 임시 Mesh (TMP의 원본 mesh를 보존하기 위해)
         private Mesh _shadowMesh;
 
@@ -646,14 +642,13 @@ namespace CAT.UI
             if (meshInfo.colors32 == null || baseIdx + 3 >= meshInfo.colors32.Length) return;
             if (meshInfo.uvs0 == null || baseIdx + 3 >= meshInfo.uvs0.Length) return;
 
-            // 삼각형 인덱스 순서: 0, 1, 2, 2, 3, 0
-            int[] triangleIndices = { 0, 1, 2, 2, 3, 0 };
+            // 삼각형 인덱스 순서: 0, 1, 2, 2, 3, 0 (static 재사용)
 
             bool useColorOverride = colorOverride.a > 0;
 
             for (int i = 0; i < 6; i++)
             {
-                int idx = baseIdx + triangleIndices[i];
+                int idx = baseIdx + s_triangleIndices[i];
 
                 Color32 finalColor;
                 if (useColorOverride)
@@ -679,13 +674,16 @@ namespace CAT.UI
                     finalColor = meshInfo.colors32[idx];
                 }
 
-                UIVertex vertex = new UIVertex
-                {
-                    position = meshInfo.vertices[idx] + new Vector3(offset.x, offset.y, 0),
-                    color = finalColor,
-                    uv0 = meshInfo.uvs0[idx],
-                    uv1 = meshInfo.uvs2 != null && idx < meshInfo.uvs2.Length ? meshInfo.uvs2[idx] : Vector2.zero
-                };
+                // UIVertex 구조체 직접 초기화 (GC Alloc 방지)
+                UIVertex vertex;
+                vertex.position = meshInfo.vertices[idx] + new Vector3(offset.x, offset.y, 0);
+                vertex.color = finalColor;
+                vertex.uv0 = meshInfo.uvs0[idx];
+                vertex.uv1 = meshInfo.uvs2 != null && idx < meshInfo.uvs2.Length ? meshInfo.uvs2[idx] : Vector2.zero;
+                vertex.uv2 = Vector4.zero;
+                vertex.uv3 = Vector4.zero;
+                vertex.normal = Vector3.back;
+                vertex.tangent = Vector4.zero;
 
                 list.Add(vertex);
             }
@@ -1188,7 +1186,6 @@ namespace CAT.UI
 
             if (_isPlayingInProgress)
             {
-                Debug.LogWarning("[TMPCharAnim] Play() 이미 진행 중 - 재진입 차단");
                 return;
             }
 
@@ -1218,10 +1215,6 @@ namespace CAT.UI
                     secondFaceText.ForceMeshUpdate();
                     Canvas.ForceUpdateCanvases();
 
-                    if (secondFaceText.textInfo.characterCount != _tmpText.textInfo.characterCount)
-                    {
-                        Debug.LogError($"[TMPCharAnim] Second Face 재생성 후에도 불일치! 부모:{_tmpText.textInfo.characterCount}, Second:{secondFaceText.textInfo.characterCount}");
-                    }
                 }
             }
 

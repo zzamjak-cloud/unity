@@ -115,6 +115,15 @@ namespace CAT.UI
         /// <summary>정점 캐시 (모든 인스턴스 공유, GC Alloc 없음)</summary>
         private static System.Collections.Generic.List<UIVertex> s_vertexCache = new System.Collections.Generic.List<UIVertex>(INITIAL_VERTEX_CACHE_SIZE);
 
+        /// <summary>Shadow 정점 캐시 (GC Alloc 방지)</summary>
+        private static System.Collections.Generic.List<UIVertex> s_shadowVertices = new System.Collections.Generic.List<UIVertex>(INITIAL_VERTEX_CACHE_SIZE);
+
+        /// <summary>임시 Transform 리스트 (GC Alloc 방지)</summary>
+        private static System.Collections.Generic.List<Transform> s_tempTransformList = new System.Collections.Generic.List<Transform>(4);
+
+        /// <summary>임시 GameObject 리스트 (GC Alloc 방지)</summary>
+        private static System.Collections.Generic.List<GameObject> s_tempGameObjectList = new System.Collections.Generic.List<GameObject>(4);
+
         // Material 캐시
         private Material _sharedMaterial;
         private Material _originalSharedMaterial;
@@ -124,6 +133,12 @@ namespace CAT.UI
 
         // 초기화 플래그
         private bool _needsInitialization = true;
+
+        // Second Face 동기화 플래그 (TMP 속성 변경 시에만 동기화)
+        private bool _needsSecondFaceSync = true;
+
+        // RectTransform 크기 캐싱 (레이아웃 변경 감지)
+        private Vector2 _prevRectSize;
 
         // ─────────────────────────────────────────────
         // Preset API
@@ -434,34 +449,14 @@ namespace CAT.UI
         /// </summary>
         public int GetMaterialHash()
         {
-            unchecked
-            {
-                const uint FNV_PRIME = 16777619;
-                const uint FNV_OFFSET = 2166136261;
-                uint hash = FNV_OFFSET;
-
-                // Color → RGBA32 (정확한 비트 패턴)
-                Color32 c = _underlayColor;
-                hash = (hash ^ c.r) * FNV_PRIME;
-                hash = (hash ^ c.g) * FNV_PRIME;
-                hash = (hash ^ c.b) * FNV_PRIME;
-                hash = (hash ^ c.a) * FNV_PRIME;
-
-                // Float → int 비트 패턴 (올바른 변환)
-                int dilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_underlayDilate), 0);
-                int offsetX = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_underlayOffsetX), 0);
-                int offsetY = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_underlayOffsetY), 0);
-                int softness = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_underlaySoftness), 0);
-                int faceDilate = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_faceDilate), 0);
-
-                hash = (hash ^ (uint)dilate) * FNV_PRIME;
-                hash = (hash ^ (uint)offsetX) * FNV_PRIME;
-                hash = (hash ^ (uint)offsetY) * FNV_PRIME;
-                hash = (hash ^ (uint)softness) * FNV_PRIME;
-                hash = (hash ^ (uint)faceDilate) * FNV_PRIME;
-
-                return (int)hash;
-            }
+            return TMPEffectUtility.CalculateMaterialHash(
+                _underlayColor,
+                _underlayDilate,
+                _underlayOffsetX,
+                _underlayOffsetY,
+                _underlaySoftness,
+                _faceDilate
+            );
         }
 
         // ─────────────────────────────────────────────
@@ -523,6 +518,27 @@ namespace CAT.UI
 
             // 초기화 플래그 설정 (LateUpdate에서 처리)
             _needsInitialization = true;
+
+            // Second Face 동기화 플래그 초기화
+            _needsSecondFaceSync = true;
+            if (_tmpText != null)
+            {
+                _prevRectSize = _tmpText.rectTransform.rect.size;
+            }
+
+            // TMP 텍스트 변경 이벤트 구독 (Second Face 동기화 최적화)
+            TMPro_EventManager.TEXT_CHANGED_EVENT.Add(OnTMPTextChanged);
+        }
+
+        /// <summary>
+        /// TMP 텍스트 변경 이벤트 핸들러
+        /// </summary>
+        private void OnTMPTextChanged(Object obj)
+        {
+            if (obj == _tmpText)
+            {
+                _needsSecondFaceSync = true;
+            }
         }
 
         /// <summary>
@@ -534,16 +550,16 @@ namespace CAT.UI
             // 또는 _secondFaceObject 참조가 null인데 오브젝트가 있으면 정리
             if (!_enableSecondFace || _secondFaceObject == null)
             {
-                var childrenToDestroy = new System.Collections.Generic.List<Transform>();
+                s_tempTransformList.Clear();
                 foreach (Transform child in transform)
                 {
                     if (child.name == "[Inner Face]")
                     {
-                        childrenToDestroy.Add(child);
+                        s_tempTransformList.Add(child);
                     }
                 }
 
-                foreach (var child in childrenToDestroy)
+                foreach (var child in s_tempTransformList)
                 {
                     if (child != null)
                     {
@@ -561,6 +577,7 @@ namespace CAT.UI
 #endif
                     }
                 }
+                s_tempTransformList.Clear();
 
                 _secondFaceObject = null;
                 _secondFaceText = null;
@@ -571,6 +588,9 @@ namespace CAT.UI
         protected override void OnDisable()
         {
             base.OnDisable();
+
+            // TMP 텍스트 변경 이벤트 구독 해제
+            TMPro_EventManager.TEXT_CHANGED_EVENT.Remove(OnTMPTextChanged);
 
             // Material 정리
             CleanupMaterial();
@@ -780,32 +800,9 @@ namespace CAT.UI
                 {
                     _originalSharedMaterial = sharedMat;
 
-#if UNITY_EDITOR
-                    // 디버깅: 원본 Material Shader 확인
-                    Debug.Log($"[TMPOutlineEffect] Original Material:\n" +
-                        $"- Name: {_originalSharedMaterial.name}\n" +
-                        $"- Shader: {_originalSharedMaterial.shader.name}\n" +
-                        $"- Has UNDERLAY_ON: {_originalSharedMaterial.shader.keywordSpace.FindKeyword("UNDERLAY_ON").isValid}", this);
-
-                    // Underlay Property 존재 여부 확인
-                    bool hasUnderlayProps =
-                        _originalSharedMaterial.HasProperty("_UnderlayColor") &&
-                        _originalSharedMaterial.HasProperty("_UnderlayDilate") &&
-                        _originalSharedMaterial.HasProperty("_UnderlayOffsetX") &&
-                        _originalSharedMaterial.HasProperty("_UnderlayOffsetY");
-
-                    if (!hasUnderlayProps)
-                    {
-                        Debug.LogError($"[TMPOutlineEffect] 현재 Material({_originalSharedMaterial.shader.name})은 Underlay를 지원하지 않습니다!\n" +
-                            $"TMP Font Asset에서 'TextMeshPro/Distance Field' 또는 'TextMeshPro/Mobile/Distance Field' Shader를 사용하는 Material을 설정해주세요.", this);
-                    }
-#endif
                 }
                 else if (!sharedMat)
                 {
-#if UNITY_EDITOR
-                    Debug.LogWarning("[TMPOutlineEffect] fontSharedMaterial is null. Waiting for TMP initialization.", this);
-#endif
                     return;
                 }
                 else
@@ -818,9 +815,6 @@ namespace CAT.UI
             // 원본 Material이 유효한지 확인
             if (!_originalSharedMaterial)
             {
-#if UNITY_EDITOR
-                Debug.LogWarning("[TMPOutlineEffect] Original shared material is not available yet.", this);
-#endif
                 return;
             }
 
@@ -833,9 +827,6 @@ namespace CAT.UI
 
             if (!newSharedMaterial)
             {
-#if UNITY_EDITOR
-                Debug.LogError("[TMPOutlineEffect] Failed to get shared material!", this);
-#endif
                 return;
             }
 
@@ -846,17 +837,6 @@ namespace CAT.UI
 
                 // TMP의 fontMaterial에 할당
                 _tmpText.fontMaterial = _sharedMaterial;
-
-#if UNITY_EDITOR
-                // 디버깅: Material 정보 출력
-                Debug.Log($"[TMPOutlineEffect] Material Updated:\n" +
-                    $"- Shader: {_sharedMaterial.shader.name}\n" +
-                    $"- UNDERLAY_ON: {_sharedMaterial.IsKeywordEnabled("UNDERLAY_ON")}\n" +
-                    $"- UnderlayColor: {_sharedMaterial.GetColor(TMPEffectManager.PropUnderlayColor)}\n" +
-                    $"- UnderlayDilate: {_sharedMaterial.GetFloat(TMPEffectManager.PropUnderlayDilate)}\n" +
-                    $"- UnderlayOffsetX: {_sharedMaterial.GetFloat(TMPEffectManager.PropUnderlayOffsetX)}\n" +
-                    $"- UnderlayOffsetY: {_sharedMaterial.GetFloat(TMPEffectManager.PropUnderlayOffsetY)}");
-#endif
 
                 // TMP 업데이트 강제
                 _tmpText.UpdateMeshPadding();  // Padding 재계산
@@ -914,7 +894,6 @@ namespace CAT.UI
                     _secondFaceObject = child.gameObject;
                     _secondFaceText = _secondFaceObject.GetComponent<TextMeshProUGUI>();
                     _secondFaceCurve = _secondFaceObject.GetComponent<TMPCurve>();
-                    Debug.Log($"[TMPOutlineEffect] 기존 Inner Face 오브젝트 재사용: {_secondFaceObject.name}", this);
                     UpdateSecondFaceMaterial();
                     return;
                 }
@@ -990,10 +969,6 @@ namespace CAT.UI
 
             // Material 생성 및 적용
             UpdateSecondFaceMaterial();
-
-#if UNITY_EDITOR
-            Debug.Log($"[TMPOutlineEffect] Second Face 생성됨: {_secondFaceObject.name}", this);
-#endif
         }
 
         /// <summary>
@@ -1012,8 +987,6 @@ namespace CAT.UI
             }
 
             if (childrenToDestroy.Count == 0 && _secondFaceObject == null) return;
-
-            Debug.Log($"[TMPOutlineEffect] Second Face 파괴: {childrenToDestroy.Count}개", this);
 
 #if UNITY_EDITOR
             // Edit Mode에서는 EditorApplication.delayCall로 지연 파괴
@@ -1073,9 +1046,6 @@ namespace CAT.UI
                 baseMaterial = _tmpText.fontSharedMaterial;
                 if (!baseMaterial)
                 {
-#if UNITY_EDITOR
-                    Debug.LogWarning("[TMPOutlineEffect] fontSharedMaterial이 없습니다. Second Face Material을 생성할 수 없습니다.", this);
-#endif
                     return;
                 }
             }
@@ -1133,12 +1103,6 @@ namespace CAT.UI
             // TMP 업데이트 강제
             _secondFaceText.ForceMeshUpdate();
 
-#if UNITY_EDITOR
-            Debug.Log($"[TMPOutlineEffect] Second Face Material 업데이트:\n" +
-                $"- Face Dilate: {_secondFaceDilate}\n" +
-                $"- Face Color: {_secondFaceColor}", this);
-#endif
-
             // 위치 오프셋 적용
             UpdateSecondFacePosition();
         }
@@ -1173,106 +1137,113 @@ namespace CAT.UI
             if (!_secondFaceText) return;
             if (!_tmpText) return;
 
-            // 텍스트 내용 동기화
-            if (_secondFaceText.text != _tmpText.text)
-                _secondFaceText.text = _tmpText.text;
-
-            // 폰트 동기화
-            if (_secondFaceText.font != _tmpText.font)
-                _secondFaceText.font = _tmpText.font;
-
-            // 폰트 크기 및 스타일 동기화
-            if (_secondFaceText.fontSize != _tmpText.fontSize)
-                _secondFaceText.fontSize = _tmpText.fontSize;
-
-            if (_secondFaceText.fontStyle != _tmpText.fontStyle)
-                _secondFaceText.fontStyle = _tmpText.fontStyle;
-
-            // Alignment 동기화
-            if (_secondFaceText.alignment != _tmpText.alignment)
-                _secondFaceText.alignment = _tmpText.alignment;
-
-            // Spacing 동기화
-            if (_secondFaceText.characterSpacing != _tmpText.characterSpacing)
-                _secondFaceText.characterSpacing = _tmpText.characterSpacing;
-
-            if (_secondFaceText.wordSpacing != _tmpText.wordSpacing)
-                _secondFaceText.wordSpacing = _tmpText.wordSpacing;
-
-            if (_secondFaceText.lineSpacing != _tmpText.lineSpacing)
-                _secondFaceText.lineSpacing = _tmpText.lineSpacing;
-
-            if (_secondFaceText.paragraphSpacing != _tmpText.paragraphSpacing)
-                _secondFaceText.paragraphSpacing = _tmpText.paragraphSpacing;
-
-            // Overflow & Wrapping 동기화
-            if (_secondFaceText.overflowMode != _tmpText.overflowMode)
-                _secondFaceText.overflowMode = _tmpText.overflowMode;
-
-            if (_secondFaceText.enableWordWrapping != _tmpText.enableWordWrapping)
-                _secondFaceText.enableWordWrapping = _tmpText.enableWordWrapping;
-
-            if (_secondFaceText.horizontalMapping != _tmpText.horizontalMapping)
-                _secondFaceText.horizontalMapping = _tmpText.horizontalMapping;
-
-            if (_secondFaceText.verticalMapping != _tmpText.verticalMapping)
-                _secondFaceText.verticalMapping = _tmpText.verticalMapping;
-
-            // Margin 동기화
-            if (_secondFaceText.margin != _tmpText.margin)
-                _secondFaceText.margin = _tmpText.margin;
-
-            // Auto Sizing 동기화
-            if (_secondFaceText.enableAutoSizing != _tmpText.enableAutoSizing)
+            // TMP 속성 동기화 (텍스트 변경 시에만)
+            if (_needsSecondFaceSync)
             {
-                _secondFaceText.enableAutoSizing = _tmpText.enableAutoSizing;
-                _secondFaceText.fontSizeMin = _tmpText.fontSizeMin;
-                _secondFaceText.fontSizeMax = _tmpText.fontSizeMax;
+                _needsSecondFaceSync = false;
+
+                // 텍스트 내용 동기화
+                if (_secondFaceText.text != _tmpText.text)
+                    _secondFaceText.text = _tmpText.text;
+
+                // 폰트 동기화
+                if (_secondFaceText.font != _tmpText.font)
+                    _secondFaceText.font = _tmpText.font;
+
+                // 폰트 크기 및 스타일 동기화
+                if (_secondFaceText.fontSize != _tmpText.fontSize)
+                    _secondFaceText.fontSize = _tmpText.fontSize;
+
+                if (_secondFaceText.fontStyle != _tmpText.fontStyle)
+                    _secondFaceText.fontStyle = _tmpText.fontStyle;
+
+                // Alignment 동기화
+                if (_secondFaceText.alignment != _tmpText.alignment)
+                    _secondFaceText.alignment = _tmpText.alignment;
+
+                // Spacing 동기화
+                if (_secondFaceText.characterSpacing != _tmpText.characterSpacing)
+                    _secondFaceText.characterSpacing = _tmpText.characterSpacing;
+
+                if (_secondFaceText.wordSpacing != _tmpText.wordSpacing)
+                    _secondFaceText.wordSpacing = _tmpText.wordSpacing;
+
+                if (_secondFaceText.lineSpacing != _tmpText.lineSpacing)
+                    _secondFaceText.lineSpacing = _tmpText.lineSpacing;
+
+                if (_secondFaceText.paragraphSpacing != _tmpText.paragraphSpacing)
+                    _secondFaceText.paragraphSpacing = _tmpText.paragraphSpacing;
+
+                // Overflow & Wrapping 동기화
+                if (_secondFaceText.overflowMode != _tmpText.overflowMode)
+                    _secondFaceText.overflowMode = _tmpText.overflowMode;
+
+                if (_secondFaceText.enableWordWrapping != _tmpText.enableWordWrapping)
+                    _secondFaceText.enableWordWrapping = _tmpText.enableWordWrapping;
+
+                if (_secondFaceText.horizontalMapping != _tmpText.horizontalMapping)
+                    _secondFaceText.horizontalMapping = _tmpText.horizontalMapping;
+
+                if (_secondFaceText.verticalMapping != _tmpText.verticalMapping)
+                    _secondFaceText.verticalMapping = _tmpText.verticalMapping;
+
+                // Margin 동기화
+                if (_secondFaceText.margin != _tmpText.margin)
+                    _secondFaceText.margin = _tmpText.margin;
+
+                // Auto Sizing 동기화
+                if (_secondFaceText.enableAutoSizing != _tmpText.enableAutoSizing)
+                {
+                    _secondFaceText.enableAutoSizing = _tmpText.enableAutoSizing;
+                    _secondFaceText.fontSizeMin = _tmpText.fontSizeMin;
+                    _secondFaceText.fontSizeMax = _tmpText.fontSizeMax;
+                }
+
+                // Extra Settings 동기화
+                if (_secondFaceText.richText != _tmpText.richText)
+                    _secondFaceText.richText = _tmpText.richText;
+
+                if (_secondFaceText.parseCtrlCharacters != _tmpText.parseCtrlCharacters)
+                    _secondFaceText.parseCtrlCharacters = _tmpText.parseCtrlCharacters;
+
+                // Second Face Gradient/Color 동기화 (부모 gradient와 독립적)
+                if (_useSecondFaceGradient)
+                {
+                    if (!_secondFaceText.enableVertexGradient)
+                        _secondFaceText.enableVertexGradient = true;
+
+                    if (!GradientsEqual(_secondFaceText.colorGradient, _secondFaceGradient))
+                        _secondFaceText.colorGradient = _secondFaceGradient;
+                }
+                else
+                {
+                    if (_secondFaceText.enableVertexGradient)
+                        _secondFaceText.enableVertexGradient = false;
+
+                    if (_secondFaceText.color != _secondFaceColor)
+                        _secondFaceText.color = _secondFaceColor;
+                }
             }
 
-            // Extra Settings 동기화
-            if (_secondFaceText.richText != _tmpText.richText)
-                _secondFaceText.richText = _tmpText.richText;
-
-            if (_secondFaceText.parseCtrlCharacters != _tmpText.parseCtrlCharacters)
-                _secondFaceText.parseCtrlCharacters = _tmpText.parseCtrlCharacters;
-
-            // Second Face Gradient/Color 동기화 (부모 gradient와 독립적)
-            if (_useSecondFaceGradient)
-            {
-                if (!_secondFaceText.enableVertexGradient)
-                    _secondFaceText.enableVertexGradient = true;
-
-                if (!GradientsEqual(_secondFaceText.colorGradient, _secondFaceGradient))
-                    _secondFaceText.colorGradient = _secondFaceGradient;
-            }
-            else
-            {
-                if (_secondFaceText.enableVertexGradient)
-                    _secondFaceText.enableVertexGradient = false;
-
-                if (_secondFaceText.color != _secondFaceColor)
-                    _secondFaceText.color = _secondFaceColor;
-            }
-
-            // RectTransform 동기화 (레이아웃 변경 대응)
+            // RectTransform 동기화 (레이아웃 변경 대응 - 크기 변경 감지)
             RectTransform parentRect = _tmpText.rectTransform;
-            RectTransform childRect = _secondFaceText.rectTransform;
+            Vector2 currentSize = parentRect.rect.size;
 
-            // Anchor 동기화 (부모 레이아웃 변경 대응)
-            if (childRect.anchorMin != parentRect.anchorMin)
+            if (currentSize != _prevRectSize)
+            {
+                _prevRectSize = currentSize;
+                RectTransform childRect = _secondFaceText.rectTransform;
+
+                // Anchor 동기화
                 childRect.anchorMin = parentRect.anchorMin;
-
-            if (childRect.anchorMax != parentRect.anchorMax)
                 childRect.anchorMax = parentRect.anchorMax;
 
-            // 크기 동기화 (Content Size Fitter 대응)
-            if (childRect.sizeDelta != parentRect.sizeDelta)
+                // 크기 동기화
                 childRect.sizeDelta = parentRect.sizeDelta;
 
-            // Pivot 동기화
-            if (childRect.pivot != parentRect.pivot)
+                // Pivot 동기화
                 childRect.pivot = parentRect.pivot;
+            }
 
             // TMPCurve 동기화 (부모에 있는 경우)
             TMPCurve parentCurve = GetComponent<TMPCurve>();
@@ -1397,8 +1368,12 @@ namespace CAT.UI
             int originalCount = s_vertexCache.Count;
 
             // Shadow 레이어를 원본 앞에 삽입 (먼저 그려지게)
-            // 임시 리스트에 Shadow 정점 생성
-            var shadowVertices = new System.Collections.Generic.List<UIVertex>(originalCount);
+            // static 리스트에 Shadow 정점 생성 (GC Alloc 방지)
+            s_shadowVertices.Clear();
+            if (s_shadowVertices.Capacity < originalCount)
+            {
+                s_shadowVertices.Capacity = originalCount;
+            }
 
             float scale = _tmpText != null ? _tmpText.fontSize : 1f;
 
@@ -1420,11 +1395,11 @@ namespace CAT.UI
                 // Shadow 색상 적용 (Underlay Color + Alpha 조절)
                 shadowVertex.color = shadowColor;
 
-                shadowVertices.Add(shadowVertex);
+                s_shadowVertices.Add(shadowVertex);
             }
 
             // Shadow 정점을 앞에, 원본 정점을 뒤에 배치
-            s_vertexCache.InsertRange(0, shadowVertices);
+            s_vertexCache.InsertRange(0, s_shadowVertices);
 
             // 메시 재구성
             vh.Clear();
@@ -1532,9 +1507,6 @@ namespace CAT.UI
         public static void ClearMaterialCache()
         {
             TMPMaterialCache.Instance.Clear();
-#if UNITY_EDITOR
-            Debug.Log("[TMPOutlineEffect] Material cache cleared!");
-#endif
         }
 
     }

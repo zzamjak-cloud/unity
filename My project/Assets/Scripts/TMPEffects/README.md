@@ -858,10 +858,30 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.7.0)
+### 현재 안정 버전 (v2.8.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.8.0 (2026-02-12)
+**성능 최적화 및 코드 리팩토링**
+- ✅ Debug.Log 완전 제거 (최고 성능)
+  - TMPOutlineEffect, TMPAnimation, TMPMaterialCache에서 모든 로그 제거
+  - 런타임 성능 향상
+- ✅ GC Alloc 제거 (메모리 최적화)
+  - static List 재사용으로 임시 할당 제거
+  - UIVertex 구조체 직접 초기화
+  - triangleIndices 배열 static readonly로 변경
+- ✅ SyncSecondFace 최적화 (LateUpdate 부하 감소)
+  - TEXT_CHANGED_EVENT 기반 더티 체크 추가
+  - TMP 속성 변경 시에만 동기화 수행
+  - RectTransform은 크기 변경 감지로 최적화
+- ✅ TMPCurve 회전 최적화
+  - 회전이 0일 때 Matrix4x4 생성 회피
+  - 단순 위치 오프셋만 적용
+- ✅ TMPEffectUtility.cs 추가
+  - GetMaterialHash 공통 유틸리티 분리
+  - 코드 중복 제거 및 유지보수성 향상
 
 ### v2.7.0 (2026-02-12)
 **TMPColorToggle 컴포넌트 및 Inner Face Gradient 지원 추가**
