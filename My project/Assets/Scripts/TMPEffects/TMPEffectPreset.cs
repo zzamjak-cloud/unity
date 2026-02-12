@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro;
 
 namespace CAT.UI
 {
@@ -46,6 +47,8 @@ namespace CAT.UI
         [Header("Second Face Settings")]
         [SerializeField] private bool _enableSecondFace = false;
         [SerializeField] private Color _secondFaceColor = Color.white;
+        [SerializeField] private bool _useSecondFaceGradient = false;
+        [SerializeField] private VertexGradient _secondFaceGradient = new VertexGradient(Color.white);
         [SerializeField, Range(-1f, 0f)] private float _secondFaceDilate = -0.1f;
         [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetX = 0f;
         [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetY = 0f;
@@ -71,6 +74,8 @@ namespace CAT.UI
         public float ShadowAlpha => _shadowAlpha;
         public bool EnableSecondFace => _enableSecondFace;
         public Color SecondFaceColor => _secondFaceColor;
+        public bool UseSecondFaceGradient => _useSecondFaceGradient;
+        public VertexGradient SecondFaceGradient => _secondFaceGradient;
         public float SecondFaceDilate => _secondFaceDilate;
         public float SecondFaceOffsetX => _secondFaceOffsetX;
         public float SecondFaceOffsetY => _secondFaceOffsetY;
@@ -165,6 +170,8 @@ namespace CAT.UI
             effect.ShadowAlpha = _shadowAlpha;
             effect.EnableSecondFace = _enableSecondFace;
             effect.SecondFaceColor = _secondFaceColor;
+            effect.UseSecondFaceGradient = _useSecondFaceGradient;
+            effect.SecondFaceGradient = _secondFaceGradient;
             effect.SecondFaceDilate = _secondFaceDilate;
             effect.SecondFaceOffsetX = _secondFaceOffsetX;
             effect.SecondFaceOffsetY = _secondFaceOffsetY;
@@ -189,6 +196,8 @@ namespace CAT.UI
             _shadowAlpha = effect.ShadowAlpha;
             _enableSecondFace = effect.EnableSecondFace;
             _secondFaceColor = effect.SecondFaceColor;
+            _useSecondFaceGradient = effect.UseSecondFaceGradient;
+            _secondFaceGradient = effect.SecondFaceGradient;
             _secondFaceDilate = effect.SecondFaceDilate;
             _secondFaceOffsetX = effect.SecondFaceOffsetX;
             _secondFaceOffsetY = effect.SecondFaceOffsetY;

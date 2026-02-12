@@ -53,6 +53,9 @@ namespace CAT.UI
         [Tooltip("안쪽으로 축소된 텍스트 활성화. 자식 TMP 오브젝트가 자동 생성됩니다.")]
         [SerializeField] private bool _enableSecondFace = false;
         [SerializeField] private Color _secondFaceColor = Color.white;
+        [Tooltip("Inner Face에 Gradient 사용 (TMPColorToggle과 함께 사용 불가)")]
+        [SerializeField] private bool _useSecondFaceGradient = false;
+        [SerializeField] private VertexGradient _secondFaceGradient = new VertexGradient(Color.white);
         [SerializeField, Range(-1f, 0f)] private float _secondFaceDilate = -0.1f;
         [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetX = 0f;
         [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetY = 0f;
@@ -337,6 +340,26 @@ namespace CAT.UI
             }
         }
 
+        public bool UseSecondFaceGradient
+        {
+            get => _useSecondFaceGradient;
+            set
+            {
+                _useSecondFaceGradient = value;
+                UpdateSecondFaceMaterial();
+            }
+        }
+
+        public VertexGradient SecondFaceGradient
+        {
+            get => _secondFaceGradient;
+            set
+            {
+                _secondFaceGradient = value;
+                UpdateSecondFaceMaterial();
+            }
+        }
+
         public float SecondFaceDilate
         {
             get => _secondFaceDilate;
@@ -377,7 +400,7 @@ namespace CAT.UI
 
         /// <summary>
         /// Second Face 강제 동기화
-        /// TMPCharacterAnimation 등 외부에서 즉시 동기화가 필요할 때 호출
+        /// TMPAnimation 등 외부에서 즉시 동기화가 필요할 때 호출
         /// </summary>
         public void ForceSyncSecondFace()
         {
@@ -553,7 +576,7 @@ namespace CAT.UI
             CleanupMaterial();
 
             // Second Face는 EnableSecondFace가 true이면 유지
-            // (TMPCharacterAnimation 등에서 비활성화 상태에서도 Inner Face 필요)
+            // (TMPAnimation 등에서 비활성화 상태에서도 Inner Face 필요)
             // OnDestroy()에서 최종 정리
             if (!_enableSecondFace)
             {
@@ -1067,8 +1090,16 @@ namespace CAT.UI
             // Face Dilate 설정 (음수로 안쪽 축소)
             secondFaceMat.SetFloat(TMPEffectManager.PropFaceDilate, _secondFaceDilate);
 
-            // Face Color 설정
-            secondFaceMat.SetColor(TMPEffectManager.PropFaceColor, _secondFaceColor);
+            // Face Color 설정 (Gradient가 아닌 경우에만 Material에서 처리)
+            if (!_useSecondFaceGradient)
+            {
+                secondFaceMat.SetColor(TMPEffectManager.PropFaceColor, _secondFaceColor);
+            }
+            else
+            {
+                // Gradient는 TMP의 colorGradient로 처리되므로 Material에서는 흰색 유지
+                secondFaceMat.SetColor(TMPEffectManager.PropFaceColor, Color.white);
+            }
 
             // Underlay 설정 (정점 확장을 위해 활성화, 하지만 투명하게)
             // ⚠️ 중요: TMPCurve와 같은 메시 수정 컴포넌트와 함께 사용할 때,
@@ -1086,6 +1117,18 @@ namespace CAT.UI
 
             // Material 적용
             _secondFaceText.fontMaterial = secondFaceMat;
+
+            // Gradient 설정 (TMP의 vertex gradient 기능 사용)
+            if (_useSecondFaceGradient)
+            {
+                _secondFaceText.enableVertexGradient = true;
+                _secondFaceText.colorGradient = _secondFaceGradient;
+            }
+            else
+            {
+                _secondFaceText.enableVertexGradient = false;
+                _secondFaceText.color = _secondFaceColor;
+            }
 
             // TMP 업데이트 강제
             _secondFaceText.ForceMeshUpdate();
@@ -1194,6 +1237,24 @@ namespace CAT.UI
             if (_secondFaceText.parseCtrlCharacters != _tmpText.parseCtrlCharacters)
                 _secondFaceText.parseCtrlCharacters = _tmpText.parseCtrlCharacters;
 
+            // Second Face Gradient/Color 동기화 (부모 gradient와 독립적)
+            if (_useSecondFaceGradient)
+            {
+                if (!_secondFaceText.enableVertexGradient)
+                    _secondFaceText.enableVertexGradient = true;
+
+                if (!GradientsEqual(_secondFaceText.colorGradient, _secondFaceGradient))
+                    _secondFaceText.colorGradient = _secondFaceGradient;
+            }
+            else
+            {
+                if (_secondFaceText.enableVertexGradient)
+                    _secondFaceText.enableVertexGradient = false;
+
+                if (_secondFaceText.color != _secondFaceColor)
+                    _secondFaceText.color = _secondFaceColor;
+            }
+
             // RectTransform 동기화 (레이아웃 변경 대응)
             RectTransform parentRect = _tmpText.rectTransform;
             RectTransform childRect = _secondFaceText.rectTransform;
@@ -1250,6 +1311,17 @@ namespace CAT.UI
                     _secondFaceCurve = null;
                 }
             }
+        }
+
+        /// <summary>
+        /// 두 VertexGradient가 동일한지 비교
+        /// </summary>
+        private bool GradientsEqual(VertexGradient g1, VertexGradient g2)
+        {
+            return g1.topLeft == g2.topLeft &&
+                   g1.topRight == g2.topRight &&
+                   g1.bottomLeft == g2.bottomLeft &&
+                   g1.bottomRight == g2.bottomRight;
         }
 
         /// <summary>

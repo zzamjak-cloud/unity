@@ -17,7 +17,8 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 | 컴포넌트 | 역할 | 처리 방식 |
 |----------|------|-----------|
 | **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
-| **TMPCharacterAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
+| **TMPAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
+| **TMPColorToggle** | 컬러 순환 애니메이션 | 크리스마스 조명 스타일 |
 | **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
 | **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
 
@@ -43,6 +44,7 @@ TMP의 **Underlay 시스템**을 활용한 All-in-One 효과 컴포넌트입니�
 #### 3. Second Face 효과 (자식 TMP 오브젝트, v2.3.0+)
 - **안쪽 축소 텍스트**: Face Dilate < 0으로 안쪽으로 축소된 내부 텍스트 레이어 생성
 - **자동 자식 오브젝트**: `[Inner Face]` 자식 GameObject 자동 생성/관리
+- **Gradient 지원 (v2.7.0+)**: 단색 Color 또는 VertexGradient 선택 가능
 - **완전 동기화**: 부모의 모든 TMP 속성 자동 동기화
   - 텍스트, 폰트, 크기, 스타일, Alignment
   - Spacing (character, word, line, paragraph)
@@ -417,12 +419,15 @@ Assets/Scripts/TMPEffects/
 ├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
 ├── TMPEffectPreset.cs              # ScriptableObject 프리셋
 ├── TMPEffectCategorySettings.cs    # 카테고리 설정 (v2.4.0+)
-├── TMPCharacterAnimation.cs        # 글자별 애니메이션 컴포넌트 (v2.5.0+)
-├── TMPCharacterAnimationPreset.cs  # 애니메이션 프리셋 (v2.5.0+)
+├── TMPAnimation.cs        # 글자별 애니메이션 컴포넌트 (v2.5.0+)
+├── TMPAnimationPreset.cs  # 애니메이션 프리셋 (v2.5.0+)
+├── TMPColorToggle.cs               # 컬러 순환 애니메이션 컴포넌트 (v2.7.0+)
 ├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
 ├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
 ├── Editor/
-│   ├── TMPOutlineEffectEditor.cs   # 커스텀 인스펙터
+│   ├── TMPOutlineEffectEditor.cs   # Outline 커스텀 인스펙터
+│   ├── TMPAnimationEditor.cs  # 애니메이션 커스텀 인스펙터
+│   ├── TMPColorToggleEditor.cs     # 컬러 토글 커스텀 인스펙터 (v2.7.0+)
 │   └── EditorInputDialog.cs        # 입력 다이얼로그 (v2.4.0+)
 ├── Examples/
 │   └── TMPEffectExample.cs         # 사용 예제
@@ -605,7 +610,7 @@ limiter.Refresh();          // 강제 갱신
 
 ---
 
-## 🎬 TMPCharacterAnimation - 글자별 애니메이션
+## 🎬 TMPAnimation - 글자별 애니메이션
 
 TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 DOTween 기반 컴포넌트입니다.
 
@@ -622,7 +627,7 @@ TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 DOTween 기
 #### Inspector
 ```
 1. TMP 오브젝트 선택
-2. Add Component → CAT/UI/TMP Character Animation
+2. Add Component → CAT/UI/TMP Animation
 3. Appear/Loop/Disappear 애니메이션 설정
 4. Play On Enable 활성화 시 자동 재생
 ```
@@ -637,7 +642,7 @@ public class AnimationExample : MonoBehaviour
 {
     void Start()
     {
-        var anim = GetComponent<TMPCharacterAnimation>();
+        var anim = GetComponent<TMPAnimation>();
 
         // 수동 재생
         anim.Play();
@@ -653,7 +658,7 @@ public class AnimationExample : MonoBehaviour
         anim.Restart();
 
         // 프리셋 적용
-        var preset = Resources.Load<TMPCharacterAnimationPreset>("Presets/BounceAppear");
+        var preset = Resources.Load<TMPAnimationPreset>("Presets/BounceAppear");
         anim.ApplyPreset(preset);
     }
 }
@@ -712,25 +717,25 @@ anim.IsPlaying                      // 재생 중 여부 (읽기 전용)
 
 ```csharp
 // ScriptableObject 프리셋 생성 (코드)
-var bouncePreset = TMPCharacterAnimationPreset.CreateBounceAppear();
-var wavePreset = TMPCharacterAnimationPreset.CreateWaveLoop();
-var scalePreset = TMPCharacterAnimationPreset.CreateScaleDisappear();
-var rotatePreset = TMPCharacterAnimationPreset.CreateRotateAppear();
-var fadePreset = TMPCharacterAnimationPreset.CreateFadeInOut();
+var bouncePreset = TMPAnimationPreset.CreateBounceAppear();
+var wavePreset = TMPAnimationPreset.CreateWaveLoop();
+var scalePreset = TMPAnimationPreset.CreateScaleDisappear();
+var rotatePreset = TMPAnimationPreset.CreateRotateAppear();
+var fadePreset = TMPAnimationPreset.CreateFadeInOut();
 ```
 
 ### TMPOutlineEffect와 함께 사용
 
-TMPOutlineEffect의 **Second Face(Inner Face)**를 활성화하면, TMPCharacterAnimation이 자동으로 Inner Face도 함께 애니메이션합니다.
+TMPOutlineEffect의 **Second Face(Inner Face)**를 활성화하면, TMPAnimation이 자동으로 Inner Face도 함께 애니메이션합니다.
 
 ```csharp
-// TMPOutlineEffect + TMPCharacterAnimation 조합
+// TMPOutlineEffect + TMPAnimation 조합
 var outline = GetComponent<TMPOutlineEffect>();
 outline.EnableSecondFace = true;
 outline.SecondFaceColor = Color.white;
 outline.SecondFaceDilate = -0.1f;
 
-var anim = GetComponent<TMPCharacterAnimation>();
+var anim = GetComponent<TMPAnimation>();
 anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 ```
 
@@ -749,6 +754,95 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - TMPOutlineEffect의 Shadow도 함께 애니메이션됨
 - 메인 텍스트의 알파값이 Shadow에 자동 적용
 
+---
+
+## 🎄 TMPColorToggle - 컬러 순환 애니메이션
+
+TMP 텍스트 색상을 크리스마스 트리 조명처럼 시간차를 두고 순환하는 컴포넌트입니다.
+
+### 특징
+- **컬러 순환**: 지정된 컬러 리스트를 시간차로 순환
+- **블렌딩/즉시 전환**: Is Clamp 옵션으로 선택
+- **Inner Face 연동**: TMPOutlineEffect의 Second Face 컬러도 함께 변경
+- **빌트인 프리셋**: Christmas, Rainbow, Neon
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Color Toggle
+3. Colors 리스트에 순환할 컬러 추가 (최소 2개)
+4. Duration으로 전환 시간 설정
+5. Play On Enable 활성화 시 자동 재생
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class ColorToggleExample : MonoBehaviour
+{
+    void Start()
+    {
+        var toggle = GetComponent<TMPColorToggle>();
+
+        // 수동 재생
+        toggle.Play();
+
+        // 일시정지/재개
+        toggle.Pause();
+        toggle.Resume();
+
+        // 정지
+        toggle.Stop();
+
+        // 재시작
+        toggle.Restart();
+
+        // 프리셋 적용
+        toggle.SetChristmasColors();
+        toggle.SetRainbowColors();
+        toggle.SetNeonColors();
+
+        // 동적 컬러 추가
+        toggle.AddColor(Color.magenta);
+        toggle.Colors = new List<Color> { Color.red, Color.blue, Color.green };
+    }
+}
+```
+
+### 속성
+
+```csharp
+// 기본 설정
+toggle.Colors = colorList;          // 순환할 컬러 리스트
+toggle.Duration = 1f;               // 전환 시간 (초)
+toggle.IsClamp = false;             // true: 즉시 전환, false: 블렌딩
+toggle.PlayOnEnable = true;         // 활성화 시 자동 재생
+
+// Inner Face 설정 (TMPOutlineEffect 연동)
+toggle.AffectInnerFace = true;      // Inner Face 컬러도 변경
+toggle.UseInnerFaceColors = false;  // 별도 컬러 리스트 사용
+toggle.InnerFaceColors = colorList; // Inner Face용 컬러 리스트
+
+// 상태 (읽기 전용)
+toggle.IsPlaying                    // 재생 중 여부
+toggle.CurrentIndex                 // 현재 컬러 인덱스
+```
+
+### ⚠️ 주의사항
+
+**TMP Gradient와 충돌**:
+- TMP의 Vertex Gradient가 활성화되어 있으면 자동으로 비활성화됨
+- TMPColorToggle은 단색 컬러만 지원
+
+**Inner Face Gradient와 충돌**:
+- TMPOutlineEffect의 Inner Face Gradient가 활성화된 상태에서 Affect Inner Face를 사용하면
+- Inner Face Gradient가 자동으로 비활성화되고 단색 컬러로 전환됨
+
 ## 📝 요구사항
 
 - Unity 6 (6000.0.x) 이상
@@ -764,13 +858,32 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.6.0)
+### 현재 안정 버전 (v2.7.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
 
+### v2.7.0 (2026-02-12)
+**TMPColorToggle 컴포넌트 및 Inner Face Gradient 지원 추가**
+- ✅ TMPColorToggle 컴포넌트 추가
+  - TMP Tint Color를 여러 컬러 사이에서 시간차로 순환 (크리스마스 조명 효과)
+  - Duration 설정으로 전환 시간 조절
+  - Is Clamp 옵션으로 즉시 전환 / 블렌딩 전환 선택
+  - 빌트인 프리셋: Christmas, Rainbow, Neon
+- ✅ Inner Face 컬러 연동
+  - TMPOutlineEffect의 Second Face와 자동 연동
+  - 별도 Inner Face 컬러 리스트 사용 가능
+  - TMP Gradient와의 충돌 자동 해결
+- ✅ TMPOutlineEffect Inner Face Gradient 지원
+  - Second Face에 단색 Color 또는 VertexGradient 선택 가능
+  - TMPColorToggle과 함께 사용 시 자동 비활성화
+- ✅ 커스텀 에디터
+  - 프리셋 버튼 (Christmas, Rainbow, Neon)
+  - 런타임 컨트롤 (Play, Pause, Stop, Restart)
+  - Gradient 충돌 경고 표시
+
 ### v2.6.0 (2026-02-11)
-**TMPCharacterAnimation Position Curve 기능 추가**
+**TMPAnimation Position Curve 기능 추가**
 - ✅ Position Curve 기능 추가 (베지어 곡선 이동)
   - Appear/Loop/Disappear 각각에 Use Position Curve 옵션 추가
   - Curve Offset (X, Y)로 중간 보정 위치 설정
@@ -782,13 +895,13 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
   - 기본값: Appear 펼침, Loop/Disappear 접힘
 
 ### v2.5.0 (2026-02-11)
-**TMPCharacterAnimation 글자별 애니메이션 추가**
-- ✅ TMPCharacterAnimation 컴포넌트 추가
+**TMPAnimation 글자별 애니메이션 추가**
+- ✅ TMPAnimation 컴포넌트 추가
   - DOTween 기반 글자별 애니메이션 (Appear, Loop, Disappear)
   - 위치/스케일/회전/알파 독립 애니메이션
   - 블렌딩 지원 (Appear↔Loop↔Disappear 부드러운 전환)
   - 커스텀 이징 곡선 (AnimationCurve) 지원
-- ✅ TMPCharacterAnimationPreset 프리셋 시스템
+- ✅ TMPAnimationPreset 프리셋 시스템
   - ScriptableObject 기반 스타일 저장/재사용
   - 빌트인 프리셋: BounceAppear, WaveLoop, ScaleDisappear, RotateAppear, FadeInOut
 - ✅ CanvasGroup 기반 깜빡임 방지
@@ -899,6 +1012,6 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 
 ---
 
-**버전**: 2.6.0
-**최종 수정**: 2026-02-11
+**버전**: 2.7.0
+**최종 수정**: 2026-02-12
 **작성자**: Claude Code (with Unity TMP Underlay system)

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEditor;
+using TMPro;
 
 namespace CAT.UI
 {
@@ -108,6 +109,8 @@ namespace CAT.UI
                    !Mathf.Approximately(_target.ShadowAlpha, _selectedPreset.ShadowAlpha) ||
                    _target.EnableSecondFace != _selectedPreset.EnableSecondFace ||
                    _target.SecondFaceColor != _selectedPreset.SecondFaceColor ||
+                   _target.UseSecondFaceGradient != _selectedPreset.UseSecondFaceGradient ||
+                   !GradientsEqual(_target.SecondFaceGradient, _selectedPreset.SecondFaceGradient) ||
                    !Mathf.Approximately(_target.SecondFaceDilate, _selectedPreset.SecondFaceDilate) ||
                    !Mathf.Approximately(_target.SecondFaceOffsetX, _selectedPreset.SecondFaceOffsetX) ||
                    !Mathf.Approximately(_target.SecondFaceOffsetY, _selectedPreset.SecondFaceOffsetY);
@@ -366,7 +369,22 @@ namespace CAT.UI
             if (enableSecondFaceProp.boolValue)
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceColor"), new GUIContent("Color"));
+
+                // Gradient 사용 여부
+                var useGradientProp = serializedObject.FindProperty("_useSecondFaceGradient");
+                EditorGUILayout.PropertyField(useGradientProp, new GUIContent("Use Gradient", "Second Face에 Gradient 적용"));
+
+                if (useGradientProp.boolValue)
+                {
+                    // Gradient 필드
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceGradient"), new GUIContent("Gradient"));
+                }
+                else
+                {
+                    // 단일 Color 필드
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceColor"), new GUIContent("Color"));
+                }
+
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceDilate"), new GUIContent("Dilate"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceOffsetX"), new GUIContent("Offset X"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_secondFaceOffsetY"), new GUIContent("Offset Y"));
@@ -703,6 +721,17 @@ namespace CAT.UI
 
             // 못 찾으면 None으로
             _selectedPresetIndex = 0;
+        }
+
+        /// <summary>
+        /// 두 VertexGradient가 동일한지 비교
+        /// </summary>
+        private bool GradientsEqual(VertexGradient g1, VertexGradient g2)
+        {
+            return g1.topLeft == g2.topLeft &&
+                   g1.topRight == g2.topRight &&
+                   g1.bottomLeft == g2.bottomLeft &&
+                   g1.bottomRight == g2.bottomRight;
         }
     }
 }

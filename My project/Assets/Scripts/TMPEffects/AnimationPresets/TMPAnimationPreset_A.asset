@@ -15,11 +15,11 @@ MonoBehaviour:
   _characterDelay: 0.1
   _enableAppear: 1
   _appearRelative: 1
-  _appearPosition: {x: 0, y: 0, z: 0}
+  _appearPosition: {x: 200, y: 0, z: 0}
   _appearScale: {x: 1, y: 0.5, z: 1}
-  _appearRotation: {x: 0, y: 0, z: 0}
+  _appearRotation: {x: 0, y: 0, z: -45}
   _appearAlpha: 0
-  _appearDuration: 0.3
+  _appearDuration: 0.2
   _appearEase: 27
   _appearUseCustomCurve: 1
   _appearCustomCurve:
@@ -47,10 +47,12 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   _appearToLoopBlend: 0
-  _enableLoop: 0
+  _appearUsePositionCurve: 1
+  _appearPositionCurveOffset: {x: 0, y: 100}
+  _enableLoop: 1
   _loopRelative: 1
   _loopPosition: {x: 0, y: 20, z: 0}
-  _loopScale: {x: 1, y: 1, z: 1}
+  _loopScale: {x: 1, y: 1.3, z: 1}
   _loopRotation: {x: 0, y: 0, z: 0}
   _loopDuration: 1.4
   _loopEase: 4
@@ -109,9 +111,11 @@ MonoBehaviour:
   _loopCount: 1
   _loopType: 0
   _loopToDisappearBlend: 0
-  _enableDisappear: 0
+  _loopUsePositionCurve: 0
+  _loopPositionCurveOffset: {x: 0, y: 0}
+  _enableDisappear: 1
   _disappearRelative: 1
-  _disappearPosition: {x: 0, y: -50, z: 0}
+  _disappearPosition: {x: -200, y: 0, z: 0}
   _disappearScale: {x: 0.5, y: 0.5, z: 1}
   _disappearRotation: {x: 0, y: 0, z: -30}
   _disappearAlpha: 0
@@ -142,4 +146,6 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+  _disappearUsePositionCurve: 1
+  _disappearPositionCurveOffset: {x: 0, y: -100}
   _description: 
