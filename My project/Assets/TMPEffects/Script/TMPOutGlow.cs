@@ -62,8 +62,14 @@ namespace CAT.UI
         private GameObject _innerGlowObject;
         private TextMeshProUGUI _innerGlowText;
         private TMPCurve _innerGlowCurve;
-        private CanvasGroup _innerGlowCanvasGroup;  // 깜빡임 방지용
-        private bool _innerGlowNeedsShow = false;  // 첫 프레임 후 표시 플래그
+
+        // ─────────────────────────────────────────────
+        // 깜빡임 방지용 CanvasGroup (자기 자신에 추가)
+        // ─────────────────────────────────────────────
+
+        private CanvasGroup _canvasGroup;  // 자기 자신의 CanvasGroup
+        private bool _needsShow = false;  // 메시 초기화 후 표시 플래그
+        private bool _canvasGroupAddedByThis = false;  // 이 컴포넌트가 CanvasGroup을 추가했는지
 
         // ─────────────────────────────────────────────
         // 더티 체크 최적화 (BitMask)
@@ -317,6 +323,14 @@ namespace CAT.UI
             base.OnEnable();
             CacheComponents();
             _needsInitialization = true;
+
+            // 깜빡임 방지: CanvasGroup 설정 (자기 자신에 추가)
+            // TMPAnimation이 없는 경우에만 CanvasGroup 관리
+            if (Application.isPlaying)
+            {
+                SetupCanvasGroup();
+            }
+
             UpdateGlowMaterial();
 
             // TMP Tint color RGB 초기화
@@ -331,12 +345,19 @@ namespace CAT.UI
         {
             base.OnDisable();
             RestoreOriginalMaterial();
+
+            // CanvasGroup alpha 복원
+            if (_canvasGroup != null)
+            {
+                _canvasGroup.alpha = 1f;
+            }
         }
 
         private void OnDestroy()
         {
             RestoreOriginalMaterial();
             DestroyInnerGlowObject();
+            CleanupCanvasGroup();
         }
 
 #if UNITY_EDITOR
@@ -412,11 +433,11 @@ namespace CAT.UI
                 }
             }
 
-            // Inner Glow 표시 (깜빡임 방지 - 메시 초기화 후 표시)
-            if (_innerGlowNeedsShow && _innerGlowCanvasGroup != null)
+            // CanvasGroup 표시 (깜빡임 방지 - 메시 초기화 후 표시)
+            if (_needsShow && _canvasGroup != null)
             {
-                _innerGlowCanvasGroup.alpha = 1f;
-                _innerGlowNeedsShow = false;
+                _canvasGroup.alpha = 1f;
+                _needsShow = false;
             }
         }
 
@@ -467,6 +488,52 @@ namespace CAT.UI
             {
                 _tmpText = GetComponent<TextMeshProUGUI>();
             }
+        }
+
+        /// <summary>
+        /// 깜빡임 방지를 위한 CanvasGroup 설정 (자기 자신에 추가)
+        /// TMPAnimation이 이미 CanvasGroup을 관리하고 있으면 스킵
+        /// </summary>
+        private void SetupCanvasGroup()
+        {
+            // TMPAnimation이 있으면 TMPAnimation이 CanvasGroup을 관리함
+            if (GetComponent<TMPAnimation>() != null)
+            {
+                _canvasGroupAddedByThis = false;
+                return;
+            }
+
+            _canvasGroup = GetComponent<CanvasGroup>();
+            if (_canvasGroup == null)
+            {
+                _canvasGroup = gameObject.AddComponent<CanvasGroup>();
+                _canvasGroupAddedByThis = true;
+            }
+            else
+            {
+                _canvasGroupAddedByThis = false;
+            }
+
+            // 초기 alpha = 0 (깜빡임 방지)
+            _canvasGroup.alpha = 0f;
+            _needsShow = true;
+        }
+
+        /// <summary>
+        /// CanvasGroup 정리
+        /// </summary>
+        private void CleanupCanvasGroup()
+        {
+            if (_canvasGroupAddedByThis && _canvasGroup != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_canvasGroup);
+                else
+                    DestroyImmediate(_canvasGroup);
+            }
+            _canvasGroup = null;
+            _canvasGroupAddedByThis = false;
+            _needsShow = false;
         }
 
         /// <summary>
@@ -575,9 +642,6 @@ namespace CAT.UI
             if (!_tmpText) return;
             if (_innerGlowObject) return;
 
-            // 부모에 CanvasGroup이 있는지 미리 확인 (TMPAnimation 등이 추가한 경우)
-            CanvasGroup parentCanvasGroup = GetComponent<CanvasGroup>();
-
             // 기존에 생성된 오브젝트 확인
             foreach (Transform child in transform)
             {
@@ -587,27 +651,14 @@ namespace CAT.UI
                     _innerGlowText = _innerGlowObject.GetComponent<TextMeshProUGUI>();
                     _innerGlowCurve = _innerGlowObject.GetComponent<TMPCurve>();
 
-                    // 부모에 CanvasGroup이 있으면 자식의 CanvasGroup 제거 (중복 방지)
-                    _innerGlowCanvasGroup = _innerGlowObject.GetComponent<CanvasGroup>();
-
-                    if (parentCanvasGroup != null && _innerGlowCanvasGroup != null)
+                    // 자식에 CanvasGroup이 있으면 제거 (부모에서 관리)
+                    CanvasGroup childCanvasGroup = _innerGlowObject.GetComponent<CanvasGroup>();
+                    if (childCanvasGroup != null)
                     {
-                        // 부모가 처리하므로 자식 CanvasGroup 제거
                         if (Application.isPlaying)
-                            Destroy(_innerGlowCanvasGroup);
+                            Destroy(childCanvasGroup);
                         else
-                            DestroyImmediate(_innerGlowCanvasGroup);
-                        _innerGlowCanvasGroup = null;
-                    }
-                    else if (parentCanvasGroup == null && _innerGlowCanvasGroup == null)
-                    {
-                        // 부모도 없고 자식도 없으면 자식에 추가
-                        _innerGlowCanvasGroup = _innerGlowObject.AddComponent<CanvasGroup>();
-                        _innerGlowCanvasGroup.alpha = 1f;
-                    }
-                    else if (_innerGlowCanvasGroup != null)
-                    {
-                        _innerGlowCanvasGroup.alpha = 1f;  // 이미 존재하면 보이게
+                            DestroyImmediate(childCanvasGroup);
                     }
 
                     UpdateInnerGlowMaterial();
@@ -620,16 +671,7 @@ namespace CAT.UI
             _innerGlowObject.hideFlags = HideFlags.NotEditable | HideFlags.DontSaveInEditor;
             _innerGlowObject.transform.SetParent(transform, false);
 
-            // CanvasGroup 처리 (깜빡임 방지)
-            // 부모에 CanvasGroup이 있으면 자식에 추가하지 않음 (부모의 alpha가 자식에 자동 적용됨)
-            if (parentCanvasGroup == null)
-            {
-                // 부모에 CanvasGroup이 없으면 자식에 추가
-                _innerGlowCanvasGroup = _innerGlowObject.AddComponent<CanvasGroup>();
-                _innerGlowCanvasGroup.alpha = 0f;  // 첫 프레임에서 숨김
-                _innerGlowNeedsShow = true;  // 다음 프레임에서 표시
-            }
-            // 부모에 CanvasGroup이 있으면 (TMPAnimation 등) 부모가 처리하므로 자식에 추가 안함
+            // 자식에는 CanvasGroup을 추가하지 않음 (부모의 CanvasGroup이 자식에 자동 적용됨)
 
             // TextMeshProUGUI 추가
             _innerGlowText = _innerGlowObject.AddComponent<TextMeshProUGUI>();
@@ -706,8 +748,6 @@ namespace CAT.UI
             _innerGlowObject = null;
             _innerGlowText = null;
             _innerGlowCurve = null;
-            _innerGlowCanvasGroup = null;
-            _innerGlowNeedsShow = false;
         }
 
         /// <summary>

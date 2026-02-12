@@ -1052,10 +1052,24 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.8.0)
+### 현재 안정 버전 (v2.11.0)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.11.0 (2026-02-13)
+**CanvasGroup 관리 로직 전면 개편**
+- ✅ CanvasGroup을 자식이 아닌 **자기 자신**에 추가하도록 변경
+  - TMPOutlineEffect: 자식 `[Inner Face]`가 아닌 본체에 CanvasGroup 추가
+  - TMPOutGlow: 자식 `[Inner Glow]`가 아닌 본체에 CanvasGroup 추가
+  - 자식 오브젝트에는 CanvasGroup을 추가하지 않음 (부모의 alpha가 자식에 자동 적용)
+- ✅ 깜빡임 방지 로직 개선
+  - 초기 alpha = 0 → 메시 초기화 완료 → alpha = 1
+  - TMPAnimation이 있으면 TMPAnimation이 CanvasGroup 관리 (중복 방지)
+  - TMPAnimation이 없으면 TMPOutlineEffect/TMPOutGlow가 CanvasGroup 관리
+- ✅ 기존 자식 CanvasGroup 자동 제거
+  - 이전 버전에서 생성된 자식 CanvasGroup은 자동으로 제거됨
+  - 더 깔끔한 계층 구조 유지
 
 ### v2.10.0 (2026-02-13)
 **InnerFace/InnerGlow 안정성 개선 및 에디터 UX 개선**
@@ -1278,6 +1292,6 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 
 ---
 
-**버전**: 2.10.0
+**버전**: 2.11.0
 **최종 수정**: 2026-02-13
 **작성자**: Claude Code (with Unity TMP Underlay system)

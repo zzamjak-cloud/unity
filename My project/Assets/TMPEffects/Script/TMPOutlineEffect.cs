@@ -67,8 +67,14 @@ namespace CAT.UI
         private GameObject _secondFaceObject;
         private TextMeshProUGUI _secondFaceText;
         private TMPCurve _secondFaceCurve;  // 부모에 TMPCurve가 있을 때 자식에도 추가
-        private CanvasGroup _secondFaceCanvasGroup;  // 깜빡임 방지용
-        private bool _secondFaceNeedsShow = false;  // 첫 프레임 후 표시 플래그
+
+        // ─────────────────────────────────────────────
+        // 깜빡임 방지용 CanvasGroup (자기 자신에 추가)
+        // ─────────────────────────────────────────────
+
+        private CanvasGroup _canvasGroup;  // 자기 자신의 CanvasGroup
+        private bool _needsShow = false;  // 메시 초기화 후 표시 플래그
+        private bool _canvasGroupAddedByThis = false;  // 이 컴포넌트가 CanvasGroup을 추가했는지
 
         // ─────────────────────────────────────────────
         // 더티 체크 최적화 (BitMask)
@@ -472,6 +478,13 @@ namespace CAT.UI
             // 컴포넌트 캐싱
             _tmpText = GetComponent<TextMeshProUGUI>();
 
+            // 깜빡임 방지: CanvasGroup 설정 (자기 자신에 추가)
+            // TMPAnimation이 없고, Second Face가 활성화된 경우에만 CanvasGroup 관리
+            if (_enableSecondFace && Application.isPlaying)
+            {
+                SetupCanvasGroup();
+            }
+
             // Play 모드 종료 후 에디터 복귀 시 잔여 Second Face 정리
             // (도메인 리로드로 _secondFaceObject 참조가 null이 되어도 오브젝트는 남아있을 수 있음)
             CleanupOrphanedSecondFace();
@@ -544,6 +557,52 @@ namespace CAT.UI
         }
 
         /// <summary>
+        /// 깜빡임 방지를 위한 CanvasGroup 설정 (자기 자신에 추가)
+        /// TMPAnimation이 이미 CanvasGroup을 관리하고 있으면 스킵
+        /// </summary>
+        private void SetupCanvasGroup()
+        {
+            // TMPAnimation이 있으면 TMPAnimation이 CanvasGroup을 관리함
+            if (GetComponent<TMPAnimation>() != null)
+            {
+                _canvasGroupAddedByThis = false;
+                return;
+            }
+
+            _canvasGroup = GetComponent<CanvasGroup>();
+            if (_canvasGroup == null)
+            {
+                _canvasGroup = gameObject.AddComponent<CanvasGroup>();
+                _canvasGroupAddedByThis = true;
+            }
+            else
+            {
+                _canvasGroupAddedByThis = false;
+            }
+
+            // 초기 alpha = 0 (깜빡임 방지)
+            _canvasGroup.alpha = 0f;
+            _needsShow = true;
+        }
+
+        /// <summary>
+        /// CanvasGroup 정리
+        /// </summary>
+        private void CleanupCanvasGroup()
+        {
+            if (_canvasGroupAddedByThis && _canvasGroup != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_canvasGroup);
+                else
+                    DestroyImmediate(_canvasGroup);
+            }
+            _canvasGroup = null;
+            _canvasGroupAddedByThis = false;
+            _needsShow = false;
+        }
+
+        /// <summary>
         /// 도메인 리로드 등으로 인해 참조가 끊어진 Second Face 오브젝트 정리
         /// </summary>
         private void CleanupOrphanedSecondFace()
@@ -597,6 +656,13 @@ namespace CAT.UI
             // Material 정리
             CleanupMaterial();
 
+            // CanvasGroup 정리는 하지 않음 (다시 활성화 시 재사용)
+            // 단, alpha는 1로 복원
+            if (_canvasGroup != null)
+            {
+                _canvasGroup.alpha = 1f;
+            }
+
             // Second Face는 EnableSecondFace가 true이면 유지
             // (TMPAnimation 등에서 비활성화 상태에서도 Inner Face 필요)
             // OnDestroy()에서 최종 정리
@@ -612,6 +678,7 @@ namespace CAT.UI
         {
             CleanupMaterial();
             DestroySecondFaceObject();
+            CleanupCanvasGroup();
         }
 
 #if UNITY_EDITOR
@@ -695,11 +762,11 @@ namespace CAT.UI
             // Second Face 동기화
             SyncSecondFace();
 
-            // Second Face 표시 (깜빡임 방지 - 메시 초기화 후 표시)
-            if (_secondFaceNeedsShow && _secondFaceCanvasGroup != null)
+            // CanvasGroup 표시 (깜빡임 방지 - 메시 초기화 후 표시)
+            if (_needsShow && _canvasGroup != null)
             {
-                _secondFaceCanvasGroup.alpha = 1f;
-                _secondFaceNeedsShow = false;
+                _canvasGroup.alpha = 1f;
+                _needsShow = false;
             }
 
             // 더티 플래그 초기화
@@ -895,9 +962,6 @@ namespace CAT.UI
             if (!_tmpText) return;
             if (_secondFaceObject) return; // 이미 존재하면 스킵
 
-            // 부모에 CanvasGroup이 있는지 미리 확인 (TMPAnimation 등이 추가한 경우)
-            CanvasGroup parentCanvasGroup = GetComponent<CanvasGroup>();
-
             // 기존에 생성된 [Inner Face] 오브젝트가 있는지 확인 (중복 생성 방지)
             foreach (Transform child in transform)
             {
@@ -907,27 +971,14 @@ namespace CAT.UI
                     _secondFaceText = _secondFaceObject.GetComponent<TextMeshProUGUI>();
                     _secondFaceCurve = _secondFaceObject.GetComponent<TMPCurve>();
 
-                    // 부모에 CanvasGroup이 있으면 자식의 CanvasGroup 제거 (중복 방지)
-                    _secondFaceCanvasGroup = _secondFaceObject.GetComponent<CanvasGroup>();
-
-                    if (parentCanvasGroup != null && _secondFaceCanvasGroup != null)
+                    // 자식에 CanvasGroup이 있으면 제거 (부모에서 관리)
+                    CanvasGroup childCanvasGroup = _secondFaceObject.GetComponent<CanvasGroup>();
+                    if (childCanvasGroup != null)
                     {
-                        // 부모가 처리하므로 자식 CanvasGroup 제거
                         if (Application.isPlaying)
-                            Destroy(_secondFaceCanvasGroup);
+                            Destroy(childCanvasGroup);
                         else
-                            DestroyImmediate(_secondFaceCanvasGroup);
-                        _secondFaceCanvasGroup = null;
-                    }
-                    else if (parentCanvasGroup == null && _secondFaceCanvasGroup == null)
-                    {
-                        // 부모도 없고 자식도 없으면 자식에 추가
-                        _secondFaceCanvasGroup = _secondFaceObject.AddComponent<CanvasGroup>();
-                        _secondFaceCanvasGroup.alpha = 1f;
-                    }
-                    else if (_secondFaceCanvasGroup != null)
-                    {
-                        _secondFaceCanvasGroup.alpha = 1f;  // 이미 존재하면 보이게
+                            DestroyImmediate(childCanvasGroup);
                     }
 
                     UpdateSecondFaceMaterial();
@@ -940,16 +991,7 @@ namespace CAT.UI
             _secondFaceObject.hideFlags = HideFlags.NotEditable | HideFlags.DontSaveInEditor;
             _secondFaceObject.transform.SetParent(transform, false);
 
-            // CanvasGroup 처리 (깜빡임 방지)
-            // 부모에 CanvasGroup이 있으면 자식에 추가하지 않음 (부모의 alpha가 자식에 자동 적용됨)
-            if (parentCanvasGroup == null)
-            {
-                // 부모에 CanvasGroup이 없으면 자식에 추가
-                _secondFaceCanvasGroup = _secondFaceObject.AddComponent<CanvasGroup>();
-                _secondFaceCanvasGroup.alpha = 0f;  // 첫 프레임에서 숨김
-                _secondFaceNeedsShow = true;  // 다음 프레임에서 표시
-            }
-            // 부모에 CanvasGroup이 있으면 (TMPAnimation 등) 부모가 처리하므로 자식에 추가 안함
+            // 자식에는 CanvasGroup을 추가하지 않음 (부모의 CanvasGroup이 자식에 자동 적용됨)
 
             // TextMeshProUGUI 컴포넌트 추가
             _secondFaceText = _secondFaceObject.AddComponent<TextMeshProUGUI>();
@@ -1073,8 +1115,6 @@ namespace CAT.UI
             _secondFaceObject = null;
             _secondFaceText = null;
             _secondFaceCurve = null;
-            _secondFaceCanvasGroup = null;
-            _secondFaceNeedsShow = false;
         }
 
         /// <summary>
