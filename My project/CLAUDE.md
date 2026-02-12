@@ -178,6 +178,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Soft Mask, UI Effect 플러그인 적극 활용
 - 베지어 경로 이동이 필요한 UI는 BezierFollower 사용
 
+### TMP Effect 컴포넌트 개발
+
+**⚠️ 중요: 신규 TMP Effect 컴포넌트 개발 시 반드시 다음 가이드를 참고하세요.**
+
+**개발 가이드:** `Assets/Scripts/TMPEffects/TMP_EFFECT_DEVELOPMENT_GUIDE.md`
+
+이 가이드에는 다음 내용이 포함되어 있습니다:
+- ✅ 신규 컴포넌트 개발 체크리스트 (기본 구조, 자식 오브젝트, TMPAnimation 통합)
+- ✅ 발견된 문제들과 해결 방법 (5가지 주요 이슈)
+- ✅ 테스트 체크리스트
+- ✅ 단계별 개발 순서 (Phase 1~6)
+
+**핵심 체크 포인트:**
+1. **TMPAnimation 통합 (가장 중요!)**: 원본 메시 저장/복원, 4곳 처리 필수
+   - Play() - 초기화 + 원본 메시 저장
+   - TransformCharacterVertices() - 정점 변환
+   - UpdateVertexData() - 2곳 모두
+   - RestoreOriginalMesh() - 원본 복원
+2. **자식 오브젝트 생성**: HideFlags, RectTransform 설정, TMPCurve/TMPAnimation 복사
+3. **에디터**: HasValuesChanged() float 허용 오차 0.001f, 리셋 버튼 프리셋 우선
+4. **Material 관리**: TMPMaterialCache 사용, Static Property ID 캐싱, Direct Assignment
+
+**참고 구현:**
+- `TMPOutlineEffect.cs` - Second Face 패턴
+- `TMPOutGlow.cs` - Inner Glow 패턴
+- `TMPAnimation.cs` - 애니메이션 통합 패턴
+
 ### Git 워크플로우
 
 - **Main Branch**: `main`

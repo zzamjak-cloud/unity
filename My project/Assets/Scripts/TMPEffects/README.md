@@ -17,6 +17,7 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 | 컴포넌트 | 역할 | 처리 방식 |
 |----------|------|-----------|
 | **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
+| **TMPOutGlow** | Glow 효과 (방사형) | Material (GPU) + 자식 오브젝트 |
 | **TMPAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
 | **TMPColorToggle** | 컬러 순환 애니메이션 | 크리스마스 조명 스타일 |
 | **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
@@ -59,6 +60,53 @@ TMP의 **Underlay 시스템**을 활용한 All-in-One 효과 컴포넌트입니�
 #### 4. Face Dilate
 - 텍스트 본체 두께 조절
 - -1 (가늘게) ~ 1 (굵게)
+
+---
+
+### TMPOutGlow - 방사형 Glow 효과 컴포넌트
+
+TMP의 **Underlay 시스템**을 활용한 외곽 Glow 효과입니다. Outline과 달리 **방향성 없는 균일한 빛 번짐** 표현에 최적화되어 있습니다.
+
+#### 1. 외곽 Glow (Material 기반 - GPU)
+- **Glow Color**: RGB 색상 + Alpha 투명도
+- **Glow Range**: 0~1, SDF 확장 크기 (빛 번짐 범위)
+- **고정값**: Offset (0, 0), Softness = 1 (최대 블러)
+- TMP의 **Tint Color RGB에 자동 반영** (Alpha는 독립적)
+- Material 자동 공유로 메모리 최적화
+
+#### 2. Inner Glow (자식 TMP 오브젝트)
+- **내부 빛 효과**: 텍스트 안쪽에서 빛나는 효과
+- **자동 자식 오브젝트**: `[Inner Glow]` 자식 GameObject 자동 생성/관리
+- **완전 동기화**: 부모의 모든 TMP 속성 자동 동기화 (매 프레임)
+  - 텍스트, 폰트, 크기, 스타일, Alignment
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+- **Inner Glow Alpha**: 0~1, 내부 빛 강도 제어 (RGB는 Glow Color 따름)
+- **TMPCurve 대응**: 부모에 TMPCurve가 있으면 자식에도 자동 적용
+- **TMPAnimation 완전 호환**: 원본 메시 저장/복원으로 정확한 애니메이션
+
+#### 3. Face Dilate
+- 텍스트 본체 두께 조절
+- -1 (가늘게) ~ 1 (굵게)
+- Glow와 독립적으로 조절 가능
+
+#### 4. Material 자동 공유
+- TMPMaterialCache 사용으로 90-95% 메모리 절감
+- 같은 Glow 설정 = Material 1개만 생성
+- FNV-1a 해시 알고리즘으로 충돌 최소화
+
+#### 5. 주요 특징
+- **색상 자동 동기화**: Glow Color RGB → TMP Tint RGB (알파 유지)
+- **항상 활성화**: Inner Glow, Face 기능 항상 사용 가능 (체크박스 없음)
+- **모바일 최적화**: GPU 기반 + Material 공유 + BitMask dirty checking
+- **프리셋 시스템**: TMPEffectPreset 재사용
+
+#### 6. 사용 시나리오
+- **타이틀/강조 텍스트**: 강렬한 외곽 빛 효과로 시선 집중
+- **마법/판타지 UI**: 마법진, 스킬명 등 신비로운 느낌
+- **네온 사인**: 밝은 색상 Glow로 네온 효과
+- **Inner Glow 활용**: 텍스트 안쪽에서 빛나는 이중 효과
 
 ## 🎯 사용법
 
@@ -211,7 +259,7 @@ void Start()
 }
 ```
 
-#### 프리셋 사용
+#### 프리셋 사용 (TMPOutlineEffect)
 
 ```csharp
 void Start()
@@ -223,6 +271,118 @@ void Start()
     var preset = Resources.Load<TMPEffectPreset>("Presets/TitleOutline");
     effect.ApplyPreset(preset);
 }
+```
+
+---
+
+### TMPOutGlow 사용법
+
+#### 기본 Glow 효과
+
+```csharp
+using CAT.UI;
+using TMPro;
+using UnityEngine;
+
+public class GlowExample : MonoBehaviour
+{
+    void Start()
+    {
+        var tmpText = GetComponent<TextMeshProUGUI>();
+        var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+        // 방법 1: 직접 설정
+        glow.GlowColor = new Color(1f, 0.8f, 0f, 0.5f);  // 황금색 Glow
+        glow.GlowRange = 0.3f;  // 빛 번짐 범위
+        glow.InnerGlowAlpha = 1f;  // Inner Glow 강도
+        glow.FaceDilate = 0f;  // 텍스트 굵기 (기본)
+
+        // 방법 2: 편의 메서드 사용
+        glow.SetGlow(new Color(1f, 0.8f, 0f, 0.5f), 0.3f);
+    }
+}
+```
+
+#### 네온 사인 효과
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // 밝은 청록색 네온
+    glow.GlowColor = new Color(0f, 1f, 1f, 0.8f);
+    glow.GlowRange = 0.4f;
+    glow.InnerGlowAlpha = 0.6f;
+    glow.FaceDilate = 0.1f;  // 살짝 굵게
+}
+```
+
+#### Inner Glow 제어
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // 외곽: 강한 노란색 Glow
+    glow.GlowColor = Color.yellow;
+    glow.GlowRange = 0.5f;
+
+    // 내부: 약한 빛 (Inner Glow Alpha로 제어)
+    glow.InnerGlowAlpha = 0.3f;  // RGB는 Glow Color 따름
+}
+```
+
+#### 프리셋 사용
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // ScriptableObject 프리셋 로드
+    var preset = Resources.Load<TMPEffectPreset>("Presets/MagicGlow");
+    glow.ApplyPreset(preset);
+}
+```
+
+#### TMPAnimation과 함께 사용
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+
+    // Glow 효과 추가
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+    glow.GlowColor = new Color(1f, 0.5f, 0f, 0.7f);
+    glow.GlowRange = 0.4f;
+
+    // 애니메이션 추가
+    var anim = tmpText.gameObject.AddComponent<TMPAnimation>();
+    anim.Play();  // 메인 텍스트와 Inner Glow 모두 애니메이션됨
+}
+```
+
+### TMPOutGlow 속성
+
+```csharp
+// Glow Settings
+glow.GlowColor = Color.yellow;      // Color (RGB + Alpha)
+glow.GlowRange = 0.3f;              // Range (0 ~ 1, 빛 번짐 범위)
+glow.InnerGlowAlpha = 1f;           // Inner Glow Alpha (0 ~ 1)
+glow.FaceDilate = 0f;               // Dilate (-1 ~ 1, 텍스트 굵기)
+
+// 편의 메서드
+glow.SetGlow(Color.yellow, 0.3f);
+glow.ResetEffect();                 // 기본값으로 초기화
+
+// Inner Glow 텍스트 접근 (고급)
+TextMeshProUGUI innerGlowText = glow.GetInnerGlowText();
 ```
 
 #### Second Face 효과 (v2.3.0+)
@@ -311,11 +471,17 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 - **비트 패턴 기반**: Color32 + float 정확한 비교
 - **성능**: 기존 GetHashCode() 대비 3배 빠름
 
-### Underlay (GPU 기반)
+### Underlay (GPU 기반) - TMPOutlineEffect, TMPOutGlow
 - **렌더링**: GPU 셰이더 처리
 - **메모리**: Material 자동 공유 (같은 설정 = 1개)
 - **Draw Call**: Material당 1개 (배칭 가능)
 - **CPU**: 거의 없음 (Property 설정만)
+
+### Inner Glow (자식 오브젝트) - TMPOutGlow
+- **렌더링**: 별도 TMP 오브젝트 (추가 Draw Call)
+- **메모리**: 자식 오브젝트 + Material (부모와 독립적)
+- **CPU**: 매 프레임 TMP 속성 동기화 (텍스트 변경 시)
+- **최적화**: 더티 체크로 변경 시에만 업데이트
 
 ### Shadow (CPU 기반, 선택적)
 - **렌더링**: 정점 2배 (원본 + 그림자)
@@ -380,7 +546,28 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 - 일반 UI 텍스트는 Underlay만 사용
 - Second Face는 자식 오브젝트 생성으로 약간의 오버헤드 발생
 
-### 6. Editor 성능
+### 6. TMPOutGlow 사용 시 고려사항 (v2.9.0+)
+**Inner Glow는 자식 TMP 오브젝트를 생성합니다**:
+- `[Inner Glow]` 자식 GameObject가 Hierarchy에 생성됨
+- HideFlags.NotEditable | HideFlags.DontSaveInEditor로 설정
+- 자식은 부모의 모든 설정을 자동 동기화 (텍스트 변경 시)
+
+**TMPAnimation과 함께 사용 시**:
+- ✅ Inner Glow도 자동으로 애니메이션됨
+- ✅ 원본 메시 저장/복원으로 정확한 위치/크기 유지
+- ✅ Editor 테스트 후에도 완벽하게 복원
+
+**권장 사용**:
+- 타이틀/강조 텍스트에 사용 (화면당 5-10개)
+- 일반 UI 텍스트는 TMPOutlineEffect 사용
+- Inner Glow는 자식 오브젝트 생성으로 약간의 오버헤드 발생
+
+**색상 자동 동기화**:
+- Glow Color의 RGB가 TMP Tint Color에 자동 반영
+- TMP Tint의 Alpha는 독립적으로 유지
+- Inner Glow는 Glow Color RGB + 별도 Alpha 제어
+
+### 7. Editor 성능
 **문제**: ExecuteAlways로 Edit 모드에서도 실행됩니다.
 
 **해결**:
@@ -416,22 +603,27 @@ Assets/Scripts/TMPEffects/
 ├── ITMPEffectSettings.cs           # 설정 인터페이스
 ├── TMPMaterialCache.cs             # Material 공유 시스템
 ├── TMPEffectManager.cs             # Manager (래퍼)
+├── TMPEffectUtility.cs             # 유틸리티 함수 (v2.8.0+)
 ├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
+├── TMPOutGlow.cs                   # Glow 효과 컴포넌트 (v2.9.0+)
 ├── TMPEffectPreset.cs              # ScriptableObject 프리셋
 ├── TMPEffectCategorySettings.cs    # 카테고리 설정 (v2.4.0+)
-├── TMPAnimation.cs        # 글자별 애니메이션 컴포넌트 (v2.5.0+)
-├── TMPAnimationPreset.cs  # 애니메이션 프리셋 (v2.5.0+)
+├── TMPAnimation.cs                 # 글자별 애니메이션 컴포넌트 (v2.5.0+)
+├── TMPAnimationPreset.cs           # 애니메이션 프리셋 (v2.5.0+)
 ├── TMPColorToggle.cs               # 컬러 순환 애니메이션 컴포넌트 (v2.7.0+)
 ├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
 ├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
 ├── Editor/
 │   ├── TMPOutlineEffectEditor.cs   # Outline 커스텀 인스펙터
-│   ├── TMPAnimationEditor.cs  # 애니메이션 커스텀 인스펙터
+│   ├── TMPOutGlowEditor.cs         # Glow 커스텀 인스펙터 (v2.9.0+)
+│   ├── TMPAnimationEditor.cs       # 애니메이션 커스텀 인스펙터
 │   ├── TMPColorToggleEditor.cs     # 컬러 토글 커스텀 인스펙터 (v2.7.0+)
+│   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가 (v2.9.0+)
 │   └── EditorInputDialog.cs        # 입력 다이얼로그 (v2.4.0+)
 ├── Examples/
 │   └── TMPEffectExample.cs         # 사용 예제
-└── README.md                        # 문서
+├── README.md                        # 문서
+└── TMP_EFFECT_DEVELOPMENT_GUIDE.md # 개발 가이드 (v2.9.0+)
 ```
 
 ## 🎨 예제 조합
@@ -863,6 +1055,39 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 
 ## 📈 변경 이력
 
+### v2.9.0 (2026-02-12)
+**TMPOutGlow 컴포넌트 추가**
+- ✅ TMPOutGlow 컴포넌트 추가 (방사형 Glow 효과)
+  - TMP Underlay 기반 외곽 Glow (Offset 0, 0 고정)
+  - Glow Color RGB가 TMP Tint Color에 자동 반영
+  - Glow Range (0~1), Softness = 1 (최대 블러) 고정
+  - Face Dilate 독립 제어 (항상 활성화)
+- ✅ Inner Glow 자식 오브젝트
+  - `[Inner Glow]` 자식 TMP 오브젝트 자동 생성/관리
+  - 부모의 모든 TMP 속성 완전 동기화
+  - Inner Glow Alpha로 내부 빛 강도 제어 (RGB는 Glow Color 따름)
+  - HideFlags.NotEditable | HideFlags.DontSaveInEditor
+- ✅ TMPAnimation 완전 호환
+  - Inner Glow 원본 메시 저장/복원 (_originalVerticesInnerGlow)
+  - TransformCharacterVerticesInnerGlow() 전용 메서드
+  - Editor 테스트 후 완벽한 위치/크기 복원
+  - ForceUpdateInnerGlow() + RectTransform 강제 리셋
+- ✅ TMPCurve 자동 대응
+  - 부모에 TMPCurve가 있으면 Inner Glow에도 자동 적용
+- ✅ Material 자동 공유
+  - TMPMaterialCache 사용으로 90-95% 메모리 절감
+  - FNV-1a 해시 기반 Material 공유
+- ✅ 프리셋 시스템 통합
+  - TMPEffectPreset 재사용
+  - 커스텀 에디터 (리셋 버튼, 값 변경 감지)
+- ✅ TMPAnimationComponentHandler 추가
+  - TMPAnimation 컴포넌트 추가 시 CanvasGroup 자동 추가
+  - ObjectChangeEvents 기반 실시간 감지
+- 🐛 버그 수정
+  - 리셋 버튼이 프리셋 값 사용하도록 수정
+  - HasValuesChanged() float 비교 허용 오차 개선 (0.001f)
+  - Editor 테스트 후 Inner Glow 위치/크기 복원 문제 해결
+
 ### v2.8.0 (2026-02-12)
 **성능 최적화 및 코드 리팩토링**
 - ✅ Debug.Log 완전 제거 (최고 성능)
@@ -1032,6 +1257,6 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 
 ---
 
-**버전**: 2.7.0
+**버전**: 2.9.0
 **최종 수정**: 2026-02-12
 **작성자**: Claude Code (with Unity TMP Underlay system)

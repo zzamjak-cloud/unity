@@ -178,6 +178,19 @@ namespace CAT.UI
         }
 
         /// <summary>
+        /// 프리셋 설정을 TMPOutGlow에 적용
+        /// </summary>
+        public void ApplyTo(TMPOutGlow glow)
+        {
+            if (glow == null) return;
+
+            // Glow는 Underlay 파라미터만 사용 (Offset은 0 고정, Intensity는 1f 고정, Face는 항상 활성화)
+            glow.GlowColor = _underlayColor;
+            glow.GlowRange = _underlayDilate;
+            glow.FaceDilate = _faceDilate;
+        }
+
+        /// <summary>
         /// TMPOutlineEffect 설정을 프리셋으로 복사
         /// </summary>
         public void CopyFrom(TMPOutlineEffect effect)
@@ -201,6 +214,31 @@ namespace CAT.UI
             _secondFaceDilate = effect.SecondFaceDilate;
             _secondFaceOffsetX = effect.SecondFaceOffsetX;
             _secondFaceOffsetY = effect.SecondFaceOffsetY;
+
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
+
+        /// <summary>
+        /// TMPOutGlow 설정을 프리셋으로 복사
+        /// </summary>
+        public void CopyFrom(TMPOutGlow glow)
+        {
+            if (glow == null) return;
+
+            // Glow 파라미터 → Underlay 파라미터로 매핑
+            _underlayColor = glow.GlowColor;
+            _underlayDilate = glow.GlowRange;
+            _underlaySoftness = 1f;  // Glow Intensity는 1f 고정
+            _underlayOffsetX = 0f;  // Glow는 Offset 0 고정
+            _underlayOffsetY = 0f;
+            _enableFace = true;  // Face는 항상 활성화
+            _faceDilate = glow.FaceDilate;
+
+            // Glow에서 사용하지 않는 기능은 기본값으로
+            _enableShadow = false;
+            _enableSecondFace = false;
 
 #if UNITY_EDITOR
             UnityEditor.EditorUtility.SetDirty(this);

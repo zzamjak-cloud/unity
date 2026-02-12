@@ -213,8 +213,10 @@ namespace CAT.UI
         private Vector3[] _originalPositions;
         private Vector3[][] _originalVertices;
         private Vector3[][] _originalVerticesSecondFace;
+        private Vector3[][] _originalVerticesInnerGlow;  // InnerGlow 원본 정점
         private Color32[][] _originalColors;
         private Color32[][] _originalColorsSecondFace;
+        private Color32[][] _originalColorsInnerGlow;  // InnerGlow 원본 색상
         private bool _isPlaying = false;
         private bool _isPlayingInProgress = false;
         private bool _hasStarted = false;
@@ -390,8 +392,10 @@ namespace CAT.UI
             _originalPositions = null;
             _originalVertices = null;
             _originalVerticesSecondFace = null;
+            _originalVerticesInnerGlow = null;
             _originalColors = null;
             _originalColorsSecondFace = null;
+            _originalColorsInnerGlow = null;
             _currentCharPos = null;
             _currentCharScale = null;
             _currentCharRot = null;
@@ -481,6 +485,17 @@ namespace CAT.UI
                     TransformCharacterVerticesInternal(secondFaceText, charIndex, position, scale, rotation, alpha, true);
                 }
             }
+
+            // Inner Glow도 변환 (InnerGlow 전용 원본 데이터 사용)
+            var glowEffect = GetComponent<TMPOutGlow>();
+            if (glowEffect != null)
+            {
+                var innerGlowText = glowEffect.GetInnerGlowText();
+                if (innerGlowText != null)
+                {
+                    TransformCharacterVerticesInnerGlow(innerGlowText, charIndex, position, scale, rotation, alpha);
+                }
+            }
         }
 
         private void TransformCharacterVerticesInternal(TMP_Text tmpText, int charIndex,
@@ -525,6 +540,59 @@ namespace CAT.UI
                 if (idx < originalColors[materialIndex].Length)
                 {
                     Color32 originalColor = originalColors[materialIndex][idx];
+                    Color32 c = colors[idx];
+                    c.r = originalColor.r;
+                    c.g = originalColor.g;
+                    c.b = originalColor.b;
+                    c.a = (byte)(originalColor.a * alpha);
+                    colors[idx] = c;
+                }
+            }
+        }
+
+        /// <summary>
+        /// InnerGlow 전용 문자 정점 변환 (InnerGlow 원본 데이터 사용)
+        /// </summary>
+        private void TransformCharacterVerticesInnerGlow(TMP_Text tmpText, int charIndex,
+            Vector3 position, Vector3 scale, Vector3 rotation, float alpha)
+        {
+            if (tmpText == null) return;
+
+            var charInfo = tmpText.textInfo.characterInfo[charIndex];
+            if (!charInfo.isVisible) return;
+
+            int vertexIndex = charInfo.vertexIndex;
+            int materialIndex = charInfo.materialReferenceIndex;
+            Vector3[] vertices = tmpText.textInfo.meshInfo[materialIndex].vertices;
+            Color32[] colors = tmpText.textInfo.meshInfo[materialIndex].colors32;
+
+            Quaternion rot = Quaternion.Euler(rotation);
+
+            // InnerGlow 전용 원본 데이터 사용
+            if (_originalVerticesInnerGlow == null || materialIndex >= _originalVerticesInnerGlow.Length) return;
+            if (_originalVerticesInnerGlow[materialIndex] == null) return;
+            if (_originalColorsInnerGlow == null || materialIndex >= _originalColorsInnerGlow.Length) return;
+            if (_originalColorsInnerGlow[materialIndex] == null) return;
+
+            Vector3 center = new Vector3(
+                (_originalVerticesInnerGlow[materialIndex][vertexIndex].x + _originalVerticesInnerGlow[materialIndex][vertexIndex + 2].x) / 2f,
+                charInfo.baseLine,
+                0f
+            );
+
+            for (int i = 0; i < 4; i++)
+            {
+                int idx = vertexIndex + i;
+                Vector3 v = _originalVerticesInnerGlow[materialIndex][idx] - center;
+
+                if (rotation != Vector3.zero) v = rot * v;
+                v = Vector3.Scale(v, scale);
+                v += position;
+                vertices[idx] = v + center;
+
+                if (idx < _originalColorsInnerGlow[materialIndex].Length)
+                {
+                    Color32 originalColor = _originalColorsInnerGlow[materialIndex][idx];
                     Color32 c = colors[idx];
                     c.r = originalColor.r;
                     c.g = originalColor.g;
@@ -785,6 +853,17 @@ namespace CAT.UI
                     if (outlineEffect.EnableShadow)
                     {
                         ApplyShadowMesh(_tmpText, outlineEffect);
+                    }
+                }
+
+                // Inner Glow 처리
+                var glowEffect = GetComponent<TMPOutGlow>();
+                if (glowEffect != null)
+                {
+                    var innerGlowText = glowEffect.GetInnerGlowText();
+                    if (innerGlowText != null)
+                    {
+                        innerGlowText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
                     }
                 }
             }, 1f, duration);
@@ -1074,6 +1153,17 @@ namespace CAT.UI
                     secondFaceText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
                 }
             }
+
+            // Inner Glow도 업데이트
+            var glowEffect = GetComponent<TMPOutGlow>();
+            if (glowEffect != null)
+            {
+                var innerGlowText = glowEffect.GetInnerGlowText();
+                if (innerGlowText != null)
+                {
+                    innerGlowText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
+                }
+            }
         }
 
         private void KillAllSequences()
@@ -1117,6 +1207,13 @@ namespace CAT.UI
                 }
 
                 _tmpText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
+            }
+
+            // CanvasGroup alpha 리셋 (Editor 테스트 후 잔상 방지)
+            CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
+            if (canvasGroup != null)
+            {
+                canvasGroup.alpha = 1f;
             }
 
             // TMP의 원본 렌더링 복원
@@ -1171,7 +1268,84 @@ namespace CAT.UI
                         {
                             canvasRenderer.SetMesh(secondFaceUGUI.mesh);
                         }
+
+                        // SecondFace의 TMPAnimation도 Stop (자식 애니메이션 정지)
+                        TMPAnimation secondFaceAnimation = secondFaceUGUI.GetComponent<TMPAnimation>();
+                        if (secondFaceAnimation != null)
+                        {
+                            secondFaceAnimation.Stop();
+                        }
+
+                        // SecondFace의 CanvasGroup alpha도 리셋
+                        CanvasGroup secondFaceCanvasGroup = secondFaceUGUI.GetComponent<CanvasGroup>();
+                        if (secondFaceCanvasGroup != null)
+                        {
+                            secondFaceCanvasGroup.alpha = 1f;
+                        }
                     }
+                }
+            }
+
+            // InnerGlow도 복원 (TMPOutGlow 컴포넌트가 있는 경우)
+            var glowEffect = GetComponent<TMPOutGlow>();
+            if (glowEffect != null)
+            {
+                var innerGlowText = glowEffect.GetInnerGlowText();
+                if (innerGlowText != null)
+                {
+                    // InnerGlow 원본 정점과 색상 복원
+                    if (_originalVerticesInnerGlow != null && _originalColorsInnerGlow != null)
+                    {
+                        for (int i = 0; i < innerGlowText.textInfo.meshInfo.Length; i++)
+                        {
+                            if (i < _originalVerticesInnerGlow.Length && _originalVerticesInnerGlow[i] != null)
+                            {
+                                var vertices = innerGlowText.textInfo.meshInfo[i].vertices;
+                                for (int j = 0; j < vertices.Length && j < _originalVerticesInnerGlow[i].Length; j++)
+                                {
+                                    vertices[j] = _originalVerticesInnerGlow[i][j];
+                                }
+                            }
+
+                            if (i < _originalColorsInnerGlow.Length && _originalColorsInnerGlow[i] != null)
+                            {
+                                var colors = innerGlowText.textInfo.meshInfo[i].colors32;
+                                for (int j = 0; j < colors.Length && j < _originalColorsInnerGlow[i].Length; j++)
+                                {
+                                    colors[j] = _originalColorsInnerGlow[i][j];
+                                }
+                            }
+                        }
+
+                        innerGlowText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
+                    }
+
+                    var innerGlowUGUI = innerGlowText as TextMeshProUGUI;
+                    if (innerGlowUGUI != null)
+                    {
+                        var canvasRenderer = innerGlowUGUI.canvasRenderer;
+                        if (canvasRenderer != null && innerGlowUGUI.mesh != null)
+                        {
+                            canvasRenderer.SetMesh(innerGlowUGUI.mesh);
+                        }
+
+                        // InnerGlow의 TMPAnimation도 Stop (자식 애니메이션 정지)
+                        TMPAnimation innerGlowAnimation = innerGlowUGUI.GetComponent<TMPAnimation>();
+                        if (innerGlowAnimation != null)
+                        {
+                            innerGlowAnimation.Stop();
+                        }
+
+                        // InnerGlow의 CanvasGroup alpha 리셋
+                        CanvasGroup innerGlowCanvasGroup = innerGlowUGUI.GetComponent<CanvasGroup>();
+                        if (innerGlowCanvasGroup != null)
+                        {
+                            innerGlowCanvasGroup.alpha = 1f;
+                        }
+                    }
+
+                    // InnerGlow 메시를 강제로 동기화 및 업데이트 (Editor 테스트 후 완전 복원)
+                    glowEffect.ForceUpdateInnerGlow();
                 }
             }
         }
@@ -1215,6 +1389,25 @@ namespace CAT.UI
                     secondFaceText.ForceMeshUpdate();
                     Canvas.ForceUpdateCanvases();
 
+                }
+            }
+
+            // Inner Glow도 동기화 (TMPOutGlow가 있는 경우)
+            var glowEffect = GetComponent<TMPOutGlow>();
+            TMP_Text innerGlowText = null;
+            if (glowEffect != null)
+            {
+                innerGlowText = glowEffect.GetInnerGlowText();
+                if (innerGlowText != null)
+                {
+                    // 텍스트 내용 동기화
+                    if (innerGlowText.text != _tmpText.text)
+                    {
+                        innerGlowText.text = _tmpText.text;
+                    }
+                    innerGlowText.SetVerticesDirty();
+                    innerGlowText.ForceMeshUpdate();
+                    Canvas.ForceUpdateCanvases();
                 }
             }
 
@@ -1286,6 +1479,32 @@ namespace CAT.UI
                     for (int j = 0; j < colors.Length; j++)
                     {
                         _originalColorsSecondFace[i][j] = colors[j];
+                    }
+                }
+            }
+
+            // InnerGlow 원본 메시 저장
+            if (innerGlowText != null)
+            {
+                _originalVerticesInnerGlow = new Vector3[innerGlowText.textInfo.meshInfo.Length][];
+                for (int i = 0; i < innerGlowText.textInfo.meshInfo.Length; i++)
+                {
+                    Vector3[] vertices = innerGlowText.textInfo.meshInfo[i].vertices;
+                    _originalVerticesInnerGlow[i] = new Vector3[vertices.Length];
+                    for (int j = 0; j < vertices.Length; j++)
+                    {
+                        _originalVerticesInnerGlow[i][j] = vertices[j];
+                    }
+                }
+
+                _originalColorsInnerGlow = new Color32[innerGlowText.textInfo.meshInfo.Length][];
+                for (int i = 0; i < innerGlowText.textInfo.meshInfo.Length; i++)
+                {
+                    Color32[] colors = innerGlowText.textInfo.meshInfo[i].colors32;
+                    _originalColorsInnerGlow[i] = new Color32[colors.Length];
+                    for (int j = 0; j < colors.Length; j++)
+                    {
+                        _originalColorsInnerGlow[i][j] = colors[j];
                     }
                 }
             }
