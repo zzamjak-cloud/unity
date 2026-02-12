@@ -598,32 +598,34 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 ## 🔧 구조
 
 ```
-Assets/Scripts/TMPEffects/
-├── TMPEffect.cs                    # 베이스 클래스
-├── ITMPEffectSettings.cs           # 설정 인터페이스
-├── TMPMaterialCache.cs             # Material 공유 시스템
-├── TMPEffectManager.cs             # Manager (래퍼)
-├── TMPEffectUtility.cs             # 유틸리티 함수 (v2.8.0+)
-├── TMPOutlineEffect.cs             # Outline/Shadow 효과 컴포넌트
-├── TMPOutGlow.cs                   # Glow 효과 컴포넌트 (v2.9.0+)
-├── TMPEffectPreset.cs              # ScriptableObject 프리셋
-├── TMPEffectCategorySettings.cs    # 카테고리 설정 (v2.4.0+)
-├── TMPAnimation.cs                 # 글자별 애니메이션 컴포넌트 (v2.5.0+)
-├── TMPAnimationPreset.cs           # 애니메이션 프리셋 (v2.5.0+)
-├── TMPColorToggle.cs               # 컬러 순환 애니메이션 컴포넌트 (v2.7.0+)
-├── TMPCurve.cs                     # 텍스트 곡선 변형 컴포넌트
-├── TMPLayoutLimiter.cs             # 레이아웃 크기 제한 컴포넌트
-├── Editor/
-│   ├── TMPOutlineEffectEditor.cs   # Outline 커스텀 인스펙터
-│   ├── TMPOutGlowEditor.cs         # Glow 커스텀 인스펙터 (v2.9.0+)
-│   ├── TMPAnimationEditor.cs       # 애니메이션 커스텀 인스펙터
-│   ├── TMPColorToggleEditor.cs     # 컬러 토글 커스텀 인스펙터 (v2.7.0+)
-│   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가 (v2.9.0+)
-│   └── EditorInputDialog.cs        # 입력 다이얼로그 (v2.4.0+)
-├── Examples/
-│   └── TMPEffectExample.cs         # 사용 예제
-├── README.md                        # 문서
-└── TMP_EFFECT_DEVELOPMENT_GUIDE.md # 개발 가이드 (v2.9.0+)
+Assets/TMPEffects/                   # 루트 폴더 (v2.10.0+)
+├── Script/                          # 스크립트 폴더
+│   ├── TMPEffect.cs                 # 베이스 클래스
+│   ├── ITMPEffectSettings.cs        # 설정 인터페이스
+│   ├── TMPMaterialCache.cs          # Material 공유 시스템
+│   ├── TMPEffectManager.cs          # Manager (래퍼)
+│   ├── TMPEffectUtility.cs          # 유틸리티 함수
+│   ├── TMPOutlineEffect.cs          # Outline/Shadow 효과 컴포넌트
+│   ├── TMPOutGlow.cs                # Glow 효과 컴포넌트
+│   ├── TMPEffectPreset.cs           # ScriptableObject 프리셋
+│   ├── TMPEffectCategorySettings.cs # 카테고리 설정
+│   ├── TMPAnimation.cs              # 글자별 애니메이션 컴포넌트
+│   ├── TMPAnimationPreset.cs        # 애니메이션 프리셋
+│   ├── TMPColorToggle.cs            # 컬러 순환 애니메이션 컴포넌트
+│   ├── TMPCurve.cs                  # 텍스트 곡선 변형 컴포넌트
+│   ├── TMPLayoutLimiter.cs          # 레이아웃 크기 제한 컴포넌트
+│   └── TMP_EFFECT_DEVELOPMENT_GUIDE.md  # 개발 가이드
+├── Editor/                          # 에디터 스크립트 폴더
+│   ├── TMPOutlineEffectEditor.cs    # Outline 커스텀 인스펙터
+│   ├── TMPOutGlowEditor.cs          # Glow 커스텀 인스펙터
+│   ├── TMPAnimationEditor.cs        # 애니메이션 커스텀 인스펙터
+│   ├── TMPColorToggleEditor.cs      # 컬러 토글 커스텀 인스펙터
+│   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가
+│   └── EditorInputDialog.cs         # 입력 다이얼로그
+├── Resources/                       # 프리셋 리소스 폴더
+│   ├── AnimationPresets/            # 애니메이션 프리셋 (.asset)
+│   └── EffectPresets/               # 효과 프리셋 (.asset)
+└── README.md                        # 문서
 ```
 
 ## 🎨 예제 조합
