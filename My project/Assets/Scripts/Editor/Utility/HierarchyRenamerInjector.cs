@@ -10,13 +10,20 @@ namespace CAT.Utility
     // 하이어라키 창 하단에 UI를 주입하여 선택된 오브젝트의 이름을 변경합니다.
     public static class HierarchyRenamerInjector
     {
+        private const string PREF_KEY_FOLDED = "HierarchyRenamer_IsFolded";
+        private const float EXPANDED_HEIGHT = 50f;
+        private const float FOLDED_HEIGHT = 18f;
+
         private static string inputText = "";
         private static string replaceText = "";
         private static int numberPadding = 2;
+        private static bool _isFolded;
+        private static VisualElement _parentContainer;
 
         [InitializeOnLoadMethod]
         private static void Initialize()
         {
+            _isFolded = EditorPrefs.GetBool(PREF_KEY_FOLDED, false);
             EditorApplication.delayCall += InjectUI;
         }
 
@@ -32,7 +39,7 @@ namespace CAT.Utility
 
             if (rawRoot.Q<VisualElement>("HierarchyRenamerContainer") != null) return;
 
-            var parentContainer = new VisualElement
+            _parentContainer = new VisualElement
             {
                 name = "HierarchyRenamerContainer",
                 style =
@@ -41,24 +48,38 @@ namespace CAT.Utility
                     bottom = 5f,
                     left = 33f,
                     right = 5f,
-                    height = 50f,
+                    height = _isFolded ? FOLDED_HEIGHT : EXPANDED_HEIGHT,
                     flexDirection = FlexDirection.Column
                 }
             };
 
-            parentContainer.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f));
-            parentContainer.style.borderTopWidth = 1;
-            parentContainer.style.borderTopColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+            _parentContainer.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f));
+            _parentContainer.style.borderTopWidth = 1;
+            _parentContainer.style.borderTopColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
 
             var imguiContainer = new IMGUIContainer(OnInjectedGUI);
             imguiContainer.style.flexGrow = 1;
 
-            parentContainer.Add(imguiContainer);
-            rawRoot.Add(parentContainer);
+            _parentContainer.Add(imguiContainer);
+            rawRoot.Add(_parentContainer);
         }
 
         private static void OnInjectedGUI()
         {
+            if (_isFolded)
+            {
+                // 접힌 상태: 펼치기 버튼만 표시
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("▲ Renamer", GUILayout.Width(80), GUILayout.Height(16)))
+                {
+                    SetFolded(false);
+                }
+                EditorGUILayout.EndHorizontal();
+                return;
+            }
+
+            // 펼쳐진 상태: 기존 UI + 접기 버튼
             EditorGUILayout.Space(2);
 
             EditorGUILayout.BeginHorizontal();
@@ -76,7 +97,22 @@ namespace CAT.Utility
             if (GUILayout.Button("_T", GUILayout.Height(20))) { RenameObjects(RenameAction.Suffix); }
             if (GUILayout.Button("Num", GUILayout.Height(20))) { RenameObjects(RenameAction.Number); }
             numberPadding = EditorGUILayout.IntField(numberPadding, GUILayout.Height(20), GUILayout.Width(30));
+            if (GUILayout.Button("▼", GUILayout.Width(22), GUILayout.Height(20)))
+            {
+                SetFolded(true);
+            }
             EditorGUILayout.EndHorizontal();
+        }
+
+        private static void SetFolded(bool folded)
+        {
+            _isFolded = folded;
+            EditorPrefs.SetBool(PREF_KEY_FOLDED, _isFolded);
+
+            if (_parentContainer != null)
+            {
+                _parentContainer.style.height = _isFolded ? FOLDED_HEIGHT : EXPANDED_HEIGHT;
+            }
         }
 
         private enum RenameAction { Sort, Rename, Replace, Prefix, Suffix, Number }
