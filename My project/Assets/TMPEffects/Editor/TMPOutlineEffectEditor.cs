@@ -9,7 +9,7 @@ namespace CAT.UI
     {
         // EditorPrefs 키
         private const string PREF_PRESET_FOLDER = "TMPOutlineEffect_PresetFolder";
-        private const string DEFAULT_PRESET_FOLDER = "Assets";
+        private const string DEFAULT_PRESET_FOLDER = "Assets/TMPEffects/Presets/Outline";
 
         // 다음 프레임에 실행할 액션 (GUI 에러 방지)
         private System.Action _delayedAction;

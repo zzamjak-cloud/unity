@@ -9,7 +9,7 @@ namespace CAT.UI
     {
         // EditorPrefs 키
         private const string PREF_PRESET_FOLDER = "TMPAnimation_PresetFolder";
-        private const string DEFAULT_PRESET_FOLDER = "Assets";
+        private const string DEFAULT_PRESET_FOLDER = "Assets/TMPEffects/Presets/Animation";
 
         // 타겟 및 상태
         private TMPAnimation _target;
