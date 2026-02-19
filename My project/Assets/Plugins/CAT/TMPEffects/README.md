@@ -590,7 +590,7 @@ Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
 ## 🔧 구조
 
 ```
-Assets/TMPEffects/                   # 루트 폴더 (v2.10.0+)
+TMPEffects/                          # 루트 폴더 (어디에 위치하든 동작)
 ├── Script/                          # 스크립트 폴더
 │   ├── TMPEffect.cs                 # 베이스 클래스
 │   ├── ITMPEffectSettings.cs        # 설정 인터페이스
@@ -600,7 +600,6 @@ Assets/TMPEffects/                   # 루트 폴더 (v2.10.0+)
 │   ├── TMPOutlineEffect.cs          # Outline/Shadow 효과 컴포넌트
 │   ├── TMPOutGlow.cs                # Glow 효과 컴포넌트
 │   ├── TMPEffectPreset.cs           # ScriptableObject 프리셋
-│   ├── TMPEffectCategorySettings.cs # 카테고리 설정
 │   ├── TMPAnimation.cs              # 글자별 애니메이션 컴포넌트
 │   ├── TMPAnimationPreset.cs        # 애니메이션 프리셋
 │   ├── TMPColorToggle.cs            # 컬러 순환 애니메이션 컴포넌트
@@ -614,11 +613,16 @@ Assets/TMPEffects/                   # 루트 폴더 (v2.10.0+)
 │   ├── TMPColorToggleEditor.cs      # 컬러 토글 커스텀 인스펙터
 │   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가
 │   └── EditorInputDialog.cs         # 입력 다이얼로그
-├── Resources/                       # 프리셋 리소스 폴더
-│   ├── AnimationPresets/            # 애니메이션 프리셋 (.asset)
-│   └── EffectPresets/               # 효과 프리셋 (.asset)
+├── Presets/                         # 프리셋 저장 폴더 (기본 저장 경로)
+│   ├── Animation/                   # 애니메이션 프리셋 (.asset)
+│   ├── Glow/                        # Glow 프리셋 (.asset)
+│   └── Outline/                     # Outline 프리셋 (.asset)
 └── README.md                        # 문서
 ```
+
+> **📌 기본 저장 폴더**: 각 에디터(TMPOutlineEffectEditor, TMPOutGlowEditor, TMPAnimationEditor)는
+> 자신의 스크립트 파일 위치를 기준으로 `Presets/Outline`, `Presets/Glow`, `Presets/Animation` 폴더를
+> 자동으로 계산합니다. TMPEffects 폴더를 프로젝트 내 어디로 이동해도 기본 저장 경로가 유지됩니다.
 
 ## 🎨 예제 조합
 
@@ -1049,6 +1053,18 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 
 ## 📈 변경 이력
 
+### v2.13.0 (2026-02-19)
+**프리셋 기본 저장 폴더 상대 경로화**
+- ✅ 에디터 스크립트 위치 기반 동적 경로 계산
+  - TMPOutlineEffectEditor: `AssetDatabase.FindAssets("t:Script TMPOutlineEffectEditor")`로 스크립트 위치 탐지
+  - TMPOutGlowEditor, TMPAnimationEditor 동일 적용
+  - `/Editor/` 폴더 위치를 기준으로 `Presets/Outline`, `Presets/Glow`, `Presets/Animation` 자동 계산
+- ✅ TMPEffects 폴더 이동에 완전히 독립적
+  - 폴더를 어디로 이동해도 기본 저장 폴더가 올바르게 유지됨
+  - `DEFAULT_PRESET_FOLDER` 하드코딩 상수 → `GetDefaultPresetFolder()` 동적 메서드로 교체
+- ✅ 구조 문서 업데이트
+  - Presets/ 폴더 구조 반영 (Animation, Glow, Outline)
+
 ### v2.12.0 (2026-02-14)
 **프리셋 시스템 개선 - 타입 분리 및 카테고리 제거**
 - ✅ Outline/Glow 프리셋 타입 자동 분리
@@ -1306,6 +1322,6 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 
 ---
 
-**버전**: 2.12.0
-**최종 수정**: 2026-02-14
+**버전**: 2.13.0
+**최종 수정**: 2026-02-19
 **작성자**: Claude Code (with Unity TMP Underlay system)

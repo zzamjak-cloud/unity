@@ -57,7 +57,7 @@ namespace CAT.UI
         [MenuItem("CAT/UI/TMPAnimation/씬의 모든 오브젝트에 CanvasGroup 추가")]
         private static void AddCanvasGroupToAllTMPAnimations()
         {
-            var animations = Object.FindObjectsOfType<TMPAnimation>(true);
+            var animations = Object.FindObjectsByType<TMPAnimation>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             int addedCount = 0;
 
             foreach (var animation in animations)

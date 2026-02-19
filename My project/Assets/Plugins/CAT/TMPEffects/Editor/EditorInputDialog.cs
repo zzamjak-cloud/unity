@@ -11,7 +11,6 @@ namespace CAT.UI
         private string _title;
         private string _label;
         private string _inputText;
-        private bool _confirmed;
         private bool _initialized;
 
         private static string _result;
@@ -33,7 +32,6 @@ namespace CAT.UI
             window._title = title;
             window._label = label;
             window._inputText = defaultText;
-            window._confirmed = false;
             window._initialized = false;
 
             window.titleContent = new GUIContent(title);
@@ -75,7 +73,6 @@ namespace CAT.UI
             // Enter 키 처리
             if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return)
             {
-                _confirmed = true;
                 _result = _inputText;
                 _dialogClosed = true;
                 Close();
@@ -85,7 +82,6 @@ namespace CAT.UI
             // ESC 키 처리
             if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape)
             {
-                _confirmed = false;
                 _result = null;
                 _dialogClosed = true;
                 Close();
@@ -94,7 +90,6 @@ namespace CAT.UI
 
             if (GUILayout.Button("확인", GUILayout.Width(80)))
             {
-                _confirmed = true;
                 _result = _inputText;
                 _dialogClosed = true;
                 Close();
@@ -102,7 +97,6 @@ namespace CAT.UI
 
             if (GUILayout.Button("취소", GUILayout.Width(80)))
             {
-                _confirmed = false;
                 _result = null;
                 _dialogClosed = true;
                 Close();

@@ -9,7 +9,7 @@ namespace CAT.UI
     {
         // EditorPrefs 키
         private const string PREF_PRESET_FOLDER = "TMPOutGlow_PresetFolder";
-        private const string DEFAULT_PRESET_FOLDER = "Assets/TMPEffects/Presets/Glow";
+        private const string PRESET_SUBFOLDER = "Presets/Glow";
 
         // 다음 프레임에 실행할 액션 (GUI 에러 방지)
         private System.Action _delayedAction;
@@ -64,18 +64,42 @@ namespace CAT.UI
             Repaint();
         }
 
+        /// <summary>
+        /// 이 에디터 스크립트 위치 기준으로 기본 저장 폴더 경로를 동적 계산
+        /// TMPEffects 폴더를 어디에 두든 상대 경로가 유지됨
+        /// </summary>
+        private string GetDefaultPresetFolder()
+        {
+            var guids = AssetDatabase.FindAssets("t:Script TMPOutGlowEditor");
+            if (guids.Length > 0)
+            {
+                string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+                // "...TMPEffects/Editor/TMPOutGlowEditor.cs" → "...TMPEffects"
+                int editorIdx = scriptPath.LastIndexOf("/Editor/");
+                if (editorIdx >= 0)
+                {
+                    return scriptPath.Substring(0, editorIdx) + "/" + PRESET_SUBFOLDER;
+                }
+            }
+            return "Assets/Plugins/CAT/TMPEffects/" + PRESET_SUBFOLDER;
+        }
+
         private void LoadPresetFolder()
         {
-            _presetFolderPath = EditorPrefs.GetString(PREF_PRESET_FOLDER, DEFAULT_PRESET_FOLDER);
+            string defaultFolder = GetDefaultPresetFolder();
+            _presetFolderPath = EditorPrefs.GetString(PREF_PRESET_FOLDER, defaultFolder);
 
+            // 저장된 경로가 유효하면 그대로 사용, 아니면 기본 경로로 재설정
             if (!string.IsNullOrEmpty(_presetFolderPath) && AssetDatabase.IsValidFolder(_presetFolderPath))
             {
                 _presetFolder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(_presetFolderPath);
             }
             else
             {
-                _presetFolderPath = DEFAULT_PRESET_FOLDER;
-                _presetFolder = null;
+                _presetFolderPath = defaultFolder;
+                _presetFolder = AssetDatabase.IsValidFolder(defaultFolder)
+                    ? AssetDatabase.LoadAssetAtPath<DefaultAsset>(defaultFolder)
+                    : null;
             }
         }
 

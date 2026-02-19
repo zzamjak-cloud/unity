@@ -9,7 +9,7 @@ namespace CAT.Effects
     {
         // EditorPrefs 키
         private const string PREF_PRESET_FOLDER = "ColorReplace_PresetFolder";
-        private const string DEFAULT_PRESET_FOLDER = "Assets/ColorReplace/Presets";
+        private const string PRESET_SUBFOLDER = "Presets";
 
         // SerializedProperty
         private SerializedProperty presetProp;
@@ -82,9 +82,30 @@ namespace CAT.Effects
             Repaint();
         }
 
+        /// <summary>
+        /// 이 에디터 스크립트 위치 기준으로 기본 저장 폴더 경로를 동적 계산
+        /// ColorReplace 폴더를 어디에 두든 상대 경로가 유지됨
+        /// </summary>
+        private string GetDefaultPresetFolder()
+        {
+            var guids = AssetDatabase.FindAssets("t:Script ColorReplaceEditor");
+            if (guids.Length > 0)
+            {
+                string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+                // "...ColorReplace/Editor/ColorReplaceEditor.cs" → "...ColorReplace"
+                int editorIdx = scriptPath.LastIndexOf("/Editor/");
+                if (editorIdx >= 0)
+                {
+                    return scriptPath.Substring(0, editorIdx) + "/" + PRESET_SUBFOLDER;
+                }
+            }
+            return "Assets/Plugins/CAT/ColorReplace/" + PRESET_SUBFOLDER;
+        }
+
         private void LoadPresetFolder()
         {
-            _presetFolderPath = EditorPrefs.GetString(PREF_PRESET_FOLDER, DEFAULT_PRESET_FOLDER);
+            string defaultFolder = GetDefaultPresetFolder();
+            _presetFolderPath = EditorPrefs.GetString(PREF_PRESET_FOLDER, defaultFolder);
 
             if (!string.IsNullOrEmpty(_presetFolderPath) && AssetDatabase.IsValidFolder(_presetFolderPath))
             {
@@ -92,7 +113,7 @@ namespace CAT.Effects
             }
             else
             {
-                _presetFolderPath = DEFAULT_PRESET_FOLDER;
+                _presetFolderPath = defaultFolder;
                 _presetFolder = null;
             }
         }
@@ -421,7 +442,7 @@ namespace CAT.Effects
             string folder = _presetFolderPath;
             if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder))
             {
-                folder = DEFAULT_PRESET_FOLDER;
+                folder = GetDefaultPresetFolder();
             }
 
             string path = EditorUtility.SaveFilePanelInProject(
