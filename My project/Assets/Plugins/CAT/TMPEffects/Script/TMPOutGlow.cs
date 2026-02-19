@@ -799,7 +799,7 @@ namespace CAT.UI
             _innerGlowText.lineSpacing = _tmpText.lineSpacing;
             _innerGlowText.paragraphSpacing = _tmpText.paragraphSpacing;
             _innerGlowText.overflowMode = _tmpText.overflowMode;
-            _innerGlowText.enableWordWrapping = _tmpText.enableWordWrapping;
+            _innerGlowText.textWrappingMode = _tmpText.textWrappingMode;
             _innerGlowText.horizontalMapping = _tmpText.horizontalMapping;
             _innerGlowText.verticalMapping = _tmpText.verticalMapping;
             _innerGlowText.margin = _tmpText.margin;

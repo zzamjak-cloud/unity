@@ -1025,7 +1025,7 @@ namespace CAT.UI
 
             // Overflow & Wrapping
             _secondFaceText.overflowMode = _tmpText.overflowMode;
-            _secondFaceText.enableWordWrapping = _tmpText.enableWordWrapping;
+            _secondFaceText.textWrappingMode = _tmpText.textWrappingMode;
             _secondFaceText.horizontalMapping = _tmpText.horizontalMapping;
             _secondFaceText.verticalMapping = _tmpText.verticalMapping;
 
@@ -1267,8 +1267,8 @@ namespace CAT.UI
                 if (_secondFaceText.overflowMode != _tmpText.overflowMode)
                     _secondFaceText.overflowMode = _tmpText.overflowMode;
 
-                if (_secondFaceText.enableWordWrapping != _tmpText.enableWordWrapping)
-                    _secondFaceText.enableWordWrapping = _tmpText.enableWordWrapping;
+                if (_secondFaceText.textWrappingMode != _tmpText.textWrappingMode)
+                    _secondFaceText.textWrappingMode = _tmpText.textWrappingMode;
 
                 if (_secondFaceText.horizontalMapping != _tmpText.horizontalMapping)
                     _secondFaceText.horizontalMapping = _tmpText.horizontalMapping;
