@@ -10,20 +10,20 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 19536ebc4b3744b4185e6b40bba053d8, type: 3}
-  m_Name: Test
+  m_Name: Glow_Green
   m_EditorClassIdentifier: 
-  _underlayColor: {r: 0.35071266, g: 0, b: 0.43529412, a: 1}
-  _underlayDilate: 0.5
+  _underlayColor: {r: 0, g: 1, b: 0, a: 0.4509804}
+  _underlayDilate: 0
   _underlayOffsetX: 0
-  _underlayOffsetY: -0.2
-  _underlaySoftness: 0
-  _enableFace: 0
-  _faceDilate: 0
-  _enableShadow: 1
-  _shadowOffset: {x: 0, y: -0.1}
+  _underlayOffsetY: 0
+  _underlaySoftness: 1
+  _enableFace: 1
+  _faceDilate: 0.03
+  _enableShadow: 0
+  _shadowOffset: {x: 0.1, y: -0.1}
   _shadowAlpha: 0.5
-  _enableSecondFace: 1
-  _secondFaceColor: {r: 1, g: 0.7241976, b: 0, a: 1}
+  _enableSecondFace: 0
+  _secondFaceColor: {r: 1, g: 1, b: 1, a: 1}
   _useSecondFaceGradient: 0
   _secondFaceGradient:
     topLeft: {r: 1, g: 1, b: 1, a: 1}
@@ -33,6 +33,5 @@ MonoBehaviour:
   _secondFaceDilate: -0.1
   _secondFaceOffsetX: 0
   _secondFaceOffsetY: 0
-  _category: 2
-  _customCategoryName: 
+  _effectType: 1
   _description: 

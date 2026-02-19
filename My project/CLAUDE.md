@@ -182,13 +182,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **⚠️ 중요: 신규 TMP Effect 컴포넌트 개발 시 반드시 다음 가이드를 참고하세요.**
 
-**개발 가이드:** `Assets/Scripts/TMPEffects/TMP_EFFECT_DEVELOPMENT_GUIDE.md`
-
-이 가이드에는 다음 내용이 포함되어 있습니다:
-- ✅ 신규 컴포넌트 개발 체크리스트 (기본 구조, 자식 오브젝트, TMPAnimation 통합)
-- ✅ 발견된 문제들과 해결 방법 (5가지 주요 이슈)
-- ✅ 테스트 체크리스트
-- ✅ 단계별 개발 순서 (Phase 1~6)
+**개발 가이드:** `Assets/TMPEffects/README.md`
 
 **핵심 체크 포인트:**
 1. **TMPAnimation 통합 (가장 중요!)**: 원본 메시 저장/복원, 4곳 처리 필수

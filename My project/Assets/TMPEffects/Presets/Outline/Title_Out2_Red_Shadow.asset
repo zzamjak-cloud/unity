@@ -10,21 +10,27 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 19536ebc4b3744b4185e6b40bba053d8, type: 3}
-  m_Name: Title_Outline_Shadow_Yellow
+  m_Name: Title_Out2_Red_Shadow
   m_EditorClassIdentifier: 
-  _underlayColor: {r: 0.21698111, g: 0.10220731, b: 0.08085617, a: 1}
-  _underlayDilate: 0.806
+  _underlayColor: {r: 0.33962262, g: 0, b: 0, a: 1}
+  _underlayDilate: 0.657
   _underlayOffsetX: 0
-  _underlayOffsetY: -0.28
+  _underlayOffsetY: 0
   _underlaySoftness: 0
-  _enableFace: 0
-  _faceDilate: 0.21
+  _enableFace: 1
+  _faceDilate: 0.25
   _enableShadow: 1
-  _shadowOffset: {x: 0, y: -0.1}
-  _shadowAlpha: 0.5
+  _shadowOffset: {x: 0, y: -0.08}
+  _shadowAlpha: 0.547
   _enableSecondFace: 1
-  _secondFaceColor: {r: 1, g: 0.9325276, b: 0.0141509175, a: 1}
-  _secondFaceDilate: 0
+  _secondFaceColor: {r: 1, g: 0.74309856, b: 0.16509432, a: 1}
+  _useSecondFaceGradient: 0
+  _secondFaceGradient:
+    topLeft: {r: 1, g: 1, b: 1, a: 1}
+    topRight: {r: 1, g: 1, b: 1, a: 1}
+    bottomLeft: {r: 1, g: 1, b: 1, a: 1}
+    bottomRight: {r: 1, g: 1, b: 1, a: 1}
+  _secondFaceDilate: -0.063
   _secondFaceOffsetX: 0
   _secondFaceOffsetY: 0.05
   _category: 0

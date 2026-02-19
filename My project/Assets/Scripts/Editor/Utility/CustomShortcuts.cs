@@ -331,7 +331,7 @@ namespace CAT.Utility
             T graphic = gameObject.AddComponent<T>();
 
             // Raycast Target 비활성화
-            graphic.raycastTarget = false;
+            // graphic.raycastTarget = false;
 
 
 

@@ -9,7 +9,7 @@ namespace CAT.UI
     {
         // EditorPrefs 키
         private const string PREF_PRESET_FOLDER = "TMPAnimation_PresetFolder";
-        private const string DEFAULT_PRESET_FOLDER = "Assets";
+        private const string DEFAULT_PRESET_FOLDER = "Assets/TMPEffects/Presets/Animation";
 
         // 타겟 및 상태
         private TMPAnimation _target;
@@ -64,11 +64,13 @@ namespace CAT.UI
             }
 
             Undo.undoRedoPerformed += OnUndoRedo;
+            EditorApplication.projectChanged += OnProjectChanged;
         }
 
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= OnUndoRedo;
+            EditorApplication.projectChanged -= OnProjectChanged;
 
             // 에디터 테스트 중이면 정지
             if (_isEditorPlaying)
@@ -79,6 +81,16 @@ namespace CAT.UI
 
         private void OnUndoRedo()
         {
+            Repaint();
+        }
+
+        /// <summary>
+        /// 프로젝트 에셋 변경 시 호출 (프리셋 삭제 감지)
+        /// </summary>
+        private void OnProjectChanged()
+        {
+            // 프리셋 목록 갱신
+            RefreshPresetList();
             Repaint();
         }
 

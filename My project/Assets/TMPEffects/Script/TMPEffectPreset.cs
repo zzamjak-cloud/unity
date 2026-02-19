@@ -4,19 +4,15 @@ using TMPro;
 namespace CAT.UI
 {
     /// <summary>
-    /// 프리셋 카테고리 (조직화 및 필터링용)
-    /// 기본 카테고리 3개 (Title, Button, Custom) + 사용자 정의 카테고리
+    /// TMP Effect 타입 (Outline vs Glow)
     /// </summary>
-    public enum PresetCategory
+    public enum TMPEffectType
     {
-        /// <summary>Title 효과 (Outline + Shadow 복합)</summary>
-        Title,
+        /// <summary>Outline 효과 (TMPOutlineEffect 전용)</summary>
+        Outline,
 
-        /// <summary>UI 버튼용</summary>
-        Button,
-
-        /// <summary>사용자 정의 (기본값, 삭제된 카테고리의 폴백)</summary>
-        Custom
+        /// <summary>Glow 효과 (TMPOutGlow 전용)</summary>
+        Glow
     }
 
     /// <summary>
@@ -54,14 +50,14 @@ namespace CAT.UI
         [SerializeField, Range(-1f, 1f)] private float _secondFaceOffsetY = 0f;
 
         [Header("Preset Info")]
-        [SerializeField] private PresetCategory _category = PresetCategory.Custom;
-        [SerializeField] private string _customCategoryName = "";  // 사용자 정의 카테고리명 (기본 카테고리가 아닐 경우)
+        [SerializeField] private TMPEffectType _effectType = TMPEffectType.Outline;
         [SerializeField, TextArea] private string _description = "";
 
         // ─────────────────────────────────────────────
         // Public Properties
         // ─────────────────────────────────────────────
 
+        public TMPEffectType EffectType => _effectType;
         public Color UnderlayColor => _underlayColor;
         public float UnderlayDilate => _underlayDilate;
         public float UnderlayOffsetX => _underlayOffsetX;
@@ -79,73 +75,7 @@ namespace CAT.UI
         public float SecondFaceDilate => _secondFaceDilate;
         public float SecondFaceOffsetX => _secondFaceOffsetX;
         public float SecondFaceOffsetY => _secondFaceOffsetY;
-        public PresetCategory Category => _category;
-        public string CustomCategoryName => _customCategoryName;
         public string Description => _description;
-
-        /// <summary>
-        /// 카테고리 이름을 문자열로 반환
-        /// - 기본 카테고리: enum 이름
-        /// - 사용자 정의 카테고리: _customCategoryName
-        /// </summary>
-        public string GetCategoryName()
-        {
-            if (!string.IsNullOrEmpty(_customCategoryName))
-            {
-                // 사용자 정의 카테고리가 아직 존재하는지 확인
-                if (TMPEffectCategorySettings.Instance.HasCategory(_customCategoryName))
-                {
-                    return _customCategoryName;
-                }
-                else
-                {
-                    // 카테고리가 삭제되었으면 Custom으로 폴백
-                    return TMPEffectCategorySettings.FALLBACK_CATEGORY;
-                }
-            }
-            return _category.ToString();
-        }
-
-        /// <summary>
-        /// 카테고리 이름 설정 (문자열 기반)
-        /// - 기본 카테고리명이면 enum으로 설정
-        /// - 사용자 정의면 _customCategoryName에 저장
-        /// </summary>
-        public void SetCategoryName(string categoryName)
-        {
-            // 기본 카테고리인지 확인
-            if (System.Enum.TryParse<PresetCategory>(categoryName, out var enumValue))
-            {
-                _category = enumValue;
-                _customCategoryName = "";
-            }
-            else
-            {
-                _category = PresetCategory.Custom;
-                _customCategoryName = categoryName;
-            }
-
-#if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(this);
-#endif
-        }
-
-        /// <summary>
-        /// 삭제된 카테고리를 Custom으로 리셋
-        /// </summary>
-        public void ResetToFallbackCategoryIfNeeded()
-        {
-            if (!string.IsNullOrEmpty(_customCategoryName) &&
-                !TMPEffectCategorySettings.Instance.HasCategory(_customCategoryName))
-            {
-                _customCategoryName = "";
-                _category = PresetCategory.Custom;
-
-#if UNITY_EDITOR
-                UnityEditor.EditorUtility.SetDirty(this);
-#endif
-            }
-        }
 
         // ─────────────────────────────────────────────
         // Apply to Effect
@@ -197,6 +127,7 @@ namespace CAT.UI
         {
             if (effect == null) return;
 
+            _effectType = TMPEffectType.Outline;  // 타입 자동 설정
             _underlayColor = effect.UnderlayColor;
             _underlayDilate = effect.UnderlayDilate;
             _underlayOffsetX = effect.UnderlayOffsetX;
@@ -226,6 +157,8 @@ namespace CAT.UI
         public void CopyFrom(TMPOutGlow glow)
         {
             if (glow == null) return;
+
+            _effectType = TMPEffectType.Glow;  // 타입 자동 설정
 
             // Glow 파라미터 → Underlay 파라미터로 매핑
             _underlayColor = glow.GlowColor;
@@ -298,8 +231,6 @@ namespace CAT.UI
         {
             var preset = CreateInstance<TMPEffectPreset>();
             preset.name = "Simple Outline";
-            preset._category = PresetCategory.Custom;
-            preset._customCategoryName = "Outline";
             preset._description = "간단한 검은색 외곽선";
             preset._underlayDilate = 0.15f;
             preset._underlayColor = Color.black;
@@ -315,8 +246,6 @@ namespace CAT.UI
         {
             var preset = CreateInstance<TMPEffectPreset>();
             preset.name = "Drop Shadow";
-            preset._category = PresetCategory.Custom;
-            preset._customCategoryName = "DropShadow";
             preset._description = "오른쪽 아래 그림자";
             preset._underlayOffsetX = 0.1f;
             preset._underlayOffsetY = -0.1f;
@@ -332,7 +261,6 @@ namespace CAT.UI
         {
             var preset = CreateInstance<TMPEffectPreset>();
             preset.name = "Title";
-            preset._category = PresetCategory.Title;
             preset._description = "타이틀용 고급 효과 (Outline + Shadow)";
             preset._underlayDilate = 0.25f;
             preset._underlayColor = new Color(0.2f, 0.1f, 0f);
