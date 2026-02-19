@@ -11,7 +11,9 @@
 ```
 Assets/Plugins/CAT/PathFollower/
 ├── PathFollower.cs          # 메인 컴포넌트 (경로 데이터 + 이동 로직)
-│   └── PathPoint            # 경로 포인트 데이터 클래스 (동일 파일 내 정의)
+│   ├── PathPoint            # 경로 포인트 데이터 클래스 (동일 파일 내 정의)
+│   ├── PathFollowerAgent    # 독립 타이밍 에이전트 클래스 (동일 파일 내 정의)
+│   └── PathSnapshot         # 경로 스냅샷 클래스 (동일 파일 내 정의)
 └── Editor/
     └── PathFollowerEditor.cs   # 커스텀 에디터
 ```
@@ -20,7 +22,7 @@ Assets/Plugins/CAT/PathFollower/
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| `position` | Vector3 | 정점 위치 (컴포넌트 로컬 좌표) |
+| `position` | Vector3 | 정점 위치 (부모 Transform 기준 로컬 좌표) |
 | `handleIn` | Vector3 | 들어오는 핸들 (로컬 좌표) |
 | `handleOut` | Vector3 | 나가는 핸들 (로컬 좌표) |
 | `isBroken` | bool | 핸들 연결 끊기 여부 |
@@ -36,6 +38,7 @@ Assets/Plugins/CAT/PathFollower/
 | `loopType` | LoopType | 루프 방식 (None / Restart / Yoyo) |
 | `progress` | float (0~1) | 현재 진행도 (읽기 전용) |
 | `isPlaying` | bool | 재생 중 여부 |
+| `morphingDuration` | float | 스냅샷 전환 시 모핑 시간 (초), 0 = 즉시 |
 
 ---
 
@@ -43,10 +46,26 @@ Assets/Plugins/CAT/PathFollower/
 
 1. 빈 GameObject에 **PathFollower** 컴포넌트 추가
 2. 인스펙터에서 **`+ 포인트 추가`** 버튼으로 포인트 추가
-3. **SceneView**에서 흰 점(정점)을 드래그하여 경로 편집
+3. **SceneView**에서 흰 점(정점)을 드래그하여 경로 편집 (클릭과 동시에 즉각 이동)
    - 파란 점: `handleIn` (곡선 진입 방향)
    - 주황 점: `handleOut` (곡선 출발 방향)
 4. 인스펙터 하단 **`▶ 10초 테스트`** 버튼으로 에디터 프리뷰
+
+### Path Tools 섹션
+
+| 버튼 | 설명 |
+|------|------|
+| 원형 생성 | 정원(正圓) 경로 생성 |
+| 다각형 생성 | N변 다각형 경로 생성 (둥글기 0~1 조절 가능) |
+| 별모양 생성 | 별모양 경로 생성 (외부/내부 반지름 설정) |
+| 확대 (+) / 축소 (-) | 경로를 무게중심 기준으로 확대/축소 |
+| 전체 Relax | 모든 정점 핸들을 Catmull-Rom 방식으로 자동 조정 |
+
+### Snapshots 섹션
+
+- **스냅샷 저장**: 현재 경로를 이름을 붙여 저장
+- **적용**: 에디터에서 즉시 전환 (런타임에서는 `morphingDuration` 적용)
+- **X**: 스냅샷 삭제
 
 ---
 
@@ -72,6 +91,73 @@ follower.OnComplete += () => Debug.Log("경로 완료!");
 // 루프 이벤트 (한 바퀴 완료 시)
 follower.OnLoop += () => Debug.Log("루프!");
 ```
+
+### 경로 프리셋 생성
+
+```csharp
+// 원형 (반지름 5, 4정점)
+follower.SetCircle(5f, 4);
+
+// 6변 다각형 (반지름 5, 회전 0도, 모서리 둥글기 0.5)
+follower.SetPolygon(6, 5f, 0f, 0.5f);
+
+// 별모양 (5꼭짓점, 외부반지름 5, 내부반지름 2, 회전 0도)
+follower.SetStar(5, 5f, 2f, 0f);
+```
+
+### 경로 확대/축소 및 핸들 자동 조정
+
+```csharp
+follower.ExpandPath(1f);    // 무게중심 기준 1 단위 확대
+follower.ExpandPath(-1f);   // 무게중심 기준 1 단위 축소
+follower.RelaxPath();        // 모든 정점 핸들 Catmull-Rom 자동 조정
+follower.RelaxPoint(2);      // 2번 정점 핸들만 자동 조정
+```
+
+### 에이전트 (독립 타이밍 이동)
+
+```csharp
+// 여러 오브젝트를 시간차로 등록하면 각자 독립 타이밍으로 경로를 따라 이동
+follower.AddAgent(transform1); // 지금부터 시작
+// 2초 후
+follower.AddAgent(transform2); // 2초 늦게 시작
+
+// 에이전트 제거
+follower.RemoveAgent(transform1);
+follower.ClearAgents();
+
+// 특정 에이전트의 진행도 조회
+float progress = follower.GetAgentProgress(transform1); // 0~1, 미등록 시 -1
+```
+
+### 스냅샷 & 모핑
+
+```csharp
+// 현재 경로를 스냅샷으로 저장
+follower.SaveAsSnapshot("삼각형");
+follower.SetPolygon(4, 5f);
+follower.SaveAsSnapshot("사각형");
+follower.SetCircle(5f);
+follower.SaveAsSnapshot("원");
+
+// 인덱스로 전환 (morphingDuration 값 사용)
+follower.morphingDuration = 1f;
+follower.SwitchToSnapshot(0); // "삼각형"으로 1초간 모핑
+
+// duration 직접 지정
+follower.SwitchToSnapshot(2, 0.5f); // "원"으로 0.5초간 모핑
+follower.SwitchToSnapshot(1, 0f);   // "사각형"으로 즉시 전환
+
+// 스냅샷 정보 조회
+int count = follower.SnapshotCount;
+int current = follower.CurrentSnapshotIndex;
+PathSnapshot snap = follower.GetSnapshot(0);
+
+// 스냅샷 삭제
+follower.RemoveSnapshot(2);
+```
+
+> **참고**: 포인트 수가 다른 스냅샷으로 전환 시 모핑 없이 즉시 전환됩니다.
 
 ### 포인트 추가/수정
 
@@ -108,19 +194,6 @@ follower.RemovePoint(2);
 follower.ClearPoints();
 ```
 
-### 경로 전체 교체 (예: 동적 생성)
-
-```csharp
-var points = new List<PathPoint>();
-for (int i = 0; i < 5; i++)
-{
-    // PathPoint는 로컬 좌표 기준
-    float x = i * 3f;
-    points.Add(new PathPoint(new Vector3(x, Mathf.Sin(x) * 2f, 0f)));
-}
-follower.SetPoints(points);
-```
-
 ### 경로 위 좌표 직접 계산
 
 ```csharp
@@ -138,11 +211,12 @@ Vector3 dir = follower.GetDirectionAt(0.3f);
 | 단축키 | 기능 |
 |--------|------|
 | 클릭 (정점) | 정점 선택 |
+| 클릭+드래그 (정점) | 선택과 동시에 즉각 이동 |
 | Shift + 클릭 (정점) | 선택에 추가 |
 | Alt + 클릭 (곡선 위) | 그 위치에 정점 삽입 |
 | Ctrl + 드래그 | 박스 선택 (비어있는 공간에서 드래그) |
 | Ctrl + Shift + 드래그 | 박스 선택 → 기존 선택에 추가 |
-| 우클릭 (정점) | 컨텍스트 메뉴 (삽입 / 삭제 / 핸들 연결·끊기) |
+| 우클릭 (정점) | 컨텍스트 메뉴 (삽입 / 삭제 / 핸들 연결·끊기 / 핸들 초기화) |
 | R (정점 선택 후) | 핸들 회전 모드 토글 |
 | Delete / Backspace | 선택 정점 삭제 |
 | Escape | 선택 해제 / 회전 모드 해제 |
@@ -176,10 +250,21 @@ PathFollower가 Canvas 자식 오브젝트에 있으면 **UI 모드**가 자동 
 | 경로 공유 | 여러 오브젝트가 공유 가능 | 단일 컴포넌트 전용 |
 | 에디터 편집 | BezierPath 컴포넌트 별도 필요 | PathFollower 하나로 완결 |
 | UI/Canvas 모드 | 지원 | Canvas 자식 시 자동 감지 지원 |
+| 경로 프리셋 | 없음 | 원형/다각형/별모양 |
+| 에이전트 | 없음 | 독립 타이밍 다중 에이전트 |
+| 스냅샷/모핑 | 없음 | 다단계 경로 + 모핑 전환 |
 
 ---
 
 ## 버전 히스토리
+
+### v1.1.0 (2026-02-20)
+- Inspector 헤더 중복 표시 수정 ([Header] 속성 제거)
+- SceneView: 정점 클릭과 동시에 드래그 가능 (FreeMoveHandle 방식)
+- 프리셋 강화: `SetPolygon()` - 다각형 + 모서리 둥글기, `SetStar()` - 별모양
+- Relax 알고리즘 개선: 각 방향 독립 핸들 길이로 원형 왜곡 방지
+- `PathFollowerAgent` 시스템: 독립 타이밍으로 다수 오브젝트 이동
+- `PathSnapshot` + 모핑: 스냅샷 저장/전환, 동일 정점 수일 때 모핑 보간
 
 ### v1.0.0 (2026-02-19)
 - 최초 릴리즈
@@ -187,6 +272,7 @@ PathFollower가 Canvas 자식 오브젝트에 있으면 **UI 모드**가 자동 
 - 런타임 API: `AddPoint`, `InsertPoint`, `RemovePoint`, `SetPointPosition`, `SetPoints`, `GetPoint`, `ClearPoints`
 - 이동 제어 API: `Play`, `Pause`, `Stop`, `SetProgress`
 - 이벤트: `OnComplete`, `OnLoop`
+- 경로 도구: `SetCircle`, `ExpandPath`, `RelaxPath`, `RelaxPoint`
 - 커스텀 에디터: SceneView 포인트 편집, 핸들 편집, 다중 선택, 에디터 테스트 재생
 - 최적화: 배열 기반 월드 좌표 캐시, 부모 Transform 행렬 변경 감지
 - LoopType: None / Restart / Yoyo

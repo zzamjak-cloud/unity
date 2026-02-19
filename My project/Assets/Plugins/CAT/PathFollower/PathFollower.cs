@@ -60,6 +60,36 @@ namespace CAT.Utility
     }
 
     /// <summary>
+    /// 경로를 독립적인 타이밍으로 따라가는 에이전트 데이터.
+    /// AddAgent()로 등록하면 startTime이 현재 시간으로 설정되어 독립 진행된다.
+    /// </summary>
+    [System.Serializable]
+    public class PathFollowerAgent
+    {
+        /// <summary>경로를 따라 이동할 대상 Transform</summary>
+        public Transform target;
+        /// <summary>등록 시점의 Time.time (직렬화 제외, 런타임 전용)</summary>
+        [System.NonSerialized] public float startTime;
+        /// <summary>현재 진행도 0~1 (직렬화 제외, 읽기 전용)</summary>
+        [System.NonSerialized] public float progress;
+    }
+
+    /// <summary>
+    /// PathFollower 경로 데이터의 스냅샷.
+    /// 여러 경로 형태를 리스트로 저장하고 SwitchToSnapshot으로 전환한다.
+    /// </summary>
+    [System.Serializable]
+    public class PathSnapshot
+    {
+        /// <summary>스냅샷 이름 (에디터 표시용)</summary>
+        public string name = "Snapshot";
+        /// <summary>저장된 포인트 목록 (path 좌표 기준)</summary>
+        [SerializeField] public List<PathPoint> points = new List<PathPoint>();
+        /// <summary>저장된 루프 여부</summary>
+        [SerializeField] public bool isLoop = false;
+    }
+
+    /// <summary>
     /// 베지어 곡선 경로를 따라 이동하는 컴포넌트.
     /// 경로 데이터는 컴포넌트 자체에 저장되므로 런타임에서 자유롭게 수정 가능하다.
     ///
@@ -87,14 +117,12 @@ namespace CAT.Utility
 
         #region 직렬화 필드
 
-        [Header("Path Settings")]
         [Tooltip("경로 포인트 목록 (부모 Transform 기준 로컬 좌표)")]
         [SerializeField] private List<PathPoint> _points = new List<PathPoint>();
 
         [Tooltip("경로 루프 여부 (마지막 포인트에서 첫 번째 포인트로 연결)")]
         [SerializeField] private bool _isLoop = false;
 
-        [Header("Movement Settings")]
         [Tooltip("경로 전체를 이동하는 데 걸리는 시간 (초)")]
         public float duration = 5f;
 
@@ -110,12 +138,25 @@ namespace CAT.Utility
         [Tooltip("루프 방식 설정")]
         public LoopType loopType = LoopType.Restart;
 
-        [Header("State")]
         [Tooltip("현재 경로 진행도 (0~1). 읽기 전용으로 상태 확인용")]
         [Range(0f, 1f)] public float progress = 0f;
 
         [Tooltip("재생 중 여부. false로 설정하면 일시 정지")]
         public bool isPlaying = true;
+
+        // ── 에이전트 ──────────────────────────────────────
+        [Tooltip("독립 타이밍으로 경로를 따르는 에이전트 목록 (직렬화: target 참조만 저장)")]
+        [SerializeField] private List<PathFollowerAgent> _agents = new List<PathFollowerAgent>();
+
+        // ── 스냅샷 ────────────────────────────────────────
+        [Tooltip("저장된 경로 스냅샷 목록")]
+        [SerializeField] private List<PathSnapshot> _snapshots = new List<PathSnapshot>();
+
+        [Tooltip("현재 적용된 스냅샷 인덱스 (-1 = 스냅샷 없음)")]
+        [SerializeField] private int _currentSnapshotIndex = -1;
+
+        [Tooltip("SwitchToSnapshot 호출 시 모핑 시간 (초). 0이면 즉시 전환")]
+        public float morphingDuration = 0.5f;
 
         #endregion
 
@@ -143,6 +184,14 @@ namespace CAT.Utility
 
         // 부모 Transform 변경 감지용 행렬 캐시
         private Matrix4x4 _cachedParentMatrix;
+
+        // 모핑 상태 (직렬화 제외, 런타임 전용)
+        private bool _isMorphing = false;
+        private float _morphTimer = 0f;
+        private float _morphDuration = 0f;
+        private List<PathPoint> _morphFrom;
+        private List<PathPoint> _morphTo;
+        private bool _morphTargetLoop;
 
         #endregion
 
@@ -211,6 +260,33 @@ namespace CAT.Utility
         private void Update()
         {
             if (!Application.isPlaying) return;
+
+            // ── 모핑 처리 ──────────────────────────────────
+            if (_isMorphing)
+            {
+                _morphTimer += Time.deltaTime;
+                float mt = Mathf.Clamp01(_morphTimer / _morphDuration);
+
+                // _morphFrom 과 _morphTo 사이 선형 보간
+                for (int i = 0; i < _points.Count; i++)
+                {
+                    _points[i].position  = Vector3.Lerp(_morphFrom[i].position,  _morphTo[i].position,  mt);
+                    _points[i].handleIn  = Vector3.Lerp(_morphFrom[i].handleIn,  _morphTo[i].handleIn,  mt);
+                    _points[i].handleOut = Vector3.Lerp(_morphFrom[i].handleOut, _morphTo[i].handleOut, mt);
+                }
+                MarkDirty();
+
+                if (mt >= 1f)
+                {
+                    _isMorphing = false;
+                    _isLoop = _morphTargetLoop;
+                }
+            }
+
+            // ── 에이전트 이동 ───────────────────────────────
+            UpdateAgents();
+
+            // ── 자신의 이동 ──────────────────────────────────
             if (!isPlaying || _points == null || _points.Count < 2) return;
 
             // 시간 진행 계산
@@ -509,6 +585,107 @@ namespace CAT.Utility
         }
 
         /// <summary>
+        /// 현재 오브젝트 위치를 중심으로 정다각형 경로를 생성한다.
+        /// cornerRoundness 0=날카로운 모서리, 1=원형에 가까운 둥근 모서리.
+        /// </summary>
+        /// <param name="sides">변 수 (최소 3)</param>
+        /// <param name="radius">외접원 반지름</param>
+        /// <param name="rotation">회전 각도 (도, 기본 0 = 위쪽 꼭짓점부터)</param>
+        /// <param name="cornerRoundness">모서리 둥글기 (0~1, 기본 0)</param>
+        public void SetPolygon(int sides, float radius, float rotation = 0f, float cornerRoundness = 0f)
+        {
+            sides            = Mathf.Max(3, sides);
+            cornerRoundness  = Mathf.Clamp01(cornerRoundness);
+            _points          = new List<PathPoint>(sides);
+            _isLoop          = true;
+
+            Vector3 center   = WorldToPath(transform.position);
+            float   rotRad   = rotation * Mathf.Deg2Rad;
+            // roundness=1일 때 원형 근사에 사용할 최대 핸들 길이
+            float   handleLenMax = radius * (4f / 3f) * Mathf.Tan(Mathf.PI / (2f * sides));
+
+            // 각 꼭짓점 위치 사전 계산 (-π/2 오프셋: 위쪽부터 시작)
+            var positions = new Vector3[sides];
+            for (int i = 0; i < sides; i++)
+            {
+                float angle = 2f * Mathf.PI * i / sides + rotRad - Mathf.PI / 2f;
+                positions[i] = center + new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    Mathf.Sin(angle) * radius,
+                    0f);
+            }
+
+            for (int i = 0; i < sides; i++)
+            {
+                int     prevIdx = (i - 1 + sides) % sides;
+                int     nextIdx = (i + 1) % sides;
+                Vector3 pos     = positions[i];
+
+                // 직선 모서리용 핸들: 인접 꼭짓점 방향으로 1/3 거리 (완전한 직선 세그먼트)
+                Vector3 sharpHandleIn  = pos + (positions[prevIdx] - pos) / 3f;
+                Vector3 sharpHandleOut = pos + (positions[nextIdx] - pos) / 3f;
+
+                // 원형 근사용 핸들: 접선 방향 (SetCircle과 동일한 방식)
+                float   angle   = 2f * Mathf.PI * i / sides + rotRad - Mathf.PI / 2f;
+                Vector3 tangent = new Vector3(-Mathf.Sin(angle), Mathf.Cos(angle), 0f);
+                Vector3 roundHandleIn  = pos - tangent * handleLenMax;
+                Vector3 roundHandleOut = pos + tangent * handleLenMax;
+
+                _points.Add(new PathPoint(pos)
+                {
+                    handleIn  = Vector3.Lerp(sharpHandleIn,  roundHandleIn,  cornerRoundness),
+                    handleOut = Vector3.Lerp(sharpHandleOut, roundHandleOut, cornerRoundness),
+                    isBroken  = false,
+                });
+            }
+            MarkDirty();
+        }
+
+        /// <summary>
+        /// 현재 오브젝트 위치를 중심으로 별모양 경로를 생성한다.
+        /// 외부 꼭짓점(outerRadius)과 내부 꼭짓점(innerRadius)이 교대로 배치된다.
+        /// </summary>
+        /// <param name="points">꼭짓점 수 (별의 뾰족한 끝 개수, 최소 2)</param>
+        /// <param name="outerRadius">외부 꼭짓점 반지름</param>
+        /// <param name="innerRadius">내부 꼭짓점 반지름</param>
+        /// <param name="rotation">회전 각도 (도, 기본 0 = 위쪽 외부 꼭짓점부터)</param>
+        public void SetStar(int points, float outerRadius, float innerRadius, float rotation = 0f)
+        {
+            points      = Mathf.Max(2, points);
+            _points     = new List<PathPoint>(points * 2);
+            _isLoop     = true;
+
+            Vector3 center     = WorldToPath(transform.position);
+            float   rotRad     = rotation * Mathf.Deg2Rad;
+            int     totalVerts = points * 2;
+
+            // 각 꼭짓점 위치: 외부/내부 교대 (-π/2 오프셋: 위쪽부터 시작)
+            var positions = new Vector3[totalVerts];
+            for (int i = 0; i < totalVerts; i++)
+            {
+                float angle = 2f * Mathf.PI * i / totalVerts + rotRad - Mathf.PI / 2f;
+                float r     = (i % 2 == 0) ? outerRadius : innerRadius;
+                positions[i] = center + new Vector3(Mathf.Cos(angle) * r, Mathf.Sin(angle) * r, 0f);
+            }
+
+            for (int i = 0; i < totalVerts; i++)
+            {
+                int     prevIdx = (i - 1 + totalVerts) % totalVerts;
+                int     nextIdx = (i + 1) % totalVerts;
+                Vector3 pos     = positions[i];
+
+                // 날카로운 모서리: 인접 꼭짓점 방향으로 1/3 거리 (직선 세그먼트)
+                _points.Add(new PathPoint(pos)
+                {
+                    handleIn  = pos + (positions[prevIdx] - pos) / 3f,
+                    handleOut = pos + (positions[nextIdx] - pos) / 3f,
+                    isBroken  = false,
+                });
+            }
+            MarkDirty();
+        }
+
+        /// <summary>
         /// 모든 정점을 경로 중심에서 법선(Normal) 방향으로 이동하여 경로를 확대/축소한다.
         /// </summary>
         /// <param name="amount">이동량 (양수: 확대, 음수: 축소)</param>
@@ -555,6 +732,180 @@ namespace CAT.Utility
             if (_points == null || index < 0 || index >= _points.Count) return;
             RelaxPointInternal(index);
             MarkDirty();
+        }
+
+        #endregion
+
+        #region 공개 API - 에이전트 (독립 타이밍 이동)
+
+        /// <summary>에이전트 수</summary>
+        public int AgentCount => _agents != null ? _agents.Count : 0;
+
+        /// <summary>
+        /// Transform을 에이전트로 등록한다. 등록 시점을 시작 시간으로 설정하여
+        /// 이후 경로를 독립적으로 따라가게 된다.
+        /// </summary>
+        /// <param name="target">경로를 따라 이동할 Transform</param>
+        public void AddAgent(Transform target)
+        {
+            if (target == null)
+            {
+                Debug.LogWarning($"[PathFollower] {name}: AddAgent에 null이 전달되었습니다.");
+                return;
+            }
+
+            if (_agents == null) _agents = new List<PathFollowerAgent>();
+
+            // 이미 등록된 경우 시작 시간만 갱신
+            foreach (var a in _agents)
+            {
+                if (a.target == target)
+                {
+                    a.startTime = Time.time;
+                    return;
+                }
+            }
+
+            _agents.Add(new PathFollowerAgent
+            {
+                target    = target,
+                startTime = Time.time,
+                progress  = 0f,
+            });
+        }
+
+        /// <summary>에이전트를 목록에서 제거한다.</summary>
+        public void RemoveAgent(Transform target)
+        {
+            if (_agents == null) return;
+            for (int i = _agents.Count - 1; i >= 0; i--)
+            {
+                if (_agents[i].target == target)
+                {
+                    _agents.RemoveAt(i);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>모든 에이전트를 제거한다.</summary>
+        public void ClearAgents()
+        {
+            _agents?.Clear();
+        }
+
+        /// <summary>지정 에이전트의 현재 진행도(0~1)를 반환한다. 미등록 시 -1 반환.</summary>
+        public float GetAgentProgress(Transform target)
+        {
+            if (_agents == null) return -1f;
+            foreach (var a in _agents)
+            {
+                if (a.target == target) return a.progress;
+            }
+            return -1f;
+        }
+
+        #endregion
+
+        #region 공개 API - 스냅샷 / 모핑
+
+        /// <summary>현재 저장된 스냅샷 수</summary>
+        public int SnapshotCount => _snapshots != null ? _snapshots.Count : 0;
+
+        /// <summary>현재 적용된 스냅샷 인덱스 (-1 = 없음)</summary>
+        public int CurrentSnapshotIndex => _currentSnapshotIndex;
+
+        /// <summary>현재 경로(_points)를 스냅샷으로 저장한다.</summary>
+        /// <param name="snapshotName">스냅샷 이름 (빈 문자열이면 "Snapshot N" 자동 부여)</param>
+        public void SaveAsSnapshot(string snapshotName = "")
+        {
+            if (_snapshots == null) _snapshots = new List<PathSnapshot>();
+            if (string.IsNullOrEmpty(snapshotName))
+                snapshotName = $"Snapshot {_snapshots.Count + 1}";
+
+            var snap = new PathSnapshot
+            {
+                name   = snapshotName,
+                isLoop = _isLoop,
+                points = new List<PathPoint>(_points.Count),
+            };
+            foreach (var p in _points) snap.points.Add(p.Clone());
+            _snapshots.Add(snap);
+        }
+
+        /// <summary>
+        /// 지정 인덱스의 스냅샷으로 전환한다.
+        /// morphingDuration > 0 이고 포인트 수가 같으면 모핑 애니메이션이 재생된다.
+        /// </summary>
+        /// <param name="index">전환할 스냅샷 인덱스</param>
+        public void SwitchToSnapshot(int index)
+        {
+            SwitchToSnapshot(index, morphingDuration);
+        }
+
+        /// <summary>
+        /// 지정 인덱스의 스냅샷으로 전환한다 (모핑 시간 직접 지정).
+        /// overrideDuration = 0 이면 즉시 전환, 포인트 수가 다르면 항상 즉시 전환.
+        /// </summary>
+        /// <param name="index">전환할 스냅샷 인덱스</param>
+        /// <param name="overrideDuration">모핑 시간 (초), 0 = 즉시</param>
+        public void SwitchToSnapshot(int index, float overrideDuration)
+        {
+            if (_snapshots == null || index < 0 || index >= _snapshots.Count)
+            {
+                Debug.LogWarning($"[PathFollower] {name}: 스냅샷 인덱스 {index}가 범위를 벗어났습니다.");
+                return;
+            }
+
+            var snap = _snapshots[index];
+            bool canMorph = overrideDuration > 0f
+                         && snap.points.Count == _points.Count
+                         && _points.Count >= 2;
+
+            if (canMorph)
+            {
+                // 현재 상태를 morphFrom으로 저장
+                _morphFrom = new List<PathPoint>(_points.Count);
+                foreach (var p in _points) _morphFrom.Add(p.Clone());
+
+                // 목표 상태 설정
+                _morphTo = new List<PathPoint>(snap.points.Count);
+                foreach (var p in snap.points) _morphTo.Add(p.Clone());
+
+                _morphTargetLoop = snap.isLoop;
+                _morphDuration   = overrideDuration;
+                _morphTimer      = 0f;
+                _isMorphing      = true;
+            }
+            else
+            {
+                // 즉시 전환 (포인트 수 달라도 가능)
+                _isMorphing = false;
+                _points = new List<PathPoint>(snap.points.Count);
+                foreach (var p in snap.points) _points.Add(p.Clone());
+                _isLoop = snap.isLoop;
+                MarkDirty();
+            }
+
+            _currentSnapshotIndex = index;
+        }
+
+        /// <summary>지정 인덱스의 스냅샷을 삭제한다.</summary>
+        public void RemoveSnapshot(int index)
+        {
+            if (_snapshots == null || index < 0 || index >= _snapshots.Count) return;
+            _snapshots.RemoveAt(index);
+
+            // 현재 인덱스 보정
+            if (_currentSnapshotIndex >= _snapshots.Count)
+                _currentSnapshotIndex = _snapshots.Count - 1;
+        }
+
+        /// <summary>지정 인덱스의 스냅샷 데이터를 반환한다 (null = 범위 초과).</summary>
+        public PathSnapshot GetSnapshot(int index)
+        {
+            if (_snapshots == null || index < 0 || index >= _snapshots.Count) return null;
+            return _snapshots[index];
         }
 
         #endregion
@@ -610,6 +961,8 @@ namespace CAT.Utility
         /// <summary>
         /// Catmull-Rom 방식으로 단일 정점의 핸들을 이웃 정점 기반으로 계산한다.
         /// 끝점(비루프)은 인접 방향으로 1/3 거리에 핸들을 배치한다.
+        /// handleOut은 다음 세그먼트 길이, handleIn은 이전 세그먼트 길이 기준으로
+        /// 각각 독립 계산하여 원형 경로에서의 왜곡을 줄인다.
         /// </summary>
         private void RelaxPointInternal(int i)
         {
@@ -635,13 +988,57 @@ namespace CAT.Utility
             }
             else
             {
-                // 중간 정점: 양쪽 이웃 사이의 접선 방향으로 핸들 설정
-                float   scale   = Mathf.Min(Vector3.Distance(curr, prev), Vector3.Distance(curr, next)) / 3f;
-                Vector3 tangent = (next - prev).normalized;
-                _points[i].handleOut = curr + tangent * scale;
-                _points[i].handleIn  = curr - tangent * scale;
+                // 중간 정점: 각 세그먼트 길이의 1/3 을 독립적으로 사용 (원형 경로 왜곡 방지)
+                float   distPrev = Vector3.Distance(curr, prev);
+                float   distNext = Vector3.Distance(curr, next);
+                float   outLen   = distNext / 3f;   // handleOut: 다음 세그먼트 길이의 1/3
+                float   inLen    = distPrev / 3f;   // handleIn:  이전 세그먼트 길이의 1/3
+                Vector3 tangent  = (next - prev).normalized;
+                _points[i].handleOut = curr + tangent * outLen;
+                _points[i].handleIn  = curr - tangent * inLen;
             }
             _points[i].isBroken = false;
+        }
+
+        /// <summary>
+        /// 등록된 에이전트를 각자의 시작 시간 기준으로 이동시킨다.
+        /// null target은 자동 제거된다.
+        /// </summary>
+        private void UpdateAgents()
+        {
+            if (_agents == null || _agents.Count == 0) return;
+
+            for (int i = _agents.Count - 1; i >= 0; i--)
+            {
+                var agent = _agents[i];
+                if (agent.target == null) { _agents.RemoveAt(i); continue; }
+
+                float elapsed = (Time.time - agent.startTime) / duration;
+                float t;
+
+                switch (loopType)
+                {
+                    case LoopType.Restart:
+                        t = elapsed % 1f;
+                        break;
+                    case LoopType.Yoyo:
+                        float cycle = elapsed % 2f;
+                        t = cycle < 1f ? cycle : 2f - cycle;
+                        break;
+                    default: // None
+                        t = Mathf.Clamp01(elapsed);
+                        break;
+                }
+
+                // AnimationCurve + startOffset 적용
+                float curved = movementCurve.Evaluate(t);
+                float final  = (_isLoop && curved + startOffset >= 1f)
+                    ? (curved + startOffset) % 1f
+                    : Mathf.Clamp01(curved + startOffset);
+
+                agent.progress = final;
+                agent.target.position = GetPointAt(final);
+            }
         }
 
         /// <summary>캐시 무효화 플래그를 세트한다. 포인트 변경 시 호출한다.</summary>

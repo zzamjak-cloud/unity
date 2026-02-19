@@ -54,10 +54,27 @@ public class PathFollowerEditor : Editor
     private bool   _isTestPlaying = false;
     private double _testStartTime;
 
-    // 경로 도구 (Circle / Expand)
+    // ── 경로 도구: 원형 ───────────────────────────────────
     private float _circleRadius   = 5f;
     private int   _circleSegments = 4;
-    private float _expandAmount   = 1f;
+
+    // ── 경로 도구: 다각형 ─────────────────────────────────
+    private int   _polygonSides     = 6;
+    private float _polygonRadius    = 5f;
+    private float _polygonRotation  = 0f;
+    private float _polygonRoundness = 0f;
+
+    // ── 경로 도구: 별모양 ─────────────────────────────────
+    private int   _starPoints      = 5;
+    private float _starOuterRadius = 5f;
+    private float _starInnerRadius = 2f;
+    private float _starRotation    = 0f;
+
+    // ── 경로 도구: 확대/축소 ──────────────────────────────
+    private float _expandAmount = 1f;
+
+    // ── 스냅샷 UI ────────────────────────────────────────
+    private string _snapshotSaveName = "";
 
     #endregion
 
@@ -72,6 +89,9 @@ public class PathFollowerEditor : Editor
         _isTestPlaying = false;
         // UI 모드 여부에 따라 기본 반지름 설정
         _circleRadius  = _isUIMode ? 200f : 5f;
+        _polygonRadius = _isUIMode ? 200f : 5f;
+        _starOuterRadius = _isUIMode ? 200f : 5f;
+        _starInnerRadius = _isUIMode ? 80f  : 2f;
     }
 
     private void OnDisable()
@@ -96,6 +116,8 @@ public class PathFollowerEditor : Editor
         {
             EditorGUILayout.Space(4);
             DrawPathToolsSection();
+            EditorGUILayout.Space(4);
+            DrawSnapshotSection();
         }
 
         EditorGUILayout.Space(4);
@@ -151,6 +173,7 @@ public class PathFollowerEditor : Editor
             EditorGUILayout.HelpBox(
                 "SceneView 조작 방법:\n" +
                 "  클릭 - 선택 / Shift+클릭 - 추가 선택\n" +
+                "  클릭+드래그 - 즉시 이동\n" +
                 "  Alt+클릭(곡선) - 그 위치에 포인트 삽입\n" +
                 "  Ctrl+드래그 - 박스 선택\n" +
                 "  우클릭(포인트) - 컨텍스트 메뉴\n" +
@@ -233,6 +256,13 @@ public class PathFollowerEditor : Editor
         EditorGUILayout.LabelField("State", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("progress"),   new GUIContent("Progress"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("isPlaying"),  new GUIContent("Is Playing"));
+
+        // 런타임: 에이전트 상태 표시
+        if (Application.isPlaying && _follower.AgentCount > 0)
+        {
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField($"Agents: {_follower.AgentCount}명 이동 중", EditorStyles.miniLabel);
+        }
     }
 
     private void DrawPathToolsSection()
@@ -254,7 +284,69 @@ public class PathFollowerEditor : Editor
             {
                 Undo.RecordObject(_follower, "Set Circle Path");
                 _follower.SetCircle(_circleRadius, _circleSegments);
-                // IsLoop 변경이 SerializedObject에 반영되도록 동기화
+                serializedObject.Update();
+                ClearSelection();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+        }
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(4);
+
+        // ── 다각형 프리셋 ────────────────────────────────────
+        EditorGUILayout.LabelField("다각형 프리셋", EditorStyles.miniLabel);
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("변 수", GUILayout.Width(30));
+        _polygonSides = Mathf.Max(3, EditorGUILayout.IntField(_polygonSides, GUILayout.Width(30)));
+        EditorGUILayout.LabelField("반지름", GUILayout.Width(44));
+        _polygonRadius = EditorGUILayout.FloatField(_polygonRadius, GUILayout.Width(48));
+        EditorGUILayout.LabelField("회전", GUILayout.Width(30));
+        _polygonRotation = EditorGUILayout.FloatField(_polygonRotation, GUILayout.Width(42));
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("둥글기", GUILayout.Width(44));
+        _polygonRoundness = EditorGUILayout.Slider(_polygonRoundness, 0f, 1f);
+        if (GUILayout.Button("다각형 생성", GUILayout.Width(76)))
+        {
+            if (EditorUtility.DisplayDialog("다각형 경로 생성",
+                $"{_polygonSides}변 다각형 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
+                "생성", "취소"))
+            {
+                Undo.RecordObject(_follower, "Set Polygon Path");
+                _follower.SetPolygon(_polygonSides, _polygonRadius, _polygonRotation, _polygonRoundness);
+                serializedObject.Update();
+                ClearSelection();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+        }
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(4);
+
+        // ── 별모양 프리셋 ────────────────────────────────────
+        EditorGUILayout.LabelField("별모양 프리셋", EditorStyles.miniLabel);
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("꼭짓점", GUILayout.Width(40));
+        _starPoints = Mathf.Max(2, EditorGUILayout.IntField(_starPoints, GUILayout.Width(30)));
+        EditorGUILayout.LabelField("외부R", GUILayout.Width(36));
+        _starOuterRadius = EditorGUILayout.FloatField(_starOuterRadius, GUILayout.Width(48));
+        EditorGUILayout.LabelField("내부R", GUILayout.Width(36));
+        _starInnerRadius = EditorGUILayout.FloatField(_starInnerRadius, GUILayout.Width(48));
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("회전", GUILayout.Width(30));
+        _starRotation = EditorGUILayout.FloatField(_starRotation, GUILayout.Width(42));
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("별모양 생성", GUILayout.Width(76)))
+        {
+            if (EditorUtility.DisplayDialog("별모양 경로 생성",
+                $"{_starPoints}개 꼭짓점의 별모양 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
+                "생성", "취소"))
+            {
+                Undo.RecordObject(_follower, "Set Star Path");
+                _follower.SetStar(_starPoints, _starOuterRadius, _starInnerRadius, _starRotation);
                 serializedObject.Update();
                 ClearSelection();
                 EditorUtility.SetDirty(_follower);
@@ -301,6 +393,96 @@ public class PathFollowerEditor : Editor
             _follower.RelaxPath();
             EditorUtility.SetDirty(_follower);
             SceneView.RepaintAll();
+        }
+    }
+
+    private void DrawSnapshotSection()
+    {
+        EditorGUILayout.LabelField("Snapshots", EditorStyles.boldLabel);
+
+        // Morphing Duration 필드
+        EditorGUILayout.PropertyField(
+            serializedObject.FindProperty("morphingDuration"),
+            new GUIContent("Morphing Duration", "스냅샷 전환 시 모핑 시간 (초). 0 = 즉시 전환. 포인트 수가 달라도 즉시 전환."));
+
+        EditorGUILayout.Space(4);
+
+        // 현재를 스냅샷으로 저장
+        EditorGUILayout.BeginHorizontal();
+        _snapshotSaveName = EditorGUILayout.TextField(_snapshotSaveName, GUILayout.ExpandWidth(true));
+        if (GUILayout.Button("스냅샷 저장", GUILayout.Width(80)))
+        {
+            Undo.RecordObject(_follower, "Save Snapshot");
+            _follower.SaveAsSnapshot(_snapshotSaveName);
+            _snapshotSaveName = "";
+            serializedObject.Update();
+            EditorUtility.SetDirty(_follower);
+        }
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.LabelField("이름 입력 후 저장 (빈 칸이면 자동 이름)", EditorStyles.miniLabel);
+
+        EditorGUILayout.Space(4);
+
+        int snapshotCount = _follower.SnapshotCount;
+        if (snapshotCount == 0)
+        {
+            EditorGUILayout.HelpBox("스냅샷이 없습니다. 위 버튼으로 현재 경로를 저장하세요.", MessageType.None);
+            return;
+        }
+
+        // 스냅샷 목록
+        for (int i = 0; i < snapshotCount; i++)
+        {
+            PathSnapshot snap = _follower.GetSnapshot(i);
+            if (snap == null) continue;
+
+            bool isActive = (i == _follower.CurrentSnapshotIndex);
+
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+            // 활성 표시
+            if (isActive)
+            {
+                var prevBg = GUI.backgroundColor;
+                GUI.backgroundColor = new Color(1f, 0.9f, 0.3f);
+                EditorGUILayout.LabelField($"[{i}] {snap.name}  ({snap.points.Count}pts, loop={snap.isLoop})",
+                    EditorStyles.boldLabel, GUILayout.ExpandWidth(true));
+                GUI.backgroundColor = prevBg;
+            }
+            else
+            {
+                EditorGUILayout.LabelField($"[{i}] {snap.name}  ({snap.points.Count}pts, loop={snap.isLoop})",
+                    GUILayout.ExpandWidth(true));
+            }
+
+            // 즉시 적용 버튼 (에디터에서는 morphingDuration=0으로 즉시 전환)
+            if (GUILayout.Button("적용", GUILayout.Width(42)))
+            {
+                Undo.RecordObject(_follower, $"Switch to Snapshot {i}");
+                _follower.SwitchToSnapshot(i, 0f);
+                serializedObject.Update();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+
+            // 삭제 버튼
+            var prevBgDel = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
+            if (GUILayout.Button("X", GUILayout.Width(22)))
+            {
+                if (EditorUtility.DisplayDialog("스냅샷 삭제",
+                    $"'{snap.name}' 스냅샷을 삭제하시겠습니까?", "삭제", "취소"))
+                {
+                    Undo.RecordObject(_follower, "Remove Snapshot");
+                    _follower.RemoveSnapshot(i);
+                    serializedObject.Update();
+                    EditorUtility.SetDirty(_follower);
+                    break; // 컬렉션 수정 후 루프 종료
+                }
+            }
+            GUI.backgroundColor = prevBgDel;
+
+            EditorGUILayout.EndHorizontal();
         }
     }
 
@@ -401,13 +583,52 @@ public class PathFollowerEditor : Editor
 
     #endregion
 
-    #region 포인트 / 핸들 드래그
+    #region 포인트 / 핸들 드래그 (즉각 이동 지원)
 
     private void DrawAndHandlePoints()
     {
-        int count = _follower.PointCount;
-        Event e   = Event.current;
+        int   count = _follower.PointCount;
+        Event e     = Event.current;
 
+        // ── Pre-pass: MouseDown 시 가장 가까운 포인트를 즉시 선택 ──────────────────
+        // 이벤트를 소비하지 않으므로 FreeMoveHandle이 동일 이벤트에서 드래그를 이어받을 수 있다.
+        if (e.type == EventType.MouseDown && e.button == 0 && !e.alt && !e.control)
+        {
+            int   nearestIdx  = -1;
+            float nearestDist = CLICK_RADIUS; // 픽셀 임계값
+
+            for (int i = 0; i < count; i++)
+            {
+                PathPoint p = _follower.GetPoint(i);
+                if (p == null) continue;
+                float d = GUIDist(e.mousePosition, _follower.PathToWorld(p.position));
+                if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+            }
+
+            if (nearestIdx >= 0)
+            {
+                if (e.shift)
+                {
+                    // Shift: 토글
+                    if (_selectedIndices.Contains(nearestIdx)) _selectedIndices.Remove(nearestIdx);
+                    else                                        _selectedIndices.Add(nearestIdx);
+                    _selectedIndex = nearestIdx;
+                }
+                else if (!_selectedIndices.Contains(nearestIdx))
+                {
+                    // 미선택 포인트 클릭: 단독 선택으로 변경
+                    _selectedIndices.Clear();
+                    _selectedIndices.Add(nearestIdx);
+                    _selectedIndex = nearestIdx;
+                }
+                // 이미 선택된 포인트 클릭 → 선택 유지 (다중 드래그 지원)
+                _rotationMode = false;
+                Repaint();
+                // 이벤트 소비 안 함 → FreeMoveHandle이 드래그를 이어받음
+            }
+        }
+
+        // ── 메인 루프: 핸들 + 포인트 FreeMoveHandle ──────────────────────────────
         for (int i = 0; i < count; i++)
         {
             PathPoint point = _follower.GetPoint(i);
@@ -416,9 +637,9 @@ public class PathFollowerEditor : Editor
             Vector3 wPos  = _follower.PathToWorld(point.position);
             Vector3 wHIn  = _follower.PathToWorld(point.handleIn);
             Vector3 wHOut = _follower.PathToWorld(point.handleOut);
-            bool isSel    = _selectedIndices.Contains(i);
+            bool    isSel = _selectedIndices.Contains(i);
 
-            // --- 핸들선 + 핸들 드래그 ---
+            // --- 핸들선 + 핸들 드래그 (선택 포인트만) ---
             if (isSel && !_rotationMode)
             {
                 Handles.color = ColorHandleLine;
@@ -460,84 +681,58 @@ public class PathFollowerEditor : Editor
                 }
             }
 
-            // --- 포인트 버튼 (클릭 선택) ---
+            // --- 포인트: FreeMoveHandle (모든 포인트, 선택 여부에 따라 색상/크기 다름) ---
+            // 선택된 포인트는 약간 크게, 미선택은 작게 표시
             Handles.color = isSel ? ColorPointSel : ColorPoint;
-            float ptSz = HandleUtility.GetHandleSize(wPos) * POINT_SIZE;
+            float ptSz = HandleUtility.GetHandleSize(wPos) * POINT_SIZE * (isSel ? 1.15f : 0.85f);
 
-            if (Handles.Button(wPos, Quaternion.identity, ptSz, ptSz * 1.5f, Handles.SphereHandleCap))
+            EditorGUI.BeginChangeCheck();
+            Vector3 newWPos = _isUIMode
+                ? Handles.Slider2D(wPos, _follower.transform.forward,
+                    _follower.transform.right, _follower.transform.up,
+                    ptSz, Handles.SphereHandleCap, 0f)
+                : Handles.FreeMoveHandle(wPos, ptSz, Vector3.zero, Handles.SphereHandleCap);
+
+            if (EditorGUI.EndChangeCheck())
             {
-                if (e.shift)
+                // FreeMoveHandle이 드래그됐을 때: pre-pass에서 선택되지 않은 경우 보정
+                if (!_selectedIndices.Contains(i))
                 {
-                    // Shift: 다중 선택 토글
-                    if (_selectedIndices.Contains(i)) _selectedIndices.Remove(i);
-                    else                               _selectedIndices.Add(i);
-                    _selectedIndex = i;
-                }
-                else
-                {
-                    // 단독 선택
-                    _selectedIndices.Clear();
+                    if (!e.shift) _selectedIndices.Clear();
                     _selectedIndices.Add(i);
                     _selectedIndex = i;
                 }
-                _rotationMode = false;
+
+                Undo.RecordObject(_follower, "Move PathPoint");
+
+                Vector3 localOld = _follower.WorldToPath(wPos);
+                Vector3 localNew = _follower.WorldToPath(newWPos);
+                if (_isUIMode) localNew.z = 0f;
+                Vector3 delta = localNew - localOld;
+
+                if (_selectedIndices.Count > 1)
+                {
+                    // 다중 선택: 선택된 모든 포인트를 같은 delta로 이동
+                    foreach (int idx in _selectedIndices)
+                    {
+                        PathPoint mp = _follower.GetPoint(idx);
+                        if (mp == null) continue;
+                        mp.position  += delta;
+                        mp.handleIn  += delta;
+                        mp.handleOut += delta;
+                        _follower.SetPoint(idx, mp);
+                    }
+                }
+                else
+                {
+                    Vector3 worldSnapped = _follower.PathToWorld(localNew);
+                    _follower.SetPointPosition(i, worldSnapped);
+                }
+
+                EditorUtility.SetDirty(_follower);
                 Repaint();
             }
-
-            // --- 포인트 이동 핸들 (선택됐을 때, 회전 모드 아닐 때) ---
-            if (isSel && !_rotationMode)
-            {
-                Quaternion rot = Tools.pivotRotation == PivotRotation.Global
-                    ? Quaternion.identity
-                    : _follower.transform.rotation;
-
-                EditorGUI.BeginChangeCheck();
-                Vector3 newPos = _isUIMode
-                    ? MoveHandle2D(wPos, rot)
-                    : Handles.PositionHandle(wPos, rot);
-
-                if (EditorGUI.EndChangeCheck())
-                {
-                    Undo.RecordObject(_follower, "Move PathPoint");
-
-                    Vector3 localOld = _follower.WorldToPath(wPos);
-                    Vector3 localNew = _follower.WorldToPath(newPos);
-                    if (_isUIMode) localNew.z = 0f;
-                    Vector3 delta = localNew - localOld;
-
-                    if (_selectedIndices.Count > 1)
-                    {
-                        foreach (int idx in _selectedIndices)
-                        {
-                            PathPoint mp = _follower.GetPoint(idx);
-                            if (mp == null) continue;
-                            mp.position  += delta;
-                            mp.handleIn  += delta;
-                            mp.handleOut += delta;
-                            _follower.SetPoint(idx, mp);
-                        }
-                    }
-                    else
-                    {
-                        Vector3 worldSnapped = _follower.PathToWorld(localNew);
-                        _follower.SetPointPosition(i, worldSnapped);
-                    }
-
-                    EditorUtility.SetDirty(_follower);
-                    Repaint();
-                }
-            }
         }
-    }
-
-    /// <summary>Canvas(UI 모드)용 2D 이동 핸들 (Z축 잠금)</summary>
-    private Vector3 MoveHandle2D(Vector3 worldPos, Quaternion rot)
-    {
-        Vector3 normal = _follower.transform.forward;
-        Vector3 right  = _follower.transform.right;
-        Vector3 up     = _follower.transform.up;
-        float   sz     = HandleUtility.GetHandleSize(worldPos) * POINT_SIZE * 1.5f;
-        return Handles.Slider2D(worldPos, normal, right, up, sz, Handles.RectangleHandleCap, 0f);
     }
 
     #endregion
@@ -1084,9 +1279,9 @@ public class PathFollowerEditor : Editor
         {
             switch (_follower.loopType)
             {
-                case PathFollower.LoopType.Restart: _follower.EditorTimer = 0f;                           break;
+                case PathFollower.LoopType.Restart: _follower.EditorTimer = 0f;                            break;
                 case PathFollower.LoopType.Yoyo:    _follower.EditorTimer = 1f; _follower.EditorIsForward = false; break;
-                default:                             _follower.EditorTimer = 0f;                           break;
+                default:                             _follower.EditorTimer = 0f;                            break;
             }
         }
         else if (_follower.EditorTimer <= 0f && _follower.loopType == PathFollower.LoopType.Yoyo)
