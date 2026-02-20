@@ -28,7 +28,7 @@ Shader "CAT/Particles/FlowUV" {
             #pragma multi_compile_local _ _SOFTMASK_NESTED
 
             #include "UnityCG.cginc"
-            #include "../../Scripts/SoftMask/Shader/CAT_SoftMask_Core.cginc"
+            #include "CAT_SoftMask.cginc"
 
             struct appdata {
                 float4 vertex  : POSITION;
