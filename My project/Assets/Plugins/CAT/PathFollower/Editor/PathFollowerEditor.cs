@@ -21,6 +21,8 @@ public class PathFollowerEditor : Editor
 
     private static readonly Color ColorPath         = new Color(0.2f, 1f, 0.2f);
     private static readonly Color ColorPoint        = new Color(1f, 1f, 1f);
+    private static readonly Color ColorPointStart   = new Color(0.2f, 1f, 0.6f);   // StartPoint(인덱스 0)
+    private static readonly Color ColorPointStartSel = new Color(0.4f, 1f, 0.8f);  // StartPoint 선택 시
     private static readonly Color ColorPointSel     = new Color(1f, 0.8f, 0f);
     private static readonly Color ColorHandleIn     = new Color(0.4f, 0.8f, 1f);
     private static readonly Color ColorHandleOut    = new Color(1f, 0.5f, 0.2f);
@@ -85,6 +87,10 @@ public class PathFollowerEditor : Editor
 
     // ── 스냅샷 UI ────────────────────────────────────────
     private string _snapshotSaveName = "";
+
+    // ── 선택 영역 회전/스케일 ──────────────────────────────
+    private float _selectionRotateAngle = 0f;
+    private float _selectionScaleAmount = 1f;
 
     // ── 스냅샷 모핑 테스트 ────────────────────────────────
     private bool   _isSnapshotTestPlaying = false;
@@ -177,6 +183,11 @@ public class PathFollowerEditor : Editor
         if (GUILayout.Button("+ 포인트 추가", GUILayout.Height(22)))
             AddPointAtEnd();
 
+        if (GUILayout.Button("전체 선택", GUILayout.Height(22)))
+        {
+            SelectAllPoints();
+        }
+
         if (GUILayout.Button("경로 초기화", GUILayout.Height(22)))
         {
             if (EditorUtility.DisplayDialog("경로 초기화", "모든 포인트를 초기화하시겠습니까?", "초기화", "취소"))
@@ -194,10 +205,15 @@ public class PathFollowerEditor : Editor
             DrawPointInfoBox(_selectedIndex);
         else if (_selectedIndices.Count > 1)
             EditorGUILayout.HelpBox($"{_selectedIndices.Count}개 포인트 선택됨. SceneView에서 이동 가능.", MessageType.None);
+
+        // 선택된 정점이 1개 이상이면 회전/스케일 도구 표시 (전체 선택 시에도 _selectedIndex=0이라 위에서 단일 포인트 박스만 그려지므로 여기서 반드시 호출)
+        if (_selectedIndices.Count >= 1)
+            DrawSelectionTransformTools();
         else
             EditorGUILayout.HelpBox(
                 "SceneView 조작 방법:\n" +
                 "  클릭 - 선택 / Shift+클릭 - 추가 선택\n" +
+                "  Ctrl+A - 전체 선택 (스냅샷용 회전·스케일)\n" +
                 "  클릭+드래그 - 즉시 이동\n" +
                 "  Alt+클릭(곡선) - 그 위치에 포인트 삽입\n" +
                 "  Ctrl+드래그 - 박스 선택\n" +
@@ -265,6 +281,49 @@ public class PathFollowerEditor : Editor
         }
 
         EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndVertical();
+    }
+
+    /// <summary>선택된 정점에 대한 회전/스케일 도구 UI</summary>
+    private void DrawSelectionTransformTools()
+    {
+        if (_selectedIndices.Count == 0) return;
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("선택 영역 변형 (스냅샷용)", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "원형/다각형/별 생성 시 Start Point가 달라 스냅샷 모핑이 부자연스러울 수 있습니다.\n" +
+            "전체 선택 후 회전·스케일로 Start Point를 맞춰 스냅샷을 저장하세요.",
+            MessageType.Info);
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("회전", GUILayout.Width(28));
+        _selectionRotateAngle = EditorGUILayout.FloatField(_selectionRotateAngle, GUILayout.Width(56));
+        EditorGUILayout.LabelField("°", GUILayout.Width(12));
+        if (GUILayout.Button("회전 적용", GUILayout.Width(70)))
+        {
+            Undo.RecordObject(_follower, "Rotate Selected Path");
+            var indices = new List<int>(_selectedIndices);
+            _follower.RotatePath(_selectionRotateAngle, indices);
+            EditorUtility.SetDirty(_follower);
+            SceneView.RepaintAll();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("스케일", GUILayout.Width(28));
+        _selectionScaleAmount = EditorGUILayout.FloatField(_selectionScaleAmount, GUILayout.Width(56));
+        if (GUILayout.Button("스케일 적용", GUILayout.Width(70)))
+        {
+            Undo.RecordObject(_follower, "Scale Selected Path");
+            var indices = new List<int>(_selectedIndices);
+            _follower.ScalePath(_selectionScaleAmount, indices);
+            EditorUtility.SetDirty(_follower);
+            SceneView.RepaintAll();
+        }
+        EditorGUILayout.EndHorizontal();
+
         EditorGUILayout.EndVertical();
     }
 
@@ -556,6 +615,16 @@ public class PathFollowerEditor : Editor
             {
                 Undo.RecordObject(_follower, $"Switch to Snapshot {i}");
                 _follower.SwitchToSnapshot(i, 0f);
+                serializedObject.Update();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+
+            // 현재 경로로 해당 스냅샷 덮어쓰기
+            if (GUILayout.Button("갱신", GUILayout.Width(42)))
+            {
+                Undo.RecordObject(_follower, $"Overwrite Snapshot {i}");
+                _follower.OverwriteSnapshot(i);
                 serializedObject.Update();
                 EditorUtility.SetDirty(_follower);
                 SceneView.RepaintAll();
@@ -898,25 +967,25 @@ public class PathFollowerEditor : Editor
             }
         }
 
-        // ── 메인 루프: 핸들 + 포인트 FreeMoveHandle ──────────────────────────────
-        for (int i = 0; i < count; i++)
+        // ── 1패스: 모든 핸들 먼저 그리기 (선택된 포인트만) ─────────────────────────────
+        // ── 2패스: 모든 정점 그리기 ─────────────────────────────────────────────────
+        // 전역 순서로 "핸들 전부 → 정점 전부" 하면, 겹치는 영역에서 항상 나중에 그려진 정점이 우선 잡힘.
+        if (!_rotationMode)
         {
-            PathPoint point = _follower.GetPoint(i);
-            if (point == null) continue;
-
-            Vector3 wPos  = _follower.PathToWorld(point.position);
-            Vector3 wHIn  = _follower.PathToWorld(point.handleIn);
-            Vector3 wHOut = _follower.PathToWorld(point.handleOut);
-            bool    isSel = _selectedIndices.Contains(i);
-
-            // --- 핸들선 + 핸들 드래그 (선택 포인트만) ---
-            if (isSel && !_rotationMode)
+            for (int i = 0; i < count; i++)
             {
+                if (!_selectedIndices.Contains(i)) continue;
+                PathPoint point = _follower.GetPoint(i);
+                if (point == null) continue;
+
+                Vector3 wPos  = _follower.PathToWorld(point.position);
+                Vector3 wHIn  = _follower.PathToWorld(point.handleIn);
+                Vector3 wHOut = _follower.PathToWorld(point.handleOut);
+
                 Handles.color = ColorHandleLine;
                 Handles.DrawLine(wPos, wHIn);
                 Handles.DrawLine(wPos, wHOut);
 
-                // handleIn
                 Handles.color = ColorHandleIn;
                 float szIn = HandleUtility.GetHandleSize(wHIn) * HANDLE_SIZE;
                 EditorGUI.BeginChangeCheck();
@@ -933,7 +1002,6 @@ public class PathFollowerEditor : Editor
                     EditorUtility.SetDirty(_follower);
                 }
 
-                // handleOut
                 Handles.color = ColorHandleOut;
                 float szOut = HandleUtility.GetHandleSize(wHOut) * HANDLE_SIZE;
                 EditorGUI.BeginChangeCheck();
@@ -950,11 +1018,20 @@ public class PathFollowerEditor : Editor
                     EditorUtility.SetDirty(_follower);
                 }
             }
+        }
 
-            // --- 포인트: FreeMoveHandle (모든 포인트, 선택 여부에 따라 색상/크기 다름) ---
-            // 선택된 포인트는 약간 크게, 미선택은 작게 표시
-            // UI 모드에서도 FreeMoveHandle 사용 (클릭과 동시에 드래그 가능)
-            Handles.color = isSel ? ColorPointSel : ColorPoint;
+        for (int i = 0; i < count; i++)
+        {
+            PathPoint point = _follower.GetPoint(i);
+            if (point == null) continue;
+
+            Vector3 wPos  = _follower.PathToWorld(point.position);
+            bool    isSel = _selectedIndices.Contains(i);
+            bool    isStart = (i == 0);
+            if (isStart)
+                Handles.color = isSel ? ColorPointStartSel : ColorPointStart;
+            else
+                Handles.color = isSel ? ColorPointSel : ColorPoint;
             float ptSz = HandleUtility.GetHandleSize(wPos) * POINT_SIZE * (isSel ? 1.15f : 0.85f);
 
             EditorGUI.BeginChangeCheck();
@@ -962,7 +1039,6 @@ public class PathFollowerEditor : Editor
 
             if (EditorGUI.EndChangeCheck())
             {
-                // FreeMoveHandle이 드래그됐을 때: pre-pass에서 선택되지 않은 경우 보정
                 if (!_selectedIndices.Contains(i))
                 {
                     if (!e.shift) _selectedIndices.Clear();
@@ -974,16 +1050,11 @@ public class PathFollowerEditor : Editor
 
                 Vector3 localOld = _follower.WorldToPath(wPos);
                 Vector3 localNew = _follower.WorldToPath(newWPos);
-                // UI 모드에서는 Z축을 0으로 고정
-                if (_isUIMode)
-                {
-                    localNew.z = 0f;
-                }
+                if (_isUIMode) localNew.z = 0f;
                 Vector3 delta = localNew - localOld;
 
                 if (_selectedIndices.Count > 1)
                 {
-                    // 다중 선택: 선택된 모든 포인트를 같은 delta로 이동
                     foreach (int idx in _selectedIndices)
                     {
                         PathPoint mp = _follower.GetPoint(idx);
@@ -1387,6 +1458,16 @@ public class PathFollowerEditor : Editor
             return;
         }
 
+        // Ctrl+A: 전체 선택
+        if ((e.keyCode == KeyCode.A && (e.control || e.command)) && _follower.PointCount > 0)
+        {
+            SelectAllPoints();
+            e.Use();
+            SceneView.RepaintAll();
+            Repaint();
+            return;
+        }
+
         // Escape: 선택 해제 / 회전 모드 해제
         if (e.keyCode == KeyCode.Escape)
         {
@@ -1584,6 +1665,17 @@ public class PathFollowerEditor : Editor
         _selectedIndices.Clear();
         _selectedIndices.Add(index);
         _selectedIndex = index;
+    }
+
+    /// <summary>모든 포인트를 선택한다.</summary>
+    private void SelectAllPoints()
+    {
+        _selectedIndices.Clear();
+        for (int i = 0; i < _follower.PointCount; i++)
+            _selectedIndices.Add(i);
+        _selectedIndex = _follower.PointCount > 0 ? 0 : -1;
+        Repaint();
+        SceneView.RepaintAll();
     }
 
     /// <summary>월드 → path 좌표 변환 (UI 모드 시 Z=0 클램프)</summary>

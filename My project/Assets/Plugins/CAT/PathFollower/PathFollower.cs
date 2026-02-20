@@ -184,6 +184,8 @@ namespace CAT.Utility
 
         // 부모 Transform 변경 감지용 행렬 캐시
         private Matrix4x4 _cachedParentMatrix;
+        /// <summary>PathToWorld/WorldToPath에서 transform.parent 반복 접근 방지 (모바일 최적화)</summary>
+        private Transform _cachedParent;
 
         // 모핑 상태 (직렬화 제외, 런타임 전용)
         private bool _isMorphing = false;
@@ -233,6 +235,8 @@ namespace CAT.Utility
 
         private void Awake()
         {
+            _cachedParent = transform.parent;
+
             // 포인트가 없으면 기본값으로 초기화
             if (_points == null || _points.Count < 2)
             {
@@ -280,6 +284,7 @@ namespace CAT.Utility
                 {
                     _isMorphing = false;
                     _isLoop = _morphTargetLoop;
+                    MarkDirty();
                 }
             }
 
@@ -309,9 +314,8 @@ namespace CAT.Utility
         /// </summary>
         public Vector3 PathToWorld(Vector3 pathPos)
         {
-            return transform.parent != null
-                ? transform.parent.TransformPoint(pathPos)
-                : pathPos;
+            if (_cachedParent == null) _cachedParent = transform.parent;
+            return _cachedParent != null ? _cachedParent.TransformPoint(pathPos) : pathPos;
         }
 
         /// <summary>
@@ -320,9 +324,8 @@ namespace CAT.Utility
         /// </summary>
         public Vector3 WorldToPath(Vector3 worldPos)
         {
-            return transform.parent != null
-                ? transform.parent.InverseTransformPoint(worldPos)
-                : worldPos;
+            if (_cachedParent == null) _cachedParent = transform.parent;
+            return _cachedParent != null ? _cachedParent.InverseTransformPoint(worldPos) : worldPos;
         }
 
         #endregion
@@ -443,6 +446,7 @@ namespace CAT.Utility
         /// <summary>지정 인덱스의 포인트를 반환한다 (복사본).</summary>
         /// <param name="index">조회할 포인트 인덱스</param>
         /// <returns>PathPoint 복사본 (path 좌표 기준). 인덱스 범위 초과 시 null</returns>
+        /// <remarks>모바일: 매 호출 시 힙 할당이 발생합니다. Update 등 반복 경로에서는 GetPointWorldPosition(int) 또는 위치만 필요 시 GetPointPositionLocal(int) 사용 권장.</remarks>
         public PathPoint GetPoint(int index)
         {
             if (_points == null || index < 0 || index >= _points.Count) return null;
@@ -476,12 +480,20 @@ namespace CAT.Utility
             MarkDirty();
         }
 
-        /// <summary>지정 인덱스 포인트의 월드 좌표를 반환한다.</summary>
+        /// <summary>지정 인덱스 포인트의 월드 좌표를 반환한다. 할당 없음 (모바일 권장).</summary>
         /// <param name="index">조회할 포인트 인덱스</param>
         public Vector3 GetPointWorldPosition(int index)
         {
             if (_points == null || index < 0 || index >= _points.Count) return transform.position;
             return PathToWorld(_points[index].position);
+        }
+
+        /// <summary>지정 인덱스 포인트의 path(로컬) 좌표를 반환한다. 할당 없음 (모바일 권장).</summary>
+        /// <param name="index">조회할 포인트 인덱스</param>
+        public Vector3 GetPointPositionLocal(int index)
+        {
+            if (_points == null || index < 0 || index >= _points.Count) return Vector3.zero;
+            return _points[index].position;
         }
 
         #endregion
@@ -686,6 +698,87 @@ namespace CAT.Utility
         }
 
         /// <summary>
+        /// 지정된 정점들을 무게중심 기준으로 회전한다.
+        /// 스냅샷용으로 원형/다각형/별 생성 후 Start Point 정렬에 유용하다.
+        /// </summary>
+        /// <param name="angleDegrees">회전 각도 (도, 양수=반시계방향)</param>
+        /// <param name="indices">회전할 정점 인덱스 (null 또는 빈 목록이면 전체)</param>
+        public void RotatePath(float angleDegrees, System.Collections.Generic.IList<int> indices = null)
+        {
+            if (_points == null || _points.Count < 2) return;
+
+            var list = GetIndicesOrAll(indices);
+            if (list == null || list.Count == 0) return;
+
+            Vector3 centroid = ComputeCentroid(list);
+            float rad = angleDegrees * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(rad);
+            float sin = Mathf.Sin(rad);
+
+            foreach (int i in list)
+            {
+                // 정점: 무게중심 기준 회전
+                Vector3 dPos = _points[i].position - centroid;
+                _points[i].position = centroid + new Vector3(dPos.x * cos - dPos.y * sin, dPos.x * sin + dPos.y * cos, dPos.z);
+
+                // 핸들도 같은 중심·각도로 회전 (꼬임 방지)
+                Vector3 dIn = _points[i].handleIn - centroid;
+                _points[i].handleIn = centroid + new Vector3(dIn.x * cos - dIn.y * sin, dIn.x * sin + dIn.y * cos, dIn.z);
+                Vector3 dOut = _points[i].handleOut - centroid;
+                _points[i].handleOut = centroid + new Vector3(dOut.x * cos - dOut.y * sin, dOut.x * sin + dOut.y * cos, dOut.z);
+            }
+            MarkDirty();
+        }
+
+        /// <summary>
+        /// 지정된 정점들을 무게중심 기준으로 스케일한다.
+        /// </summary>
+        /// <param name="scale">스케일 배율 (1=유지, 2=2배 확대, 0.5=절반)</param>
+        /// <param name="indices">스케일할 정점 인덱스 (null 또는 빈 목록이면 전체)</param>
+        public void ScalePath(float scale, System.Collections.Generic.IList<int> indices = null)
+        {
+            if (_points == null || _points.Count < 2) return;
+            if (Mathf.Abs(scale - 1f) < 0.0001f) return;
+
+            var list = GetIndicesOrAll(indices);
+            if (list == null || list.Count == 0) return;
+
+            Vector3 centroid = ComputeCentroid(list);
+
+            foreach (int i in list)
+            {
+                // 정점: 무게중심 기준 스케일
+                Vector3 dPos = _points[i].position - centroid;
+                _points[i].position = centroid + dPos * scale;
+
+                // 핸들도 같은 중심·배율로 스케일 (꼬임 방지)
+                Vector3 dIn = _points[i].handleIn - centroid;
+                _points[i].handleIn = centroid + dIn * scale;
+                Vector3 dOut = _points[i].handleOut - centroid;
+                _points[i].handleOut = centroid + dOut * scale;
+            }
+            MarkDirty();
+        }
+
+        private System.Collections.Generic.List<int> GetIndicesOrAll(System.Collections.Generic.IList<int> indices)
+        {
+            if (indices == null || indices.Count == 0)
+            {
+                var all = new System.Collections.Generic.List<int>(_points.Count);
+                for (int i = 0; i < _points.Count; i++) all.Add(i);
+                return all;
+            }
+            return new System.Collections.Generic.List<int>(indices);
+        }
+
+        private Vector3 ComputeCentroid(System.Collections.Generic.List<int> list)
+        {
+            Vector3 c = Vector3.zero;
+            foreach (int i in list) c += _points[i].position;
+            return c / list.Count;
+        }
+
+        /// <summary>
         /// 모든 정점을 경로 중심에서 법선(Normal) 방향으로 이동하여 경로를 확대/축소한다.
         /// </summary>
         /// <param name="amount">이동량 (양수: 확대, 음수: 축소)</param>
@@ -864,14 +957,10 @@ namespace CAT.Utility
 
             if (canMorph)
             {
-                // 현재 상태를 morphFrom으로 저장
                 _morphFrom = new List<PathPoint>(_points.Count);
                 foreach (var p in _points) _morphFrom.Add(p.Clone());
-
-                // 목표 상태 설정
                 _morphTo = new List<PathPoint>(snap.points.Count);
                 foreach (var p in snap.points) _morphTo.Add(p.Clone());
-
                 _morphTargetLoop = snap.isLoop;
                 _morphDuration   = overrideDuration;
                 _morphTimer      = 0f;
@@ -879,7 +968,6 @@ namespace CAT.Utility
             }
             else
             {
-                // 즉시 전환 (포인트 수 달라도 가능)
                 _isMorphing = false;
                 _points = new List<PathPoint>(snap.points.Count);
                 foreach (var p in snap.points) _points.Add(p.Clone());
@@ -888,6 +976,31 @@ namespace CAT.Utility
             }
 
             _currentSnapshotIndex = index;
+        }
+
+        /// <summary>현재 경로(_points, _isLoop)로 지정 인덱스의 스냅샷을 덮어쓴다. 이름은 유지.</summary>
+        /// <param name="index">갱신할 스냅샷 인덱스</param>
+        public void OverwriteSnapshot(int index)
+        {
+            if (_snapshots == null || index < 0 || index >= _snapshots.Count)
+            {
+                Debug.LogWarning($"[PathFollower] {name}: 스냅샷 인덱스 {index}가 범위를 벗어났습니다.");
+                return;
+            }
+            if (_points == null || _points.Count < 2)
+            {
+                Debug.LogWarning($"[PathFollower] {name}: 갱신할 경로 포인트가 2개 미만입니다.");
+                return;
+            }
+
+            string existingName = _snapshots[index].name;
+            _snapshots[index] = new PathSnapshot
+            {
+                name   = existingName,
+                isLoop = _isLoop,
+                points = new List<PathPoint>(_points.Count),
+            };
+            foreach (var p in _points) _snapshots[index].points.Add(p.Clone());
         }
 
         /// <summary>지정 인덱스의 스냅샷을 삭제한다.</summary>
@@ -946,20 +1059,14 @@ namespace CAT.Utility
             if (_snapshots == null || targetSnapshotIndex < 0 || targetSnapshotIndex >= _snapshots.Count) return;
 
             var snap = _snapshots[targetSnapshotIndex];
-
-            // 포인트 수가 같으면 모핑, 다르면 즉시 전환
             bool canMorph = duration > 0f && snap.points.Count == _points.Count && _points.Count >= 2;
 
             if (canMorph)
             {
-                // 현재 상태를 morphFrom으로 저장
                 _morphFrom = new List<PathPoint>(_points.Count);
                 foreach (var p in _points) _morphFrom.Add(p.Clone());
-
-                // 목표 상태 설정
                 _morphTo = new List<PathPoint>(snap.points.Count);
                 foreach (var p in snap.points) _morphTo.Add(p.Clone());
-
                 _morphTargetLoop = snap.isLoop;
                 _morphDuration   = duration;
                 _morphTimer      = 0f;
@@ -967,7 +1074,6 @@ namespace CAT.Utility
             }
             else
             {
-                // 즉시 전환
                 _isMorphing = false;
                 _points = new List<PathPoint>(snap.points.Count);
                 foreach (var p in snap.points) _points.Add(p.Clone());
@@ -988,7 +1094,6 @@ namespace CAT.Utility
             _morphTimer += deltaTime;
             float mt = Mathf.Clamp01(_morphTimer / _morphDuration);
 
-            // _morphFrom 과 _morphTo 사이 선형 보간
             for (int i = 0; i < _points.Count; i++)
             {
                 _points[i].position  = Vector3.Lerp(_morphFrom[i].position,  _morphTo[i].position,  mt);
@@ -1001,6 +1106,7 @@ namespace CAT.Utility
             {
                 _isMorphing = false;
                 _isLoop = _morphTargetLoop;
+                MarkDirty();
             }
         }
 
@@ -1161,19 +1267,20 @@ namespace CAT.Utility
             int pointCount = _points != null ? _points.Count : 0;
 
             // 부모 Transform 변경 감지 (부모가 이동/회전/스케일 변경 시 캐시 무효화)
-            Matrix4x4 currentParentMatrix = transform.parent != null
-                ? transform.parent.localToWorldMatrix
-                : Matrix4x4.identity;
+            Transform parent = transform.parent;
+            Matrix4x4 currentParentMatrix = parent != null ? parent.localToWorldMatrix : Matrix4x4.identity;
 
             if (currentParentMatrix != _cachedParentMatrix)
             {
                 _transformDirty = true;
                 _cachedParentMatrix = currentParentMatrix;
+                _cachedParent = parent;
             }
 
             if (!_transformDirty && _cachedPointCount == pointCount) return;
 
             _cachedPointCount = pointCount;
+            _cachedParent = parent;
 
             // 배열 재할당 (포인트 수 변경 시에만)
             if (_cachedWorldPositions == null || _cachedWorldPositions.Length != pointCount)
