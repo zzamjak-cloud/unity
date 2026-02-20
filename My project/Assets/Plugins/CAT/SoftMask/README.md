@@ -7,12 +7,15 @@
 Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너리(0/1) 클리핑만 지원하여 마스킹 엣지에 계단 현상이 발생합니다. CAT SoftMask는 **텍스처 알파 채널을 기반으로 부드러운 마스킹**을 제공하며, **RenderTexture 없이 단일 패스**로 처리하여 모바일 환경에 최적화되어 있습니다.
 
 ```
-Assets/Scripts/SoftMask/
-├── SoftMask.cs                       # 메인 컴포넌트 (1430줄)
+Assets/Plugins/CAT/SoftMask/
+├── Scripts/
+│   └── SoftMask.cs                   # 메인 컴포넌트 (1430줄)
 ├── Shader/
 │   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (283줄)
 │   ├── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
-│   └── CAT_SoftMask_Core.cginc       # 파티클 셰이더용 공용 마스크 샘플링 (96줄)
+│   ├── CAT_SoftMask_Core.cginc       # 파티클 셰이더용 공용 마스크 샘플링 (106줄)
+│   ├── CAT_UIAdditive.shader         # 이펙트용 Additive 기본 셰이더 (115줄)
+│   └── CAT_UIAlphaBlend.shader       # 이펙트용 AlphaBlend 기본 셰이더 (113줄)
 └── Editor/
     └── SoftMaskEditor.cs             # 커스텀 인스펙터 (165줄)
 ```
@@ -514,6 +517,16 @@ c *= SampleSoftMask1(input.softMaskUV);
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
 
 ## 변경 이력
+
+### v1.2.1 (2026-02-21)
+
+파티클 기본 셰이더 SoftMask 패키지로 통합
+
+**변경사항**
+- `CAT_UIAdditive.shader`, `CAT_UIAlphaBlend.shader`를 SoftMask 폴더(`Shader/`)로 이동
+  - SoftMask 배포 시 파티클 기본 셰이더도 함께 포함되도록 패키지 구조 통일
+  - `CAT_SoftMask_Core.cginc`와 동일 폴더에 위치하므로 include 경로 단순화
+- 두 셰이더의 include 경로 수정: `"CAT_SoftMask.cginc"` → `"CAT_SoftMask_Core.cginc"` (브릿지 파일 불필요)
 
 ### v1.2.0 (2025-02-10)
 

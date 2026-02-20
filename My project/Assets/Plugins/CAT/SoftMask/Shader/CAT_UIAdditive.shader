@@ -62,7 +62,7 @@ Shader "CAT/Particles/UIAdditive"
             #pragma multi_compile_local _ _SOFTMASK_NESTED
 
             #include "UnityCG.cginc"
-            #include "CAT_SoftMask.cginc"
+            #include "CAT_SoftMask_Core.cginc"
 
             struct appdata_t
             {

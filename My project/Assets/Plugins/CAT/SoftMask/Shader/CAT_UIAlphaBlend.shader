@@ -55,7 +55,7 @@ Category {
 
             #include "UnityCG.cginc"
             #include "UnityUI.cginc"
-            #include "CAT_SoftMask.cginc"
+            #include "CAT_SoftMask_Core.cginc"
 
             sampler2D _MainTex;
             fixed4 _TintColor;

@@ -5,11 +5,11 @@ namespace CAT.Effects
 {
     /// <summary>
     /// HSV 색상 변환 컴포넌트
-    /// - 프리셋 사용 시: ColorReplaceMaterialCache로 Material 공유
-    /// - 프리셋 미사용 시: 기존 해시 기반 캐싱 (하위 호환성)
+    /// - SpriteRenderer: 텍스처 기반 Material 공유 + PropertyBlock으로 개별 값 설정
+    /// - UI Graphic: 텍스처 + HSV 설정 기반 Material 캐싱 (같은 설정만 공유)
     /// </summary>
     [AddComponentMenu("CAT/Effects/ColorReplace")]
-    public class ColorReplace : MonoBehaviour, IColorReplaceSettings
+    public class ColorReplace : MonoBehaviour
     {
         public static readonly string SHADER_NAME = "CAT/Effects/ColorReplace";
 
@@ -27,27 +27,6 @@ namespace CAT.Effects
         private static readonly int PropHSVRangeMax = Shader.PropertyToID("_HSVRangeMax");
         private static readonly int PropHSVAdjust = Shader.PropertyToID("_HSVAAdjust");
         private static readonly int PropMainTex = Shader.PropertyToID("_MainTex");
-
-        // ─────────────────────────────────────────────
-        // 프리셋 시스템
-        // ─────────────────────────────────────────────
-
-        [Header("Preset")]
-        [SerializeField] private ColorReplacePreset _preset;
-
-        /// <summary>현재 적용된 프리셋</summary>
-        public ColorReplacePreset Preset
-        {
-            get => _preset;
-            set
-            {
-                _preset = value;
-                if (_preset != null && initialized)
-                {
-                    ApplyPreset(_preset);
-                }
-            }
-        }
 
         // ─────────────────────────────────────────────
         // HSV 설정
@@ -95,48 +74,8 @@ namespace CAT.Effects
         private MaterialPropertyBlock propertyBlock;
         private bool isUIComponent;
         private bool initialized;
-        private int currentCacheKey;            // 현재 캐시 키 (프리셋 미사용 시)
+        private int currentCacheKey;            // 현재 캐시 키 (UI용)
         private int textureId;                  // 텍스처 ID
-        private bool usingPresetCache;          // 프리셋 캐시 사용 여부
-
-        // ─────────────────────────────────────────────
-        // IColorReplaceSettings 구현
-        // ─────────────────────────────────────────────
-
-        float IColorReplaceSettings.HSVRangeMin => _hsvRangeMin;
-        float IColorReplaceSettings.HSVRangeMax => _hsvRangeMax;
-        Vector4 IColorReplaceSettings.HSVAdjust => _hsvAdjust;
-
-        /// <summary>
-        /// Material 공유를 위한 해시 계산
-        /// </summary>
-        public int GetMaterialHash()
-        {
-            unchecked
-            {
-                const uint FNV_PRIME = 16777619;
-                const uint FNV_OFFSET = 2166136261;
-                uint hash = FNV_OFFSET;
-
-                int minBits = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvRangeMin), 0);
-                int maxBits = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvRangeMax), 0);
-
-                hash = (hash ^ (uint)minBits) * FNV_PRIME;
-                hash = (hash ^ (uint)maxBits) * FNV_PRIME;
-
-                int adjustX = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvAdjust.x), 0);
-                int adjustY = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvAdjust.y), 0);
-                int adjustZ = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvAdjust.z), 0);
-                int adjustW = System.BitConverter.ToInt32(System.BitConverter.GetBytes(_hsvAdjust.w), 0);
-
-                hash = (hash ^ (uint)adjustX) * FNV_PRIME;
-                hash = (hash ^ (uint)adjustY) * FNV_PRIME;
-                hash = (hash ^ (uint)adjustZ) * FNV_PRIME;
-                hash = (hash ^ (uint)adjustW) * FNV_PRIME;
-
-                return (int)hash;
-            }
-        }
 
         // ─────────────────────────────────────────────
         // Lifecycle
@@ -190,9 +129,7 @@ namespace CAT.Effects
         }
 
         /// <summary>
-        /// SpriteRenderer 초기화
-        /// 프리셋 사용 시: MaterialCache로 공유
-        /// 프리셋 미사용 시: 텍스처 기반 Material + PropertyBlock
+        /// SpriteRenderer 초기화: 텍스처 기반 Material 공유 + PropertyBlock으로 개별 HSV 값 설정
         /// </summary>
         private void InitializeSpriteRenderer()
         {
@@ -204,49 +141,29 @@ namespace CAT.Effects
             Texture texture = spriteRenderer.sprite.texture;
             textureId = texture != null ? texture.GetInstanceID() : 0;
 
-            if (_preset != null)
+            if (!spriteMaterialCache.TryGetValue(textureId, out currentMaterial))
             {
-                // 프리셋 사용: MaterialCache로 공유
-                currentMaterial = ColorReplaceMaterialCache.Instance.GetOrCreate(shader, textureId, _preset);
-                if (currentMaterial != null && texture != null)
+                currentMaterial = new Material(shader)
+                {
+                    name = $"{SHADER_NAME} (Sprite Shared)",
+                    hideFlags = HideFlags.DontSave
+                };
+                if (texture != null)
                 {
                     currentMaterial.SetTexture(PropMainTex, texture);
                 }
-                usingPresetCache = true;
-            }
-            else
-            {
-                // 프리셋 미사용: 텍스처 기반 Material 캐싱 + PropertyBlock
-                if (!spriteMaterialCache.TryGetValue(textureId, out currentMaterial))
-                {
-                    currentMaterial = new Material(shader)
-                    {
-                        name = $"{SHADER_NAME} (Sprite Shared)",
-                        hideFlags = HideFlags.DontSave
-                    };
-                    if (texture != null)
-                    {
-                        currentMaterial.SetTexture(PropMainTex, texture);
-                    }
-                    spriteMaterialCache[textureId] = currentMaterial;
-                }
-                usingPresetCache = false;
+                spriteMaterialCache[textureId] = currentMaterial;
             }
 
             originalMaterial = spriteRenderer.sharedMaterial;
             spriteRenderer.sharedMaterial = currentMaterial;
 
-            // PropertyBlock으로 개별 HSV 값 설정 (배칭 유지, 프리셋 미사용 시)
-            if (!usingPresetCache)
-            {
-                propertyBlock = new MaterialPropertyBlock();
-            }
+            // PropertyBlock으로 개별 HSV 값 설정 (배칭 유지)
+            propertyBlock = new MaterialPropertyBlock();
         }
 
         /// <summary>
-        /// UI Graphic 초기화
-        /// 프리셋 사용 시: MaterialCache로 공유
-        /// 프리셋 미사용 시: 텍스처 + HSV 설정 기반 캐싱
+        /// UI Graphic 초기화: 텍스처 + HSV 설정 기반 Material 캐싱
         /// </summary>
         private void InitializeUIGraphic()
         {
@@ -256,39 +173,24 @@ namespace CAT.Effects
             Texture texture = GetUITexture();
             textureId = texture != null ? texture.GetInstanceID() : 0;
 
-            if (_preset != null)
+            currentCacheKey = CalculateUICacheKey();
+
+            if (!uiMaterialCache.TryGetValue(currentCacheKey, out currentMaterial))
             {
-                // 프리셋 사용: MaterialCache로 공유
-                currentMaterial = ColorReplaceMaterialCache.Instance.GetOrCreate(shader, textureId, _preset);
-                if (currentMaterial != null && texture != null)
+                currentMaterial = new Material(shader)
+                {
+                    name = $"{SHADER_NAME} (UI Shared)",
+                    hideFlags = HideFlags.DontSave
+                };
+                if (texture != null)
                 {
                     currentMaterial.SetTexture(PropMainTex, texture);
                 }
-                usingPresetCache = true;
-            }
-            else
-            {
-                // 프리셋 미사용: 기존 해시 기반 캐싱
-                currentCacheKey = CalculateUICacheKey();
+                currentMaterial.SetFloat(PropHSVRangeMin, _hsvRangeMin);
+                currentMaterial.SetFloat(PropHSVRangeMax, _hsvRangeMax);
+                currentMaterial.SetVector(PropHSVAdjust, _hsvAdjust);
 
-                if (!uiMaterialCache.TryGetValue(currentCacheKey, out currentMaterial))
-                {
-                    currentMaterial = new Material(shader)
-                    {
-                        name = $"{SHADER_NAME} (UI Shared)",
-                        hideFlags = HideFlags.DontSave
-                    };
-                    if (texture != null)
-                    {
-                        currentMaterial.SetTexture(PropMainTex, texture);
-                    }
-                    currentMaterial.SetFloat(PropHSVRangeMin, _hsvRangeMin);
-                    currentMaterial.SetFloat(PropHSVRangeMax, _hsvRangeMax);
-                    currentMaterial.SetVector(PropHSVAdjust, _hsvAdjust);
-
-                    uiMaterialCache[currentCacheKey] = currentMaterial;
-                }
-                usingPresetCache = false;
+                uiMaterialCache[currentCacheKey] = currentMaterial;
             }
 
             originalMaterial = uiGraphic.material;
@@ -337,119 +239,12 @@ namespace CAT.Effects
             return cachedShader;
         }
 
-        // ─────────────────────────────────────────────
-        // 프리셋 API
-        // ─────────────────────────────────────────────
-
-        /// <summary>
-        /// 프리셋 적용
-        /// </summary>
-        public void ApplyPreset(ColorReplacePreset preset)
-        {
-            if (preset == null) return;
-
-            _preset = preset;
-            preset.ApplyTo(this);
-
-            // 프리셋 사용 시 Material 재초기화
-            if (initialized)
-            {
-                ReInitializeMaterial();
-            }
-        }
-
-        /// <summary>
-        /// Material 재초기화 (프리셋 변경 시)
-        /// </summary>
-        private void ReInitializeMaterial()
-        {
-            Shader shader = GetCachedShader();
-            if (shader == null) return;
-
-            if (_preset != null)
-            {
-                // 프리셋 캐시에서 Material 가져오기
-                currentMaterial = ColorReplaceMaterialCache.Instance.GetOrCreate(shader, textureId, _preset);
-
-                Texture texture = isUIComponent ? GetUITexture() : spriteRenderer?.sprite?.texture;
-                if (currentMaterial != null && texture != null)
-                {
-                    currentMaterial.SetTexture(PropMainTex, texture);
-                }
-
-                usingPresetCache = true;
-            }
-            else
-            {
-                // 프리셋 해제 시 기존 로직으로 복귀
-                if (isUIComponent)
-                {
-                    currentCacheKey = CalculateUICacheKey();
-                    if (!uiMaterialCache.TryGetValue(currentCacheKey, out currentMaterial))
-                    {
-                        currentMaterial = new Material(shader)
-                        {
-                            name = $"{SHADER_NAME} (UI Shared)",
-                            hideFlags = HideFlags.DontSave
-                        };
-                        Texture texture = GetUITexture();
-                        if (texture != null)
-                        {
-                            currentMaterial.SetTexture(PropMainTex, texture);
-                        }
-                        currentMaterial.SetFloat(PropHSVRangeMin, _hsvRangeMin);
-                        currentMaterial.SetFloat(PropHSVRangeMax, _hsvRangeMax);
-                        currentMaterial.SetVector(PropHSVAdjust, _hsvAdjust);
-                        uiMaterialCache[currentCacheKey] = currentMaterial;
-                    }
-                }
-                else
-                {
-                    if (!spriteMaterialCache.TryGetValue(textureId, out currentMaterial))
-                    {
-                        currentMaterial = new Material(shader)
-                        {
-                            name = $"{SHADER_NAME} (Sprite Shared)",
-                            hideFlags = HideFlags.DontSave
-                        };
-                        Texture texture = spriteRenderer?.sprite?.texture;
-                        if (texture != null)
-                        {
-                            currentMaterial.SetTexture(PropMainTex, texture);
-                        }
-                        spriteMaterialCache[textureId] = currentMaterial;
-                    }
-
-                    if (propertyBlock == null)
-                    {
-                        propertyBlock = new MaterialPropertyBlock();
-                    }
-                }
-                usingPresetCache = false;
-            }
-
-            // Material 적용
-            if (isUIComponent && uiGraphic != null)
-            {
-                uiGraphic.material = currentMaterial;
-            }
-            else if (spriteRenderer != null)
-            {
-                spriteRenderer.sharedMaterial = currentMaterial;
-            }
-
-            ApplyProperties();
-        }
-
         /// <summary>
         /// HSV 프로퍼티 적용
         /// </summary>
         private void ApplyProperties()
         {
             if (!initialized) return;
-
-            // 프리셋 사용 중이면 Material 값은 프리셋에서 관리
-            if (usingPresetCache) return;
 
             if (isUIComponent)
             {
@@ -595,9 +390,6 @@ namespace CAT.Effects
                 }
             }
             uiMaterialCache.Clear();
-
-            // 프리셋 캐시도 정리
-            ColorReplaceMaterialCache.Instance.Clear();
         }
 
         /// <summary>
@@ -616,14 +408,6 @@ namespace CAT.Effects
             _hsvRangeMin = min;
             _hsvRangeMax = max;
             ApplyProperties();
-        }
-
-        /// <summary>
-        /// 캐시 통계 반환
-        /// </summary>
-        public static ColorReplaceMaterialCache.CacheStats GetCacheStats()
-        {
-            return ColorReplaceMaterialCache.Instance.GetStats();
         }
     }
 }
