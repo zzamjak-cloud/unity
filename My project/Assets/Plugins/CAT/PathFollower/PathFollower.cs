@@ -937,6 +937,80 @@ namespace CAT.Utility
             _transformDirty = true;
             UpdatePosition();
         }
+
+        /// <summary>에디터에서 모핑 테스트를 시작한다.</summary>
+        /// <param name="targetSnapshotIndex">목표 스냅샷 인덱스</param>
+        /// <param name="duration">모핑 시간 (초)</param>
+        public void EditorStartMorphing(int targetSnapshotIndex, float duration)
+        {
+            if (_snapshots == null || targetSnapshotIndex < 0 || targetSnapshotIndex >= _snapshots.Count) return;
+
+            var snap = _snapshots[targetSnapshotIndex];
+
+            // 포인트 수가 같으면 모핑, 다르면 즉시 전환
+            bool canMorph = duration > 0f && snap.points.Count == _points.Count && _points.Count >= 2;
+
+            if (canMorph)
+            {
+                // 현재 상태를 morphFrom으로 저장
+                _morphFrom = new List<PathPoint>(_points.Count);
+                foreach (var p in _points) _morphFrom.Add(p.Clone());
+
+                // 목표 상태 설정
+                _morphTo = new List<PathPoint>(snap.points.Count);
+                foreach (var p in snap.points) _morphTo.Add(p.Clone());
+
+                _morphTargetLoop = snap.isLoop;
+                _morphDuration   = duration;
+                _morphTimer      = 0f;
+                _isMorphing      = true;
+            }
+            else
+            {
+                // 즉시 전환
+                _isMorphing = false;
+                _points = new List<PathPoint>(snap.points.Count);
+                foreach (var p in snap.points) _points.Add(p.Clone());
+                _isLoop = snap.isLoop;
+                MarkDirty();
+            }
+
+            _currentSnapshotIndex = targetSnapshotIndex;
+            _lastEditorUpdateTime = (float)EditorApplication.timeSinceStartup;
+        }
+
+        /// <summary>에디터에서 모핑을 업데이트한다.</summary>
+        /// <param name="deltaTime">프레임 간 시간</param>
+        public void EditorUpdateMorphing(float deltaTime)
+        {
+            if (!_isMorphing || _morphFrom == null || _morphTo == null) return;
+
+            _morphTimer += deltaTime;
+            float mt = Mathf.Clamp01(_morphTimer / _morphDuration);
+
+            // _morphFrom 과 _morphTo 사이 선형 보간
+            for (int i = 0; i < _points.Count; i++)
+            {
+                _points[i].position  = Vector3.Lerp(_morphFrom[i].position,  _morphTo[i].position,  mt);
+                _points[i].handleIn  = Vector3.Lerp(_morphFrom[i].handleIn,  _morphTo[i].handleIn,  mt);
+                _points[i].handleOut = Vector3.Lerp(_morphFrom[i].handleOut, _morphTo[i].handleOut, mt);
+            }
+            MarkDirty();
+
+            if (mt >= 1f)
+            {
+                _isMorphing = false;
+                _isLoop = _morphTargetLoop;
+            }
+        }
+
+        /// <summary>에디터에서 모핑을 중지한다.</summary>
+        public void EditorStopMorphing()
+        {
+            _isMorphing = false;
+            _morphFrom  = null;
+            _morphTo    = null;
+        }
 #endif
 
         #endregion

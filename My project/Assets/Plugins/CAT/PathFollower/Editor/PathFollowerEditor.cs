@@ -31,6 +31,13 @@ public class PathFollowerEditor : Editor
 
     #endregion
 
+    #region 열거형
+
+    /// <summary>프리셋 타입 (라디오 버튼 선택)</summary>
+    private enum PresetType { None, Circle, Polygon, Star }
+
+    #endregion
+
     #region 내부 상태
 
     private PathFollower _follower;
@@ -54,6 +61,9 @@ public class PathFollowerEditor : Editor
     private bool   _isTestPlaying = false;
     private double _testStartTime;
 
+    // ── 경로 도구: 프리셋 타입 선택 ─────────────────────────
+    private PresetType _selectedPreset = PresetType.None;
+
     // ── 경로 도구: 원형 ───────────────────────────────────
     private float _circleRadius   = 5f;
     private int   _circleSegments = 4;
@@ -76,6 +86,13 @@ public class PathFollowerEditor : Editor
     // ── 스냅샷 UI ────────────────────────────────────────
     private string _snapshotSaveName = "";
 
+    // ── 스냅샷 모핑 테스트 ────────────────────────────────
+    private bool   _isSnapshotTestPlaying = false;
+    private double _snapshotTestStartTime;
+    private int    _snapshotTestFromIndex;
+    private int    _snapshotTestToIndex;
+    private float  _snapshotTestDuration;
+
     #endregion
 
     #region Editor 생명주기
@@ -86,18 +103,26 @@ public class PathFollowerEditor : Editor
         _isMultiSelect = targets.Length > 1;
         _isUIMode      = _follower != null && _follower.GetComponentInParent<Canvas>() != null;
         EditorApplication.update -= OnEditorUpdate;
+        EditorApplication.update -= OnSnapshotMorphTestUpdate;
         _isTestPlaying = false;
+        _isSnapshotTestPlaying = false;
         // UI 모드 여부에 따라 기본 반지름 설정
         _circleRadius  = _isUIMode ? 200f : 5f;
         _polygonRadius = _isUIMode ? 200f : 5f;
         _starOuterRadius = _isUIMode ? 200f : 5f;
         _starInnerRadius = _isUIMode ? 80f  : 2f;
+        // 스냅샷 테스트 기본값
+        _snapshotTestFromIndex = 0;
+        _snapshotTestToIndex   = 1;
+        _snapshotTestDuration  = 1f;
     }
 
     private void OnDisable()
     {
         EditorApplication.update -= OnEditorUpdate;
+        EditorApplication.update -= OnSnapshotMorphTestUpdate;
         _isTestPlaying = false;
+        _isSnapshotTestPlaying = false;
     }
 
     #endregion
@@ -269,93 +294,35 @@ public class PathFollowerEditor : Editor
     {
         EditorGUILayout.LabelField("Path Tools", EditorStyles.boldLabel);
 
-        // ── 원형 프리셋 ──────────────────────────────────────
-        EditorGUILayout.LabelField("원형 프리셋", EditorStyles.miniLabel);
+        // ── 프리셋 타입 라디오 버튼 ────────────────────────────
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("반지름", GUILayout.Width(44));
-        _circleRadius = EditorGUILayout.FloatField(_circleRadius, GUILayout.Width(56));
-        EditorGUILayout.LabelField("정점 수", GUILayout.Width(44));
-        _circleSegments = EditorGUILayout.IntField(Mathf.Max(3, _circleSegments), GUILayout.Width(36));
-        if (GUILayout.Button("원형 생성"))
-        {
-            if (EditorUtility.DisplayDialog("원형 경로 생성",
-                $"반지름 {_circleRadius}, 정점 {_circleSegments}개의 원형 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
-                "생성", "취소"))
-            {
-                Undo.RecordObject(_follower, "Set Circle Path");
-                _follower.SetCircle(_circleRadius, _circleSegments);
-                serializedObject.Update();
-                ClearSelection();
-                EditorUtility.SetDirty(_follower);
-                SceneView.RepaintAll();
-            }
-        }
+        DrawPresetRadioButton(PresetType.None,    "None");
+        DrawPresetRadioButton(PresetType.Circle,  "원형");
+        DrawPresetRadioButton(PresetType.Polygon, "다각형");
+        DrawPresetRadioButton(PresetType.Star,    "별모양");
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.Space(4);
 
-        // ── 다각형 프리셋 ────────────────────────────────────
-        EditorGUILayout.LabelField("다각형 프리셋", EditorStyles.miniLabel);
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("변 수", GUILayout.Width(30));
-        _polygonSides = Mathf.Max(3, EditorGUILayout.IntField(_polygonSides, GUILayout.Width(30)));
-        EditorGUILayout.LabelField("반지름", GUILayout.Width(44));
-        _polygonRadius = EditorGUILayout.FloatField(_polygonRadius, GUILayout.Width(48));
-        EditorGUILayout.LabelField("회전", GUILayout.Width(30));
-        _polygonRotation = EditorGUILayout.FloatField(_polygonRotation, GUILayout.Width(42));
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("둥글기", GUILayout.Width(44));
-        _polygonRoundness = EditorGUILayout.Slider(_polygonRoundness, 0f, 1f);
-        if (GUILayout.Button("다각형 생성", GUILayout.Width(76)))
+        // ── 선택된 프리셋에 따른 옵션 표시 ────────────────────────
+        switch (_selectedPreset)
         {
-            if (EditorUtility.DisplayDialog("다각형 경로 생성",
-                $"{_polygonSides}변 다각형 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
-                "생성", "취소"))
-            {
-                Undo.RecordObject(_follower, "Set Polygon Path");
-                _follower.SetPolygon(_polygonSides, _polygonRadius, _polygonRotation, _polygonRoundness);
-                serializedObject.Update();
-                ClearSelection();
-                EditorUtility.SetDirty(_follower);
-                SceneView.RepaintAll();
-            }
+            case PresetType.Circle:
+                DrawCirclePresetOptions();
+                break;
+            case PresetType.Polygon:
+                DrawPolygonPresetOptions();
+                break;
+            case PresetType.Star:
+                DrawStarPresetOptions();
+                break;
+            case PresetType.None:
+            default:
+                EditorGUILayout.HelpBox("프리셋을 선택하면 옵션이 표시됩니다.", MessageType.None);
+                break;
         }
-        EditorGUILayout.EndHorizontal();
 
-        EditorGUILayout.Space(4);
-
-        // ── 별모양 프리셋 ────────────────────────────────────
-        EditorGUILayout.LabelField("별모양 프리셋", EditorStyles.miniLabel);
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("꼭짓점", GUILayout.Width(40));
-        _starPoints = Mathf.Max(2, EditorGUILayout.IntField(_starPoints, GUILayout.Width(30)));
-        EditorGUILayout.LabelField("외부R", GUILayout.Width(36));
-        _starOuterRadius = EditorGUILayout.FloatField(_starOuterRadius, GUILayout.Width(48));
-        EditorGUILayout.LabelField("내부R", GUILayout.Width(36));
-        _starInnerRadius = EditorGUILayout.FloatField(_starInnerRadius, GUILayout.Width(48));
-        EditorGUILayout.EndHorizontal();
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("회전", GUILayout.Width(30));
-        _starRotation = EditorGUILayout.FloatField(_starRotation, GUILayout.Width(42));
-        GUILayout.FlexibleSpace();
-        if (GUILayout.Button("별모양 생성", GUILayout.Width(76)))
-        {
-            if (EditorUtility.DisplayDialog("별모양 경로 생성",
-                $"{_starPoints}개 꼭짓점의 별모양 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
-                "생성", "취소"))
-            {
-                Undo.RecordObject(_follower, "Set Star Path");
-                _follower.SetStar(_starPoints, _starOuterRadius, _starInnerRadius, _starRotation);
-                serializedObject.Update();
-                ClearSelection();
-                EditorUtility.SetDirty(_follower);
-                SceneView.RepaintAll();
-            }
-        }
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.Space(4);
+        EditorGUILayout.Space(8);
 
         // ── 확대/축소 ─────────────────────────────────────────
         EditorGUILayout.LabelField("확대 / 축소 (Expand)", EditorStyles.miniLabel);
@@ -394,6 +361,135 @@ public class PathFollowerEditor : Editor
             EditorUtility.SetDirty(_follower);
             SceneView.RepaintAll();
         }
+    }
+
+    /// <summary>프리셋 타입 라디오 버튼 그리기</summary>
+    private void DrawPresetRadioButton(PresetType type, string label)
+    {
+        bool isSelected = (_selectedPreset == type);
+        var style = isSelected ? EditorStyles.toolbarButton : EditorStyles.miniButton;
+
+        var prevBg = GUI.backgroundColor;
+        if (isSelected)
+            GUI.backgroundColor = new Color(0.6f, 0.9f, 1f);
+
+        if (GUILayout.Toggle(isSelected, label, style, GUILayout.Height(22)))
+        {
+            if (!isSelected)
+                _selectedPreset = type;
+        }
+
+        GUI.backgroundColor = prevBg;
+    }
+
+    /// <summary>원형 프리셋 옵션 그리기</summary>
+    private void DrawCirclePresetOptions()
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("원형 프리셋", EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("반지름", GUILayout.Width(50));
+        _circleRadius = EditorGUILayout.FloatField(_circleRadius, GUILayout.Width(60));
+        EditorGUILayout.LabelField("정점 수", GUILayout.Width(50));
+        _circleSegments = Mathf.Max(3, EditorGUILayout.IntField(_circleSegments, GUILayout.Width(40)));
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(4);
+
+        if (GUILayout.Button("원형 경로 생성", GUILayout.Height(24)))
+        {
+            if (EditorUtility.DisplayDialog("원형 경로 생성",
+                $"반지름 {_circleRadius}, 정점 {_circleSegments}개의 원형 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
+                "생성", "취소"))
+            {
+                Undo.RecordObject(_follower, "Set Circle Path");
+                _follower.SetCircle(_circleRadius, _circleSegments);
+                serializedObject.Update();
+                ClearSelection();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+        }
+        EditorGUILayout.EndVertical();
+    }
+
+    /// <summary>다각형 프리셋 옵션 그리기</summary>
+    private void DrawPolygonPresetOptions()
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("다각형 프리셋", EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("변 수", GUILayout.Width(40));
+        _polygonSides = Mathf.Max(3, EditorGUILayout.IntField(_polygonSides, GUILayout.Width(40)));
+        EditorGUILayout.LabelField("반지름", GUILayout.Width(50));
+        _polygonRadius = EditorGUILayout.FloatField(_polygonRadius, GUILayout.Width(60));
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("회전", GUILayout.Width(40));
+        _polygonRotation = EditorGUILayout.FloatField(_polygonRotation, GUILayout.Width(60));
+        EditorGUILayout.LabelField("둥글기", GUILayout.Width(50));
+        _polygonRoundness = EditorGUILayout.Slider(_polygonRoundness, 0f, 1f);
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(4);
+
+        if (GUILayout.Button("다각형 경로 생성", GUILayout.Height(24)))
+        {
+            if (EditorUtility.DisplayDialog("다각형 경로 생성",
+                $"{_polygonSides}변 다각형 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
+                "생성", "취소"))
+            {
+                Undo.RecordObject(_follower, "Set Polygon Path");
+                _follower.SetPolygon(_polygonSides, _polygonRadius, _polygonRotation, _polygonRoundness);
+                serializedObject.Update();
+                ClearSelection();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+        }
+        EditorGUILayout.EndVertical();
+    }
+
+    /// <summary>별모양 프리셋 옵션 그리기</summary>
+    private void DrawStarPresetOptions()
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("별모양 프리셋", EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("꼭짓점", GUILayout.Width(50));
+        _starPoints = Mathf.Max(2, EditorGUILayout.IntField(_starPoints, GUILayout.Width(40)));
+        EditorGUILayout.LabelField("회전", GUILayout.Width(40));
+        _starRotation = EditorGUILayout.FloatField(_starRotation, GUILayout.Width(60));
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("외부 반지름", GUILayout.Width(70));
+        _starOuterRadius = EditorGUILayout.FloatField(_starOuterRadius, GUILayout.Width(60));
+        EditorGUILayout.LabelField("내부 반지름", GUILayout.Width(70));
+        _starInnerRadius = EditorGUILayout.FloatField(_starInnerRadius, GUILayout.Width(60));
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(4);
+
+        if (GUILayout.Button("별모양 경로 생성", GUILayout.Height(24)))
+        {
+            if (EditorUtility.DisplayDialog("별모양 경로 생성",
+                $"{_starPoints}개 꼭짓점의 별모양 경로를 생성합니다.\n기존 경로는 초기화됩니다.",
+                "생성", "취소"))
+            {
+                Undo.RecordObject(_follower, "Set Star Path");
+                _follower.SetStar(_starPoints, _starOuterRadius, _starInnerRadius, _starRotation);
+                serializedObject.Update();
+                ClearSelection();
+                EditorUtility.SetDirty(_follower);
+                SceneView.RepaintAll();
+            }
+        }
+        EditorGUILayout.EndVertical();
     }
 
     private void DrawSnapshotSection()
@@ -484,6 +580,180 @@ public class PathFollowerEditor : Editor
 
             EditorGUILayout.EndHorizontal();
         }
+
+        // ── 스냅샷 모핑 테스트 섹션 ───────────────────────────
+        if (snapshotCount >= 2)
+        {
+            EditorGUILayout.Space(8);
+            DrawSnapshotMorphTestSection(snapshotCount);
+        }
+    }
+
+    /// <summary>스냅샷 모핑 테스트 UI 그리기</summary>
+    private void DrawSnapshotMorphTestSection(int snapshotCount)
+    {
+        EditorGUILayout.LabelField("모핑 테스트", EditorStyles.boldLabel);
+
+        // 테스트 중일 때
+        if (_isSnapshotTestPlaying)
+        {
+            float elapsed   = (float)(EditorApplication.timeSinceStartup - _snapshotTestStartTime);
+            float remaining = Mathf.Max(0f, _snapshotTestDuration - elapsed);
+            float progress  = Mathf.Clamp01(elapsed / _snapshotTestDuration);
+
+            // 진행 상황 표시
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            PathSnapshot fromSnap = _follower.GetSnapshot(_snapshotTestFromIndex);
+            PathSnapshot toSnap   = _follower.GetSnapshot(_snapshotTestToIndex);
+            string fromName = fromSnap != null ? fromSnap.name : $"Snapshot {_snapshotTestFromIndex}";
+            string toName   = toSnap   != null ? toSnap.name   : $"Snapshot {_snapshotTestToIndex}";
+
+            EditorGUILayout.LabelField($"'{fromName}' → '{toName}'", EditorStyles.boldLabel);
+
+            // 프로그레스 바
+            Rect progressRect = EditorGUILayout.GetControlRect(GUILayout.Height(20));
+            EditorGUI.ProgressBar(progressRect, progress, $"{progress * 100f:F0}% ({remaining:F1}s 남음)");
+
+            EditorGUILayout.Space(4);
+
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = Color.red;
+            if (GUILayout.Button("⏹ 테스트 중지", GUILayout.Height(26)))
+            {
+                StopSnapshotMorphTest();
+            }
+            GUI.backgroundColor = prevBg;
+            EditorGUILayout.EndVertical();
+        }
+        else
+        {
+            // 테스트 설정 UI
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // 시작/끝 스냅샷 선택
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("시작", GUILayout.Width(30));
+            _snapshotTestFromIndex = EditorGUILayout.IntField(_snapshotTestFromIndex, GUILayout.Width(40));
+            _snapshotTestFromIndex = Mathf.Clamp(_snapshotTestFromIndex, 0, snapshotCount - 1);
+
+            EditorGUILayout.LabelField("→", GUILayout.Width(20));
+
+            EditorGUILayout.LabelField("끝", GUILayout.Width(20));
+            _snapshotTestToIndex = EditorGUILayout.IntField(_snapshotTestToIndex, GUILayout.Width(40));
+            _snapshotTestToIndex = Mathf.Clamp(_snapshotTestToIndex, 0, snapshotCount - 1);
+
+            EditorGUILayout.LabelField("시간", GUILayout.Width(30));
+            _snapshotTestDuration = EditorGUILayout.FloatField(_snapshotTestDuration, GUILayout.Width(50));
+            _snapshotTestDuration = Mathf.Max(0.1f, _snapshotTestDuration);
+            EditorGUILayout.LabelField("s", GUILayout.Width(12));
+            EditorGUILayout.EndHorizontal();
+
+            // 스냅샷 이름 표시
+            PathSnapshot fromSnap = _follower.GetSnapshot(_snapshotTestFromIndex);
+            PathSnapshot toSnap   = _follower.GetSnapshot(_snapshotTestToIndex);
+            if (fromSnap != null && toSnap != null)
+            {
+                EditorGUILayout.LabelField($"  [{_snapshotTestFromIndex}] {fromSnap.name} → [{_snapshotTestToIndex}] {toSnap.name}",
+                    EditorStyles.miniLabel);
+
+                // 포인트 수가 다르면 경고
+                if (fromSnap.points.Count != toSnap.points.Count)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"포인트 수가 다릅니다 ({fromSnap.points.Count} vs {toSnap.points.Count}).\n모핑 없이 즉시 전환됩니다.",
+                        MessageType.Warning);
+                }
+            }
+
+            EditorGUILayout.Space(4);
+
+            // 테스트 시작 버튼
+            bool canTest = fromSnap != null && toSnap != null && _snapshotTestFromIndex != _snapshotTestToIndex;
+            EditorGUI.BeginDisabledGroup(!canTest);
+            var prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(0.5f, 1f, 0.5f);
+            if (GUILayout.Button("▶ 모핑 테스트 시작", GUILayout.Height(26)))
+            {
+                StartSnapshotMorphTest();
+            }
+            GUI.backgroundColor = prevBg;
+            EditorGUI.EndDisabledGroup();
+
+            if (_snapshotTestFromIndex == _snapshotTestToIndex)
+            {
+                EditorGUILayout.HelpBox("시작과 끝 스냅샷이 같습니다.", MessageType.Info);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+    }
+
+    /// <summary>스냅샷 모핑 테스트 시작</summary>
+    private void StartSnapshotMorphTest()
+    {
+        if (_isSnapshotTestPlaying || _follower == null) return;
+
+        // 시작 스냅샷으로 즉시 전환
+        Undo.RecordObject(_follower, "Start Snapshot Morph Test");
+        _follower.SwitchToSnapshot(_snapshotTestFromIndex, 0f);
+        serializedObject.Update();
+
+        _snapshotTestStartTime    = EditorApplication.timeSinceStartup;
+        _isSnapshotTestPlaying    = true;
+
+        // 에디터 업데이트 등록
+        EditorApplication.update += OnSnapshotMorphTestUpdate;
+
+        // 모핑 시작
+        _follower.EditorStartMorphing(_snapshotTestToIndex, _snapshotTestDuration);
+
+        EditorUtility.SetDirty(_follower);
+        SceneView.RepaintAll();
+        Debug.Log($"[PathFollower] {_follower.name}: 모핑 테스트 시작 (Snapshot {_snapshotTestFromIndex} → {_snapshotTestToIndex}, {_snapshotTestDuration}초)");
+    }
+
+    /// <summary>스냅샷 모핑 테스트 중지</summary>
+    private void StopSnapshotMorphTest()
+    {
+        EditorApplication.update -= OnSnapshotMorphTestUpdate;
+        _isSnapshotTestPlaying = false;
+
+        if (_follower != null)
+        {
+            _follower.EditorStopMorphing();
+        }
+
+        Repaint();
+        SceneView.RepaintAll();
+        Debug.Log($"[PathFollower] {_follower.name}: 모핑 테스트 중지");
+    }
+
+    /// <summary>스냅샷 모핑 테스트 업데이트</summary>
+    private void OnSnapshotMorphTestUpdate()
+    {
+        if (_follower == null)
+        {
+            StopSnapshotMorphTest();
+            return;
+        }
+
+        double elapsed = EditorApplication.timeSinceStartup - _snapshotTestStartTime;
+
+        // 모핑 진행
+        float dt = (float)(EditorApplication.timeSinceStartup - _follower._lastEditorUpdateTime);
+        _follower._lastEditorUpdateTime = (float)EditorApplication.timeSinceStartup;
+        _follower.EditorUpdateMorphing(dt);
+
+        // 완료 체크
+        if (elapsed >= _snapshotTestDuration)
+        {
+            StopSnapshotMorphTest();
+            return;
+        }
+
+        EditorUtility.SetDirty(_follower);
+        SceneView.RepaintAll();
+        Repaint();
     }
 
     private void DrawTestSection()
@@ -683,15 +953,12 @@ public class PathFollowerEditor : Editor
 
             // --- 포인트: FreeMoveHandle (모든 포인트, 선택 여부에 따라 색상/크기 다름) ---
             // 선택된 포인트는 약간 크게, 미선택은 작게 표시
+            // UI 모드에서도 FreeMoveHandle 사용 (클릭과 동시에 드래그 가능)
             Handles.color = isSel ? ColorPointSel : ColorPoint;
             float ptSz = HandleUtility.GetHandleSize(wPos) * POINT_SIZE * (isSel ? 1.15f : 0.85f);
 
             EditorGUI.BeginChangeCheck();
-            Vector3 newWPos = _isUIMode
-                ? Handles.Slider2D(wPos, _follower.transform.forward,
-                    _follower.transform.right, _follower.transform.up,
-                    ptSz, Handles.SphereHandleCap, 0f)
-                : Handles.FreeMoveHandle(wPos, ptSz, Vector3.zero, Handles.SphereHandleCap);
+            Vector3 newWPos = Handles.FreeMoveHandle(wPos, ptSz, Vector3.zero, Handles.SphereHandleCap);
 
             if (EditorGUI.EndChangeCheck())
             {
@@ -707,7 +974,11 @@ public class PathFollowerEditor : Editor
 
                 Vector3 localOld = _follower.WorldToPath(wPos);
                 Vector3 localNew = _follower.WorldToPath(newWPos);
-                if (_isUIMode) localNew.z = 0f;
+                // UI 모드에서는 Z축을 0으로 고정
+                if (_isUIMode)
+                {
+                    localNew.z = 0f;
+                }
                 Vector3 delta = localNew - localOld;
 
                 if (_selectedIndices.Count > 1)
