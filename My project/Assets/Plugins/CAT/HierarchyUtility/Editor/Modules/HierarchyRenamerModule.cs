@@ -5,39 +5,35 @@ using UnityEngine;
 using UnityEditor;
 using UnityEngine.UIElements;
 
-namespace CAT.Utility
+namespace CAT.HierarchyUtility
 {
-    // 하이어라키 창 하단에 UI를 주입하여 선택된 오브젝트의 이름을 변경합니다.
-    public static class HierarchyRenamerInjector
+    // 하이어라키 창 하단에 UI를 주입하여 선택된 오브젝트의 이름을 변경하는 모듈.
+    // UIOrder = 0 (가장 먼저 초기화)
+    public class HierarchyRenamerModule : IHierarchyToolModule
     {
+        public string ModuleName => "HierarchyRenamer";
+        public int UIOrder => 0;
+
         private const string PREF_KEY_FOLDED = "HierarchyRenamer_IsFolded";
         private const float EXPANDED_HEIGHT = 50f;
         private const float FOLDED_HEIGHT = 18f;
 
-        private static string inputText = "";
-        private static string replaceText = "";
-        private static int numberPadding = 2;
-        private static bool _isFolded;
-        private static VisualElement _parentContainer;
+        private string _inputText = "";
+        private string _replaceText = "";
+        private int _numberPadding = 2;
+        private bool _isFolded;
+        private VisualElement _parentContainer;
 
-        [InitializeOnLoadMethod]
-        private static void Initialize()
+        public void Initialize(HierarchyWindowAccessor accessor)
         {
+            // EditorPrefs에서 이전 접기 상태 복원
             _isFolded = EditorPrefs.GetBool(PREF_KEY_FOLDED, false);
-            EditorApplication.delayCall += InjectUI;
         }
 
-        private static void InjectUI()
+        public void InitUI(VisualElement container)
         {
-            var editorAssembly = typeof(Editor).Assembly;
-            var hierarchyWindows = Resources.FindObjectsOfTypeAll(editorAssembly.GetType("UnityEditor.SceneHierarchyWindow"));
-            if (hierarchyWindows.Length == 0) return;
-
-            var hierarchyWindow = (EditorWindow)hierarchyWindows[0];
-            var rawRoot = hierarchyWindow.rootVisualElement;
-            if (rawRoot == null) return;
-
-            if (rawRoot.Q<VisualElement>("HierarchyRenamerContainer") != null) return;
+            // 중복 주입 방지
+            if (container.Q<VisualElement>("HierarchyRenamerContainer") != null) return;
 
             _parentContainer = new VisualElement
             {
@@ -46,36 +42,46 @@ namespace CAT.Utility
                 {
                     position = Position.Absolute,
                     bottom = 5f,
-                    left = 33f,
                     right = 5f,
                     height = _isFolded ? FOLDED_HEIGHT : EXPANDED_HEIGHT,
                     flexDirection = FlexDirection.Column
                 }
             };
 
-            _parentContainer.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f));
-            _parentContainer.style.borderTopWidth = 1;
-            _parentContainer.style.borderTopColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+            if (_isFolded)
+            {
+                // 접힌 상태: 버튼 너비만큼만 표시, 배경 없음
+                _parentContainer.style.width = 26f;
+            }
+            else
+            {
+                // 펼친 상태: 전체 너비 + 배경
+                _parentContainer.style.left = 33f;
+                _parentContainer.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f));
+                _parentContainer.style.borderTopWidth = 1;
+                _parentContainer.style.borderTopColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+            }
 
             var imguiContainer = new IMGUIContainer(OnInjectedGUI);
             imguiContainer.style.flexGrow = 1;
 
             _parentContainer.Add(imguiContainer);
-            rawRoot.Add(_parentContainer);
+            container.Add(_parentContainer);
         }
 
-        private static void OnInjectedGUI()
+        public void OnHierarchyItemGUI(int instanceID, Rect selectionRect) { }
+        public void OnUpdate() { }
+        public void OnSelectionChanged() { }
+        public void OnHierarchyChanged() { }
+        public void Dispose() { }
+
+        private void OnInjectedGUI()
         {
             if (_isFolded)
             {
-                // 접힌 상태: 펼치기 버튼만 표시
-                EditorGUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button("▲ Renamer", GUILayout.Width(80), GUILayout.Height(16)))
-                {
+                // 접힌 상태: 펼치기 화살표 버튼만 표시 (배경 없음)
+                if (GUILayout.Button("▲", GUILayout.Width(22), GUILayout.Height(16)))
                     SetFolded(false);
-                }
-                EditorGUILayout.EndHorizontal();
                 return;
             }
 
@@ -83,8 +89,8 @@ namespace CAT.Utility
             EditorGUILayout.Space(2);
 
             EditorGUILayout.BeginHorizontal();
-            inputText = EditorGUILayout.TextField(inputText, GUILayout.ExpandWidth(true));
-            replaceText = EditorGUILayout.TextField(replaceText, GUILayout.ExpandWidth(true));
+            _inputText = EditorGUILayout.TextField(_inputText, GUILayout.ExpandWidth(true));
+            _replaceText = EditorGUILayout.TextField(_replaceText, GUILayout.ExpandWidth(true));
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(2);
@@ -96,7 +102,7 @@ namespace CAT.Utility
             if (GUILayout.Button("T_", GUILayout.Height(20))) { RenameObjects(RenameAction.Prefix); }
             if (GUILayout.Button("_T", GUILayout.Height(20))) { RenameObjects(RenameAction.Suffix); }
             if (GUILayout.Button("Num", GUILayout.Height(20))) { RenameObjects(RenameAction.Number); }
-            numberPadding = EditorGUILayout.IntField(numberPadding, GUILayout.Height(20), GUILayout.Width(30));
+            _numberPadding = EditorGUILayout.IntField(_numberPadding, GUILayout.Height(20), GUILayout.Width(30));
             if (GUILayout.Button("▼", GUILayout.Width(22), GUILayout.Height(20)))
             {
                 SetFolded(true);
@@ -104,20 +110,36 @@ namespace CAT.Utility
             EditorGUILayout.EndHorizontal();
         }
 
-        private static void SetFolded(bool folded)
+        private void SetFolded(bool folded)
         {
             _isFolded = folded;
             EditorPrefs.SetBool(PREF_KEY_FOLDED, _isFolded);
 
-            if (_parentContainer != null)
+            if (_parentContainer == null) return;
+
+            if (_isFolded)
             {
-                _parentContainer.style.height = _isFolded ? FOLDED_HEIGHT : EXPANDED_HEIGHT;
+                // 접힌 상태: 버튼 크기만큼만, 배경 제거
+                _parentContainer.style.height = FOLDED_HEIGHT;
+                _parentContainer.style.width = 26f;
+                _parentContainer.style.left = StyleKeyword.Auto;
+                _parentContainer.style.backgroundColor = new StyleColor(Color.clear);
+                _parentContainer.style.borderTopWidth = 0;
+            }
+            else
+            {
+                // 펼친 상태: 전체 너비 + 배경 복원
+                _parentContainer.style.height = EXPANDED_HEIGHT;
+                _parentContainer.style.width = StyleKeyword.Auto;
+                _parentContainer.style.left = 33f;
+                _parentContainer.style.backgroundColor = new StyleColor(new Color(0.22f, 0.22f, 0.22f));
+                _parentContainer.style.borderTopWidth = 1;
             }
         }
 
         private enum RenameAction { Sort, Rename, Replace, Prefix, Suffix, Number }
 
-        private static void RenameObjects(RenameAction action)
+        private void RenameObjects(RenameAction action)
         {
             GUI.FocusControl(null);
             var selectedObjects = Selection.gameObjects;
@@ -127,7 +149,7 @@ namespace CAT.Utility
                 return;
             }
 
-            if (action != RenameAction.Number && action != RenameAction.Sort && string.IsNullOrEmpty(inputText))
+            if (action != RenameAction.Number && action != RenameAction.Sort && string.IsNullOrEmpty(_inputText))
             {
                 Debug.LogWarning("[Renamer] 입력 필드가 비어있습니다.");
                 return;
@@ -144,26 +166,26 @@ namespace CAT.Utility
                         // 정렬은 별도로 처리하므로 여기서는 아무것도 하지 않음
                         break;
                     case RenameAction.Rename:
-                        obj.name = inputText;
+                        obj.name = _inputText;
                         break;
                     case RenameAction.Replace:
-                        obj.name = obj.name.Replace(inputText, replaceText);
+                        obj.name = obj.name.Replace(_inputText, _replaceText);
                         break;
                     case RenameAction.Prefix:
-                        obj.name = inputText + obj.name;
+                        obj.name = _inputText + obj.name;
                         break;
                     case RenameAction.Suffix:
-                        obj.name = obj.name + inputText;
+                        obj.name = obj.name + _inputText;
                         break;
                     case RenameAction.Number:
-                        if (numberPadding == 0)
+                        if (_numberPadding == 0)
                         {
                             obj.name = counter.ToString("D1");
                         }
                         else
                         {
-                            string numberStr = counter.ToString("D" + numberPadding);
-                            string baseName = string.IsNullOrEmpty(inputText) ? obj.name : inputText;
+                            string numberStr = counter.ToString("D" + _numberPadding);
+                            string baseName = string.IsNullOrEmpty(_inputText) ? obj.name : _inputText;
                             obj.name = $"{baseName}_{numberStr}";
                         }
                         break;
@@ -178,14 +200,12 @@ namespace CAT.Utility
             }
         }
 
-        /// <summary>
-        /// 선택된 오브젝트들을 "_" 기준으로 분리하여 다단계 정렬합니다.
-        /// 부모가 선택된 경우 해당 부모의 직계 자식들을 정렬합니다.
-        /// </summary>
-        private static void SortSelectedObjects(GameObject[] objects)
+        // 선택된 오브젝트들을 "_" 기준으로 분리하여 다단계 정렬.
+        // 부모가 선택된 경우 해당 부모의 직계 자식들을 정렬.
+        private void SortSelectedObjects(GameObject[] objects)
         {
             var objectsToSort = new List<GameObject>();
-            
+
             foreach (var obj in objects)
             {
                 // 선택된 오브젝트가 부모인지 확인 (자식이 있는지 체크)
@@ -203,24 +223,23 @@ namespace CAT.Utility
                     objectsToSort.Add(obj);
                 }
             }
-            
+
             if (objectsToSort.Count == 0)
             {
                 Debug.LogWarning("[Renamer] 정렬할 오브젝트가 없습니다.");
                 return;
             }
-            
+
             // 부모별로 그룹화하여 정렬
             var parentGroups = objectsToSort.GroupBy(obj => obj.transform.parent).ToArray();
-            
+
             foreach (var parentGroup in parentGroups)
             {
-                var parent = parentGroup.Key;
                 var children = parentGroup.ToArray();
-                
+
                 // 같은 부모를 가진 오브젝트들만 정렬
                 var sortedChildren = children.OrderBy(obj => obj.name, new HierarchicalNameComparer()).ToArray();
-                
+
                 // 정렬된 순서대로 하이어라키에서의 위치를 변경
                 // 역순으로 설정하여 인덱스 충돌을 방지
                 for (int i = sortedChildren.Length - 1; i >= 0; i--)
@@ -228,13 +247,11 @@ namespace CAT.Utility
                     sortedChildren[i].transform.SetSiblingIndex(i);
                 }
             }
-            
+
             Debug.Log($"[Renamer] {objectsToSort.Count}개의 오브젝트를 정렬했습니다.");
         }
 
-        /// <summary>
-        /// "_" 기준으로 분리하여 다단계 정렬을 위한 비교자
-        /// </summary>
+        // "_" 기준으로 분리하여 다단계 정렬을 위한 비교자
         private class HierarchicalNameComparer : IComparer<string>
         {
             public int Compare(string x, string y)
@@ -276,5 +293,3 @@ namespace CAT.Utility
         }
     }
 }
-
-
