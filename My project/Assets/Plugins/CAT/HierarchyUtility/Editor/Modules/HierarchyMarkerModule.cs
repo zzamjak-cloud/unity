@@ -1,4 +1,3 @@
-#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -6,12 +5,17 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
-namespace CAT.Utility
+namespace CAT.HierarchyUtility
 {
-    [InitializeOnLoad]
-    public static class HierarchyMarker
+    // 하이어라키 창에서 오브젝트 참조 관계를 아이콘으로 표시하는 모듈.
+    // UIOrder = 10
+    public class HierarchyMarkerModule : IHierarchyToolModule
     {
+        public string ModuleName => "HierarchyMarker";
+        public int UIOrder => 10;
+
         private class ParentInfo
         {
             public int parentId;
@@ -20,29 +24,73 @@ namespace CAT.Utility
             public string fieldName;
         }
 
-        private static readonly Dictionary<int, List<ParentInfo>> childToParentMap = new Dictionary<int, List<ParentInfo>>();
-        
-        private static Texture2D defaultIcon;
-        private static Texture2D prefabRootIcon;
+        private readonly Dictionary<int, List<ParentInfo>> _childToParentMap = new Dictionary<int, List<ParentInfo>>();
 
-        static HierarchyMarker()
+        private Texture2D _defaultIcon;
+        private Texture2D _prefabRootIcon;
+
+        public void Initialize(HierarchyWindowAccessor accessor)
         {
-            EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyItemGUI;
-            EditorApplication.hierarchyChanged += UpdateMarkedObjectsCache;
-            PrefabStage.prefabStageOpened += OnPrefabStageOpened;
-            PrefabStage.prefabStageClosing += OnPrefabStageClosing;
             UpdateMarkedObjectsCache();
         }
 
-        private static void OnPrefabStageOpened(PrefabStage stage) => UpdateMarkedObjectsCache();
-        private static void OnPrefabStageClosing(PrefabStage stage) => UpdateMarkedObjectsCache();
+        public void InitUI(VisualElement container) { }
+        public void OnUpdate() { }
+        public void OnSelectionChanged() { }
 
-        private static void UpdateMarkedObjectsCache()
+        public void OnHierarchyItemGUI(int instanceID, Rect selectionRect)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
-            
-            childToParentMap.Clear();
+
+            if (_defaultIcon == null || _prefabRootIcon == null)
+            {
+                _defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
+                _prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
+            }
+
+            if (_childToParentMap.TryGetValue(instanceID, out List<ParentInfo> parentInfos))
+            {
+                bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
+                Texture2D iconToDraw = hasPrefabRootParent ? _prefabRootIcon : _defaultIcon;
+
+                Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
+                if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
+
+                Event currentEvent = Event.current;
+                if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && iconRect.Contains(currentEvent.mousePosition))
+                {
+                    currentEvent.Use();
+
+                    ParentInfo targetParentInfo = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
+                    GameObject parentObject = EditorUtility.InstanceIDToObject(targetParentInfo.parentId) as GameObject;
+
+                    if (parentObject != null)
+                    {
+                        EditorGUIUtility.PingObject(parentObject);
+                        Selection.activeObject = targetParentInfo.script;
+                        Debug.Log($"[HierarchyMarker] <b>{parentObject.name}</b> 오브젝트의 <b>{targetParentInfo.script.GetType().Name}</b> 컴포넌트가 <b>'{targetParentInfo.fieldName}'</b> 필드를 통해 참조합니다.", parentObject);
+                    }
+                }
+            }
+        }
+
+        public void OnHierarchyChanged()
+        {
+            UpdateMarkedObjectsCache();
+        }
+
+        public void Dispose()
+        {
+            _childToParentMap.Clear();
+        }
+
+        private void UpdateMarkedObjectsCache()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+
+            _childToParentMap.Clear();
             var currentPrefabStage = PrefabStageUtility.GetCurrentPrefabStage();
             IEnumerable<MonoBehaviour> scriptsToScan;
 
@@ -63,12 +111,12 @@ namespace CAT.Utility
             {
                 if (script == null) continue;
 
-                // === 최종 수정: 시스템/라이브러리 네임스페이스 필터링 ===
-                // 스크립트의 네임스페이스를 확인하여 Unity 기본 컴포넌트나 TMP 같은 라이브러리 컴포넌트는 건너뜁니다.
+                // 시스템/라이브러리 네임스페이스 필터링
+                // Unity 기본 컴포넌트나 TMP 같은 라이브러리 컴포넌트는 건너뜀
                 var scriptNamespace = script.GetType().Namespace;
                 if (!string.IsNullOrEmpty(scriptNamespace) && (
-                    scriptNamespace.StartsWith("UnityEngine") || 
-                    scriptNamespace.StartsWith("UnityEditor") || 
+                    scriptNamespace.StartsWith("UnityEngine") ||
+                    scriptNamespace.StartsWith("UnityEditor") ||
                     scriptNamespace.StartsWith("TMPro")))
                 {
                     continue;
@@ -85,7 +133,7 @@ namespace CAT.Utility
                 {
                     bool isSerializable = field.IsPublic || field.IsDefined(typeof(SerializeField), false);
                     if (!isSerializable) continue;
-                    
+
                     if (field.IsDefined(typeof(HideInInspector), false) || field.IsDefined(typeof(System.NonSerializedAttribute), false)) continue;
 
                     if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
@@ -100,56 +148,19 @@ namespace CAT.Utility
                         {
                             int childID = referencedObject.GetInstanceID();
                             if (parentID == childID) continue;
-                            
+
                             var parentInfo = new ParentInfo { parentId = parentID, isPrefabRoot = isParentPrefabRoot, script = script, fieldName = field.Name };
-                            if (!childToParentMap.ContainsKey(childID))
+                            if (!_childToParentMap.ContainsKey(childID))
                             {
-                                childToParentMap[childID] = new List<ParentInfo>();
+                                _childToParentMap[childID] = new List<ParentInfo>();
                             }
-                            childToParentMap[childID].Add(parentInfo);
+                            _childToParentMap[childID].Add(parentInfo);
                         }
                     }
                 }
             }
+
             EditorApplication.RepaintHierarchyWindow();
-        }
-
-        private static void HandleHierarchyItemGUI(int instanceID, Rect selectionRect)
-        {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-                return;
-            
-            if (defaultIcon == null || prefabRootIcon == null)
-            {
-                defaultIcon = EditorGUIUtility.IconContent("d_greenLight").image as Texture2D;
-                prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
-            }
-
-            if (childToParentMap.TryGetValue(instanceID, out List<ParentInfo> parentInfos))
-            {
-                bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
-                Texture2D iconToDraw = hasPrefabRootParent ? prefabRootIcon : defaultIcon;
-
-                Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
-                if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
-
-                Event currentEvent = Event.current;
-                if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && iconRect.Contains(currentEvent.mousePosition))
-                {
-                    currentEvent.Use(); 
-
-                    ParentInfo targetParentInfo = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
-                    GameObject parentObject = EditorUtility.InstanceIDToObject(targetParentInfo.parentId) as GameObject;
-
-                    if (parentObject != null)
-                    {
-                        EditorGUIUtility.PingObject(parentObject);
-                        Selection.activeObject = targetParentInfo.script;
-                        Debug.Log($"[HierarchyMarker] <b>{parentObject.name}</b> 오브젝트의 <b>{targetParentInfo.script.GetType().Name}</b> 컴포넌트가 <b>'{targetParentInfo.fieldName}'</b> 필드를 통해 참조합니다.", parentObject);
-                    }
-                }
-            }
         }
     }
 }
-#endif
