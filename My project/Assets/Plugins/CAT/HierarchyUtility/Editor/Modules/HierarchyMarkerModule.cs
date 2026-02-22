@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -28,6 +30,7 @@ namespace CAT.HierarchyUtility
 
         private Texture2D _defaultIcon;
         private Texture2D _prefabRootIcon;
+        private GUIStyle _countLabelStyle;
 
         public void Initialize(HierarchyWindowAccessor accessor)
         {
@@ -49,6 +52,18 @@ namespace CAT.HierarchyUtility
                 _prefabRootIcon = EditorGUIUtility.IconContent("d_orangeLight").image as Texture2D;
             }
 
+            if (_countLabelStyle == null)
+            {
+                _countLabelStyle = new GUIStyle(EditorStyles.label)
+                {
+                    fontSize = 7,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleLeft,
+                    padding = new RectOffset(0, 0, 0, 0),
+                };
+                _countLabelStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f);
+            }
+
             if (_childToParentMap.TryGetValue(instanceID, out List<ParentInfo> parentInfos))
             {
                 bool hasPrefabRootParent = parentInfos.Any(p => p.isPrefabRoot);
@@ -57,19 +72,40 @@ namespace CAT.HierarchyUtility
                 Rect iconRect = new Rect(selectionRect.xMax - 20f, selectionRect.y + (selectionRect.height - 12f) / 2, 8f, 8f);
                 if (iconToDraw != null) GUI.DrawTexture(iconRect, iconToDraw);
 
+                // 참조가 2개 이상일 때만 숫자 표시
+                if (parentInfos.Count >= 2)
+                {
+                    string countText = parentInfos.Count > 9 ? "9+" : parentInfos.Count.ToString();
+                    Rect countRect = new Rect(iconRect.xMax + 1f, iconRect.y - 1f, 14f, iconRect.height);
+                    GUI.Label(countRect, countText, _countLabelStyle);
+                }
+
                 Event currentEvent = Event.current;
                 if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && iconRect.Contains(currentEvent.mousePosition))
                 {
                     currentEvent.Use();
 
-                    ParentInfo targetParentInfo = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
-                    GameObject parentObject = EditorUtility.InstanceIDToObject(targetParentInfo.parentId) as GameObject;
-
-                    if (parentObject != null)
+                    // 모든 참조자의 GameObject를 수집하여 하이어라키에서 다중 선택
+                    var allParentObjects = new List<UnityEngine.Object>();
+                    foreach (var info in parentInfos)
                     {
-                        EditorGUIUtility.PingObject(parentObject);
-                        Selection.activeObject = targetParentInfo.script;
-                        Debug.Log($"[HierarchyMarker] <b>{parentObject.name}</b> 오브젝트의 <b>{targetParentInfo.script.GetType().Name}</b> 컴포넌트가 <b>'{targetParentInfo.fieldName}'</b> 필드를 통해 참조합니다.", parentObject);
+                        GameObject parentObj = EditorUtility.InstanceIDToObject(info.parentId) as GameObject;
+                        if (parentObj != null)
+                        {
+                            allParentObjects.Add(parentObj);
+                            Debug.Log($"[HierarchyMarker] <b>{parentObj.name}</b> 오브젝트의 <b>{info.script.GetType().Name}</b> 컴포넌트가 <b>'{info.fieldName}'</b> 필드를 통해 참조합니다.", parentObj);
+                        }
+                    }
+
+                    if (allParentObjects.Count > 0)
+                    {
+                        // 모든 참조 오브젝트를 하이어라키에서 선택 (다중 하이라이트)
+                        Selection.objects = allParentObjects.ToArray();
+                        // 대표 오브젝트로 스크롤 이동 (프리팹 루트 우선)
+                        ParentInfo primary = hasPrefabRootParent ? parentInfos.First(p => p.isPrefabRoot) : parentInfos[0];
+                        GameObject primaryObj = EditorUtility.InstanceIDToObject(primary.parentId) as GameObject;
+                        if (primaryObj != null)
+                            EditorGUIUtility.PingObject(primaryObj);
                     }
                 }
             }
@@ -136,6 +172,7 @@ namespace CAT.HierarchyUtility
 
                     if (field.IsDefined(typeof(HideInInspector), false) || field.IsDefined(typeof(System.NonSerializedAttribute), false)) continue;
 
+                    // 단일 타입 필드 (GameObject, Component 계열)
                     if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
                     {
                         object value = field.GetValue(script);
@@ -144,23 +181,63 @@ namespace CAT.HierarchyUtility
                         if (value is GameObject go && go != null) referencedObject = go;
                         else if (value is Component component && component != null) referencedObject = component.gameObject;
 
-                        if (referencedObject != null)
-                        {
-                            int childID = referencedObject.GetInstanceID();
-                            if (parentID == childID) continue;
+                        RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
+                    }
+                    // 배열 타입 필드 (GameObject[], Component[] 계열)
+                    else if (field.FieldType.IsArray)
+                    {
+                        Type elementType = field.FieldType.GetElementType();
+                        if (elementType == null) continue;
+                        if (!typeof(GameObject).IsAssignableFrom(elementType) && !typeof(Component).IsAssignableFrom(elementType)) continue;
 
-                            var parentInfo = new ParentInfo { parentId = parentID, isPrefabRoot = isParentPrefabRoot, script = script, fieldName = field.Name };
-                            if (!_childToParentMap.ContainsKey(childID))
-                            {
-                                _childToParentMap[childID] = new List<ParentInfo>();
-                            }
-                            _childToParentMap[childID].Add(parentInfo);
+                        if (!(field.GetValue(script) is Array array)) continue;
+                        foreach (var item in array)
+                        {
+                            if (item == null) continue;
+                            GameObject referencedObject = null;
+                            if (item is GameObject go && go != null) referencedObject = go;
+                            else if (item is Component component && component != null) referencedObject = component.gameObject;
+
+                            RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
+                        }
+                    }
+                    // 제네릭 리스트 타입 필드 (List<GameObject>, List<Component> 계열)
+                    else if (field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(List<>))
+                    {
+                        Type elementType = field.FieldType.GetGenericArguments()[0];
+                        if (!typeof(GameObject).IsAssignableFrom(elementType) && !typeof(Component).IsAssignableFrom(elementType)) continue;
+
+                        if (!(field.GetValue(script) is IList list)) continue;
+                        foreach (var item in list)
+                        {
+                            if (item == null) continue;
+                            GameObject referencedObject = null;
+                            if (item is GameObject go && go != null) referencedObject = go;
+                            else if (item is Component component && component != null) referencedObject = component.gameObject;
+
+                            RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
                         }
                     }
                 }
             }
 
             EditorApplication.RepaintHierarchyWindow();
+        }
+
+        private void RegisterReference(GameObject referencedObject, int parentID, bool isParentPrefabRoot, MonoBehaviour script, string fieldName)
+        {
+            if (referencedObject == null) return;
+
+            int childID = referencedObject.GetInstanceID();
+            if (parentID == childID) return;
+
+            var parentInfo = new ParentInfo { parentId = parentID, isPrefabRoot = isParentPrefabRoot, script = script, fieldName = fieldName };
+            if (!_childToParentMap.ContainsKey(childID))
+                _childToParentMap[childID] = new List<ParentInfo>();
+
+            // 동일 스크립트+필드 중복 등록 방지
+            if (!_childToParentMap[childID].Any(p => p.script == script && p.fieldName == fieldName))
+                _childToParentMap[childID].Add(parentInfo);
         }
     }
 }
