@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using TMPro;
+using Coffee.UIEffects;
 
 namespace CAT.UI
 {
@@ -27,6 +28,7 @@ namespace CAT.UI
         private static readonly string KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE";
         private static readonly string PARTICLE_SHADER_PREFIX = "CAT/Particles/";
         private static readonly string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
+        private static readonly string UIEFFECT_SHADER_NAME = "Hidden/UI/Default (UIEffect)";
 
         // 셰이더 직렬화 참조 (빌드에서 Shader.Find() 실패 방지)
         // 직렬화된 참조가 있으면 빌드에 셰이더가 자동 포함됨
@@ -164,6 +166,9 @@ namespace CAT.UI
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _particleAppliedMaskMats =
             new Dictionary<UnityEngine.UI.Graphic, Material>(2);
 
+        // UIEffect 프록시 목록 (UIParticle의 _particleMaskMaterials와 유사한 구조)
+        private readonly List<UIEffectSoftMaskProxy> _uiEffectProxies = new List<UIEffectSoftMaskProxy>(2);
+
         // GC 방지: 재사용 리스트
         private readonly List<UnityEngine.UI.Graphic> _toRemove = new List<UnityEngine.UI.Graphic>(4);
 
@@ -262,9 +267,10 @@ namespace CAT.UI
         {
             if (!_initialized) return;
 
-            // TMP / Particle 외부 Material 변경 감지
+            // TMP / Particle / UIEffect 외부 Material 변경 감지
             DetectTMPMaterialChanges();
             DetectParticleMaterialChanges();
+            DetectUIEffectMaterialChanges();
 
             // 자식 수 변경 감지 (UIParticle 활성/비활성 시 새 자식 추가됨)
             int currentChildCount = transform.childCount;
@@ -963,11 +969,12 @@ namespace CAT.UI
                 }
             }
 
-            // TMP, Particle, Stencil Material에 마스크 프로퍼티 전파
+            // TMP, Particle, UIEffect, Stencil Material에 마스크 프로퍼티 전파
             if (anyChange || _materialDirty)
             {
                 UpdateTMPMaterials();
                 UpdateParticleMaterials();
+                UpdateUIEffectMaterials();
                 PropagateToStencilMaterials();
             }
 
@@ -998,6 +1005,8 @@ namespace CAT.UI
                 if (rendered == _sharedMaskMaterial) continue;
                 if (_tmpMaskMaterials.Contains(rendered)) continue;
                 if (_particleMaskMaterials.Contains(rendered)) continue;
+                // UIEffect 프록시 머티리얼: UpdateUIEffectMaterials()에서 별도 처리
+                if (IsUIEffectProxyMaterial(rendered)) continue;
 
                 // 셰이더 이름 기반으로 일반/TMP/Particle 프로퍼티 ID 결정
                 int pTex, pSoftness, pInvert, pWorldToUV, pUVRect;
@@ -1032,6 +1041,17 @@ namespace CAT.UI
                     if (!rendered.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
                         rendered.EnableKeyword(KEYWORD_CAT_SOFTMASK);
 
+                    pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
+                    pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
+                    pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
+                    pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
+                    pSliceBorder = PropMaskSliceBorder; pSliceInnerUV = PropMaskSliceInnerUV;
+                    pSliceBorder2 = PropMaskSliceBorder2; pSliceInnerUV2 = PropMaskSliceInnerUV2;
+                }
+                else if (shaderName == UIEFFECT_SHADER_NAME && rendered.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
+                {
+                    // UIEffect Stencil 래핑 머티리얼 (프록시 머티리얼의 스텐실 복사본)
+                    // 표준 프로퍼티 이름 사용 (CAT SoftMask Core와 동일)
                     pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
                     pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
                     pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
@@ -1113,6 +1133,13 @@ namespace CAT.UI
                 _tmpAppliedMaskMats.Remove(_toRemove[i]);
                 _particleAppliedMaskMats.Remove(_toRemove[i]);
             }
+
+            // 파괴된 UIEffect 프록시 정리
+            for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
+            {
+                if (_uiEffectProxies[i] == null)
+                    _uiEffectProxies.RemoveAt(i);
+            }
         }
 
         // ─────────────────────────────────────────────
@@ -1171,6 +1198,15 @@ namespace CAT.UI
                     continue;
                 }
 
+                // UIEffect — IMaterialModifier 체인으로 프록시 머티리얼 생성
+                // _originalChildMaterials 저장 전에 체크해야 ApplyMaskToUIEffect의
+                // ContainsKey 가드가 올바르게 동작함
+                if (IsUIEffectGraphic(child))
+                {
+                    ApplyMaskToUIEffect(child);
+                    continue;
+                }
+
                 // 일반 Graphic (TMP_SubMeshUI 포함)
                 Material originalMat = child.material;
 
@@ -1223,7 +1259,11 @@ namespace CAT.UI
         {
             foreach (var kvp in _originalChildMaterials)
             {
-                if (kvp.Key == null || kvp.Value == null) continue;
+                if (kvp.Key == null) continue;
+
+                // UIEffect 자식은 _originalChildMaterials 값이 null로 저장됨
+                // → 원본 머티리얼 복원 불필요 (프록시 컴포넌트 제거만 처리)
+                if (kvp.Value == null) continue;
 
                 // TMP_Text는 fontSharedMaterial로 복원
                 if (kvp.Key is TMP_Text tmpText)
@@ -1271,6 +1311,14 @@ namespace CAT.UI
             }
             _particleMaskMaterials.Clear();
             _particleAppliedMaskMats.Clear();
+
+            // UIEffect 프록시 컴포넌트 정리
+            for (int i = 0; i < _uiEffectProxies.Count; i++)
+            {
+                if (_uiEffectProxies[i] != null)
+                    _uiEffectProxies[i].Cleanup();
+            }
+            _uiEffectProxies.Clear();
         }
 
         // ─────────────────────────────────────────────
@@ -1705,6 +1753,184 @@ namespace CAT.UI
                     mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
                 }
             }
+        }
+
+        // ─────────────────────────────────────────────
+        // UIEffect 지원
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 해당 Graphic이 UIEffect 또는 UIEffectReplica 컴포넌트를 보유하는지 확인
+        /// </summary>
+        private static bool IsUIEffectGraphic(UnityEngine.UI.Graphic child)
+        {
+            return child.GetComponent<UIEffect>() != null
+                || child.GetComponent<UIEffectReplica>() != null;
+        }
+
+        /// <summary>
+        /// UIEffect 자식에 프록시 컴포넌트를 추가하여 _CAT_SOFTMASK 키워드가 활성화된
+        /// 프록시 머티리얼이 IMaterialModifier 체인에서 생성되도록 트리거
+        /// </summary>
+        private void ApplyMaskToUIEffect(UnityEngine.UI.Graphic child)
+        {
+            // 이미 원본 머티리얼 매핑이 있으면 재처리 불필요
+            // (이미 프록시가 적용된 상태)
+            if (_originalChildMaterials.ContainsKey(child)) return;
+
+            // 프록시 컴포넌트 확보 (없으면 추가)
+            var proxy = child.GetComponent<UIEffectSoftMaskProxy>();
+            if (proxy == null)
+                proxy = child.gameObject.AddComponent<UIEffectSoftMaskProxy>();
+
+            proxy.Initialize(this);
+
+            if (!_uiEffectProxies.Contains(proxy))
+                _uiEffectProxies.Add(proxy);
+
+            // 원본 머티리얼 기록 (복원 시 사용)
+            // UIEffect 자식은 child.material이 UIEffect에 의해 관리되므로
+            // 여기서는 null을 저장하여 복원 시 material 리셋 없이 프록시만 제거
+            _originalChildMaterials[child] = null;
+
+            // Canvas 재빌드 트리거 → GetModifiedMaterial() 호출 → 프록시 머티리얼 생성
+            child.SetMaterialDirty();
+        }
+
+        /// <summary>
+        /// 지정된 머티리얼에 현재 마스크 프로퍼티를 적용
+        /// UIEffectSoftMaskProxy.GetModifiedMaterial()에서 호출되어
+        /// 캔버스 리빌드 시점에 프록시 머티리얼에 마스크 프로퍼티를 직접 적용
+        ///
+        /// 핵심: LateUpdate(UpdateSharedMaterial)는 Canvas 리빌드 이전에 실행되므로
+        /// _cachedWorldToUV 등 캐시 값은 항상 최신 상태
+        /// </summary>
+        internal void ApplyMaskPropertiesToMaterial(Material mat)
+        {
+            if (mat == null) return;
+
+            Texture maskTex = GetMaskTexture();
+            Vector4 maskUVRect = GetMaskUVRect();
+
+            // 기본 마스크 프로퍼티
+            mat.SetMatrix(PropMaskWorldToUV, _cachedWorldToUV);
+            mat.SetFloat(PropSoftness, _cachedSoftness);
+            mat.SetFloat(PropInvertMask, _cachedInvertMask ? 1f : 0f);
+            if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
+            mat.SetVector(PropMaskUVRect, maskUVRect);
+
+            // 슬라이스 프로퍼티
+            if (_cachedIsSliced)
+            {
+                if (!mat.IsKeywordEnabled(KEYWORD_SLICE))
+                    mat.EnableKeyword(KEYWORD_SLICE);
+                mat.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
+                mat.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
+            }
+            else if (mat.IsKeywordEnabled(KEYWORD_SLICE))
+            {
+                mat.DisableKeyword(KEYWORD_SLICE);
+            }
+
+            // 중첩 마스크 프로퍼티
+            if (_hasParentMask && _parentSoftMask != null)
+            {
+                if (!mat.IsKeywordEnabled(KEYWORD_NESTED))
+                    mat.EnableKeyword(KEYWORD_NESTED);
+                if (!mat.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
+                    mat.EnableKeyword(KEYWORD_CAT_SOFTMASK);
+
+                mat.SetMatrix(PropMaskWorldToUV2, _cachedParentWorldToUV);
+                mat.SetFloat(PropSoftness2, _cachedParentSoftness);
+                mat.SetFloat(PropInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+
+                Texture parentTex = _parentSoftMask.GetMaskTexture();
+                if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
+                mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+
+                // 중첩 슬라이스 프로퍼티
+                if (_cachedParentIsSliced)
+                {
+                    if (!mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                        mat.EnableKeyword(KEYWORD_NESTED_SLICE);
+                    mat.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
+                    mat.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                }
+                else if (mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                {
+                    mat.DisableKeyword(KEYWORD_NESTED_SLICE);
+                }
+            }
+            else
+            {
+                if (mat.IsKeywordEnabled(KEYWORD_NESTED))
+                    mat.DisableKeyword(KEYWORD_NESTED);
+            }
+        }
+
+        /// <summary>
+        /// UIEffect 프록시 머티리얼에 현재 마스크 프로퍼티 일괄 전파
+        /// LateUpdate에서 anyChange 시 호출되어 프록시 머티리얼을 갱신
+        /// (캔버스 리빌드 없이 마스크 프로퍼티만 변경된 경우 대응)
+        /// </summary>
+        private void UpdateUIEffectMaterials()
+        {
+            if (_uiEffectProxies.Count == 0) return;
+
+            for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
+            {
+                var proxy = _uiEffectProxies[i];
+                if (proxy == null)
+                {
+                    _uiEffectProxies.RemoveAt(i);
+                    continue;
+                }
+
+                Material mat = proxy.ProxyMaterial;
+                if (mat == null) continue;
+
+                ApplyMaskPropertiesToMaterial(mat);
+            }
+        }
+
+        /// <summary>
+        /// UIEffect 프록시 머티리얼이 null인지 감지하여 캔버스 재빌드 트리거
+        /// UIEffect가 내부적으로 머티리얼을 재생성했을 때 프록시도 재생성하도록 처리
+        /// </summary>
+        private void DetectUIEffectMaterialChanges()
+        {
+            if (_uiEffectProxies.Count == 0) return;
+
+            for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
+            {
+                var proxy = _uiEffectProxies[i];
+                if (proxy == null)
+                {
+                    _uiEffectProxies.RemoveAt(i);
+                    continue;
+                }
+
+                // 프록시 머티리얼이 null이면 UIEffect가 머티리얼을 재생성한 것
+                // → SetMaterialDirty()로 GetModifiedMaterial() 재호출 트리거
+                if (proxy.ProxyMaterial == null)
+                {
+                    var graphic = proxy.GetComponent<UnityEngine.UI.Graphic>();
+                    if (graphic != null) graphic.SetMaterialDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 해당 머티리얼이 UIEffect 프록시 머티리얼인지 확인 (PropagateToStencilMaterials 스킵용)
+        /// </summary>
+        private bool IsUIEffectProxyMaterial(Material mat)
+        {
+            for (int i = 0; i < _uiEffectProxies.Count; i++)
+            {
+                if (_uiEffectProxies[i] != null && _uiEffectProxies[i].ProxyMaterial == mat)
+                    return true;
+            }
+            return false;
         }
 
         // ─────────────────────────────────────────────

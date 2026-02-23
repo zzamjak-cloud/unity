@@ -17,10 +17,14 @@ Properties {
     [HideInInspector] _Softness("Softness", Range(0, 1)) = 0.1
     [HideInInspector] _InvertMask("Invert Mask", Float) = 0
     [HideInInspector] _MaskUVRect("Mask UV Rect", Vector) = (0, 0, 1, 1)
+    [HideInInspector] _MaskSliceBorder("Mask Slice Border", Vector) = (0, 0, 1, 1)
+    [HideInInspector] _MaskSliceInnerUV("Mask Slice Inner UV", Vector) = (0, 0, 1, 1)
     [HideInInspector] _MaskTex2("Mask Texture 2", 2D) = "white" {}
     [HideInInspector] _Softness2("Softness 2", Range(0, 1)) = 0.1
     [HideInInspector] _InvertMask2("Invert Mask 2", Float) = 0
     [HideInInspector] _MaskUVRect2("Mask UV Rect 2", Vector) = (0, 0, 1, 1)
+    [HideInInspector] _MaskSliceBorder2("Mask Slice Border 2", Vector) = (0, 0, 1, 1)
+    [HideInInspector] _MaskSliceInnerUV2("Mask Slice Inner UV 2", Vector) = (0, 0, 1, 1)
 }
 
 Category {
@@ -52,6 +56,8 @@ Category {
             #pragma multi_compile __ UNITY_UI_ALPHACLIP
             #pragma multi_compile_local _ _CAT_SOFTMASK
             #pragma multi_compile_local _ _SOFTMASK_NESTED
+            #pragma multi_compile_local _ _SOFTMASK_SLICE
+            #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
 
             #include "UnityCG.cginc"
             #include "UnityUI.cginc"
