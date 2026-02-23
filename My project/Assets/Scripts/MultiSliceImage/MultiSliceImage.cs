@@ -7,8 +7,10 @@ namespace CAT.UI
 {
     public enum ImageType
     {
-        Sliced,   // 가장자리 1픽셀을 타일링하여 확장 영역을 채움 (현재 기본 동작)
-        Tiled  // 조건부 처리 (목표 크기 >= 원본 크기: 전체 이미지를 타일링, 목표 크기 < 원본 크기: 슬라이싱 (Stretch))
+        /// <summary>Unity 9-slice와 동일: 타일링 없이 셀당 1쿼드 스트레치. 쿼드 수 = (1+vCuts)×(1+hCuts).</summary>
+        Sliced,
+        /// <summary>조건부: 목표 크기 >= 원본이면 타일링, 아니면 스트레치.</summary>
+        Tiled
     }
 
     /// <summary>
@@ -22,29 +24,40 @@ namespace CAT.UI
     /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
     /// - Maskable: MaskableGraphic 상속으로 자동 지원
     /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
-    /// - Image Type: Sliced (가장자리 픽셀 타일링) / Tiled (조건부 타일링)
+    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링)
     ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
-    /// - 타일링 최적화: 1픽셀 단위 대신 최대 32픽셀 단위로 타일링 (버텍스 수 대폭 감소)
-    /// - while 루프 제거: 계산 기반 for 루프로 대체 (CPU 부하 감소)
+    /// - 타일링 최적화: 1픽셀 단위 대신 최대 32픽셀 단위로 타일링
     /// - List 캐싱: stops 리스트 재사용 (GC 할당 최소화)
     /// - UV 데이터 캐싱: DataUtility.GetOuterUV() 호출 최소화, 텍셀 크기 역수 캐싱
     /// - 구조체 재사용: Vector2, Vector3, Rect 할당 최소화 (tempPos, tempRect 재사용)
     /// - 나눗셈 최적화: 곱셈으로 변환 (역수 캐싱)
-    /// - 메서드 분리: OnPopulateMesh 분리로 가독성 및 유지보수성 향상
     ///
-    /// 모바일 환경에서 안정적인 성능 제공
+    /// 모바일 정점 폭발 방지 (필수):
+    /// - Sliced: 타일링 없음. 쿼드 수 = (1+vCuts)×(1+hCuts). Unity 9-slice와 동일.
+    /// - Tiled: 확장 셀당 타일링 1번, 셀당 최대 256 쿼드. 섹션당 256, 전체 65000 미만 유지.
     /// </summary>
     [RequireComponent(typeof(CanvasRenderer))]
     public class MultiSliceImage : MaskableGraphic
     {
         private const int MAX_CUTS = 4;                 // 최대 컷 수 제한
-        private const int MAX_TILE_SIZE = 32;           // 타일 최대 크기 (픽셀) - 성능 최적화: 1픽셀보다 큰 타일로 버텍스 수 감소
+        private const int MAX_TILE_SIZE = 32;           // 타일 최대 크기 (픽셀)
         private const int FIXED_REGION_MODULO = 0;      // 짝수 인덱스 = 고정 영역
         private const int FLEXIBLE_REGION_MODULO = 1;   // 홀수 인덱스 = 확장 영역
         private const int GRID_SECTIONS = 3;            // 3x3 그리드
         private const int GRID_CENTER = 1;              // 그리드 중앙 인덱스
+
+        // 모바일 정점 폭발 방지: 타일링 철저 제한
+        private const int MAX_MESH_VERTICES = 65000;
+        /// <summary>섹션당 타일 쿼드 상한. 초과 시 해당 구간은 1쿼드 스트레치로만 그림.</summary>
+        private const int MAX_QUADS_PER_SECTION = 256;
+        /// <summary>Sliced 모드에서 확장 셀 1개당 쿼드 상한.</summary>
+        private const int MAX_QUADS_PER_SLICED_CELL = 256;
+        /// <summary>Sliced 모드 전체 타일 쿼드 상한. 이 수를 넘기면 나머지 섹션은 전부 1쿼드 스트레치. (Tiled가 수십 쿼드인데 Sliced만 수백~천 개 나오는 것 방지)</summary>
+        private const int MAX_QUADS_TOTAL_SLICED = 128;
+        /// <summary>전체 메시 쿼드 상한(여유 1).</summary>
+        private const int MAX_QUADS_SAFE = (MAX_MESH_VERTICES / 4) - 1;
 
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private bool m_PreserveAspect = false;
@@ -83,6 +96,15 @@ namespace CAT.UI
         // 성능 최적화: 구조체 재사용 (GC 할당 최소화)
         private Vector2 tempPos = Vector2.zero;
         private Rect tempRect = Rect.zero;
+
+        /// <summary>Sliced 모드에서 현재까지 사용한 타일 쿼드 수 (전체 상한 MAX_QUADS_TOTAL_SLICED 적용용).</summary>
+        private int _slicedTiledQuadsUsed;
+
+        /// <summary>마지막 OnPopulateMesh에서 생성된 정점 수. 에디터에서 Slice 타입 정점 수 확인용.</summary>
+        private int _lastPopulateVertexCount;
+
+        /// <summary>현재 메시의 정점 수 (마지막 빌드 기준). 에디터 전용.</summary>
+        public int lastPopulateVertexCount => _lastPopulateVertexCount;
 
         public Sprite sprite
         {
@@ -170,12 +192,18 @@ namespace CAT.UI
         protected override void OnPopulateMesh(VertexHelper vh)
         {
             vh.Clear();
-            if (m_Sprite == null) return;
+            if (m_Sprite == null)
+            {
+                _lastPopulateVertexCount = 0;
+                return;
+            }
 
             Rect rect = PrepareRenderRect();
             RenderData renderData = PrepareRenderData(rect);
-            
+
             RenderCells(vh, rect, renderData);
+
+            _lastPopulateVertexCount = vh.currentVertCount;
         }
 
         // 렌더링할 Rect를 준비합니다 (Preserve Aspect 처리 포함)
@@ -311,8 +339,17 @@ namespace CAT.UI
                     float baseUvColWidth = baseUvRight - baseUvLeft;
                     float baseUvRowHeight = baseUvTop - baseUvBottom;
 
-                    // 셀 렌더링
-                    if (isFlexibleCol || isFlexibleRow)
+                    // Sliced: Unity 9-slice와 동일하게 셀당 1쿼드만 (타일링 없음)
+                    if (m_ImageType == ImageType.Sliced)
+                    {
+                        tempRect.x = tempPos.x;
+                        tempRect.y = tempPos.y;
+                        tempRect.width = colWidth;
+                        tempRect.height = rowHeight;
+                        Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
+                        AddQuad(vh, tempRect, uvRect);
+                    }
+                    else if (isFlexibleCol || isFlexibleRow)
                     {
                         RenderFlexibleCell(vh, tempPos, colWidth, rowHeight, srcColWidth, srcRowHeight,
                                           baseUvLeft, baseUvRight, baseUvBottom, baseUvTop,
@@ -380,12 +417,14 @@ namespace CAT.UI
             }
         }
 
-        // Sliced 모드 셀을 렌더링합니다 (3x3 그리드)
+        // Sliced 모드 셀을 렌더링합니다 (3x3 그리드). 셀당 쿼드 상한으로 Tiled와 비슷한 정점 수 유지.
         private void RenderSlicedCell(VertexHelper vh, Vector2 currentPos, float colWidth, float rowHeight,
                                      float srcColWidth, float srcRowHeight,
                                      float baseUvLeft, float baseUvRight, float baseUvBottom, float baseUvTop,
                                      bool isFlexibleCol, bool isFlexibleRow)
         {
+            int cellStartVertCount = vh.currentVertCount;
+
             // 확장량 계산 (양쪽으로 늘어나는 크기)
             float expandColSize = isFlexibleCol ? (colWidth - srcColWidth) * 0.5f : 0f;
             float expandRowSize = isFlexibleRow ? (rowHeight - srcRowHeight) * 0.5f : 0f;
@@ -401,23 +440,20 @@ namespace CAT.UI
             float baseUvColWidth = baseUvRight - baseUvLeft;
             float baseUvRowHeight = baseUvTop - baseUvBottom;
 
-            // 3x3 그리드로 처리 (왼쪽/중앙/오른쪽 x 아래/중앙/위)
+            // 3x3 그리드로 처리 (왼쪽/중앙/오른쪽 x 아래/중앙/위). 셀당 MAX_QUADS_PER_SLICED_CELL 이하로 제한.
             for (int sectionY = 0; sectionY < GRID_SECTIONS; sectionY++)
             {
                 for (int sectionX = 0; sectionX < GRID_SECTIONS; sectionX++)
                 {
-                    // 고정 영역인 경우 중앙만 그림
                     if (!isFlexibleCol && sectionX != GRID_CENTER) continue;
                     if (!isFlexibleRow && sectionY != GRID_CENTER) continue;
 
-                    // Position 계산
                     float sectionPosX, sectionWidth;
                     CalculateSectionPositionX(isFlexibleCol, sectionX, currentPos.x, expandColSize, srcColWidth, colWidth, out sectionPosX, out sectionWidth);
 
                     float sectionPosY, sectionHeight;
                     CalculateSectionPositionY(isFlexibleRow, sectionY, currentPos.y, expandRowSize, srcRowHeight, rowHeight, out sectionPosY, out sectionHeight);
 
-                    // UV 계산
                     float uvX, uvW;
                     bool tilableX = isFlexibleCol && sectionX != GRID_CENTER;
                     CalculateSectionUVX(isFlexibleCol, sectionX, baseUvLeft, baseUvColWidth, leftEdgeUvX, rightEdgeUvX, out uvX, out uvW);
@@ -426,10 +462,12 @@ namespace CAT.UI
                     bool tilableY = isFlexibleRow && sectionY != GRID_CENTER;
                     CalculateSectionUVY(isFlexibleRow, sectionY, baseUvBottom, baseUvRowHeight, bottomEdgeUvY, topEdgeUvY, out uvY, out uvH);
 
-                    // 타일링 또는 원본 렌더링
+                    int quadsUsedInCell = (vh.currentVertCount - cellStartVertCount) / 4;
+                    int remainingCellBudget = Mathf.Max(0, MAX_QUADS_PER_SLICED_CELL - quadsUsedInCell);
+
                     if (tilableX || tilableY)
                     {
-                        RenderTiledSection(vh, sectionPosX, sectionPosY, sectionWidth, sectionHeight, uvX, uvY, uvW, uvH, tilableX, tilableY);
+                        RenderTiledSection(vh, sectionPosX, sectionPosY, sectionWidth, sectionHeight, uvX, uvY, uvW, uvH, tilableX, tilableY, remainingCellBudget);
                     }
                     else
                     {
@@ -540,9 +578,10 @@ namespace CAT.UI
             }
         }
 
-        // 타일링 섹션을 렌더링합니다
+        // 타일링 섹션을 렌더링합니다. 정점 한계 초과 시 1쿼드 스트레치로 폴백.
+        // maxQuadsForCell: Sliced 모드에서 셀당 예산(남은 쿼드). -1이면 무시.
         private void RenderTiledSection(VertexHelper vh, float sectionPosX, float sectionPosY, float sectionWidth, float sectionHeight,
-                                        float uvX, float uvY, float uvW, float uvH, bool tilableX, bool tilableY)
+                                        float uvX, float uvY, float uvW, float uvH, bool tilableX, bool tilableY, int maxQuadsForCell = -1)
         {
             // 타일 크기 계산 (최대 MAX_TILE_SIZE 픽셀)
             float tileW = tilableX ? Mathf.Min(MAX_TILE_SIZE, sectionWidth) : sectionWidth;
@@ -551,14 +590,38 @@ namespace CAT.UI
             // 타일 개수 계산
             int tilesX = tilableX ? Mathf.CeilToInt(sectionWidth / tileW) : 1;
             int tilesY = tilableY ? Mathf.CeilToInt(sectionHeight / tileH) : 1;
+            int plannedQuads = tilesX * tilesY;
+            int remainingQuads = (MAX_MESH_VERTICES - vh.currentVertCount) / 4;
 
-            // 계산 기반 타일링
-            for (int ty = 0; ty < tilesY; ty++)
+            // Sliced 전체 타일 쿼드 상한 (Tiled와 비슷한 수준으로 유지)
+            int remainingSlicedBudget = maxQuadsForCell >= 0 ? Mathf.Max(0, MAX_QUADS_TOTAL_SLICED - _slicedTiledQuadsUsed) : int.MaxValue;
+            bool overSlicedTotalBudget = maxQuadsForCell >= 0 && plannedQuads > remainingSlicedBudget;
+
+            // 모바일 안전: 섹션당/전체/셀당/Sliced 전체 예산 초과 시 타일링 금지, 1쿼드 스트레치만 허용
+            bool overSectionLimit = plannedQuads > MAX_QUADS_PER_SECTION;
+            bool overTotalLimit = plannedQuads > remainingQuads || plannedQuads > MAX_QUADS_SAFE;
+            bool overCellBudget = maxQuadsForCell >= 0 && plannedQuads > maxQuadsForCell;
+            if (overSectionLimit || overTotalLimit || overCellBudget || overSlicedTotalBudget)
+            {
+                tempRect.x = sectionPosX;
+                tempRect.y = sectionPosY;
+                tempRect.width = sectionWidth;
+                tempRect.height = sectionHeight;
+                Rect uvRect = new Rect(uvX, uvY, uvW, uvH);
+                AddQuad(vh, tempRect, uvRect);
+                if (maxQuadsForCell >= 0)
+                    _slicedTiledQuadsUsed += 1;
+                return;
+            }
+
+            // 계산 기반 타일링 (섹션당/전체 Sliced 예산 내)
+            int quadsAdded = 0;
+            for (int ty = 0; ty < tilesY && quadsAdded < MAX_QUADS_PER_SECTION && (maxQuadsForCell < 0 || quadsAdded < remainingSlicedBudget); ty++)
             {
                 float currentTileY = sectionPosY + ty * tileH;
                 float actualTileH = Mathf.Min(tileH, sectionPosY + sectionHeight - currentTileY);
 
-                for (int tx = 0; tx < tilesX; tx++)
+                for (int tx = 0; tx < tilesX && quadsAdded < MAX_QUADS_PER_SECTION && (maxQuadsForCell < 0 || quadsAdded < remainingSlicedBudget); tx++)
                 {
                     float currentTileX = sectionPosX + tx * tileW;
                     float actualTileW = Mathf.Min(tileW, sectionPosX + sectionWidth - currentTileX);
@@ -569,8 +632,12 @@ namespace CAT.UI
                     tempRect.height = actualTileH;
                     Rect uvRect = new Rect(uvX, uvY, uvW, uvH);
                     AddQuad(vh, tempRect, uvRect);
+                    quadsAdded++;
                 }
             }
+
+            if (maxQuadsForCell >= 0)
+                _slicedTiledQuadsUsed += quadsAdded;
         }
 
         // 성능 최적화: 캐시된 리스트 재사용 (GC 할당 최소화)
@@ -701,7 +768,7 @@ namespace CAT.UI
             }
         }
 
-        // Tiled 모드: 확장 영역의 원본 크기만큼씩 반복하여 타일링 (타일링만 사용, stretch 없음)
+        // Tiled 모드: 확장 영역의 원본 크기만큼씩 반복하여 타일링. 정점 한계 초과 시 1쿼드 스트레치로 폴백.
         private void RenderTiled(
             VertexHelper vh,
             Vector2 startPos,
@@ -713,9 +780,6 @@ namespace CAT.UI
             float uvBottom, float uvTop,
             bool tileX, bool tileY)
         {
-            float uvWidth = uvRight - uvLeft;
-            float uvHeight = uvTop - uvBottom;
-
             // 타일 크기 (픽셀 단위) - 확장 영역의 원본 크기 사용
             float baseTileW = tileX ? srcWidth : totalWidth;
             float baseTileH = tileY ? srcHeight : totalHeight;
@@ -723,18 +787,31 @@ namespace CAT.UI
             // 타일 개수 계산 (모든 공간을 채우기 위해 ceil 사용)
             int tilesX = tileX ? Mathf.CeilToInt(totalWidth / baseTileW) : 1;
             int tilesY = tileY ? Mathf.CeilToInt(totalHeight / baseTileH) : 1;
+            int plannedQuads = tilesX * tilesY;
+            int remainingQuads = (MAX_MESH_VERTICES - vh.currentVertCount) / 4;
 
-            // 역수 캐싱 (나눗셈 최적화)
+            // 모바일 안전: 셀당/전체 정점 한계 초과 시 타일링 금지, 1쿼드 스트레치만 허용
+            bool overSectionLimit = plannedQuads > MAX_QUADS_PER_SECTION;
+            bool overTotalLimit = plannedQuads > remainingQuads || plannedQuads > MAX_QUADS_SAFE;
+            if (overSectionLimit || overTotalLimit)
+            {
+                RenderStretched(vh, startPos, totalWidth, totalHeight, uvLeft, uvRight, uvBottom, uvTop);
+                return;
+            }
+
+            float uvWidth = uvRight - uvLeft;
+            float uvHeight = uvTop - uvBottom;
             float invBaseTileW = 1f / baseTileW;
             float invBaseTileH = 1f / baseTileH;
 
-            // 타일링 (마지막 타일은 필요한 만큼 늘려서 채움)
-            for (int ty = 0; ty < tilesY; ty++)
+            // 타일링 (셀당 최대 MAX_QUADS_PER_SECTION 쿼드, 모바일 안전)
+            int quadsAdded = 0;
+            for (int ty = 0; ty < tilesY && quadsAdded < MAX_QUADS_PER_SECTION; ty++)
             {
                 float currentY = startPos.y + ty * baseTileH;
                 float actualH = Mathf.Min(baseTileH, startPos.y + totalHeight - currentY);
 
-                for (int tx = 0; tx < tilesX; tx++)
+                for (int tx = 0; tx < tilesX && quadsAdded < MAX_QUADS_PER_SECTION; tx++)
                 {
                     float currentX = startPos.x + tx * baseTileW;
                     float actualW = Mathf.Min(baseTileW, startPos.x + totalWidth - currentX);
@@ -744,13 +821,12 @@ namespace CAT.UI
                     tempRect.width = actualW;
                     tempRect.height = actualH;
 
-                    // UV는 실제 렌더링 크기에 맞춰 조정 (마지막 타일이 늘어날 수 있음)
-                    // 나눗셈을 곱셈으로 최적화
                     float uvW = uvWidth * (actualW * invBaseTileW);
                     float uvH = uvHeight * (actualH * invBaseTileH);
                     Rect uvRect = new Rect(uvLeft, uvBottom, uvW, uvH);
 
                     AddQuad(vh, tempRect, uvRect);
+                    quadsAdded++;
                 }
             }
         }

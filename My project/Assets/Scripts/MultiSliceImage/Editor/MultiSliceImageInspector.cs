@@ -52,7 +52,7 @@ public class MultiSliceImageInspector : GraphicEditor
         EditorGUI.BeginChangeCheck();
         MultiSliceImage targetImg = (MultiSliceImage)target;
         ImageType newImageType = (ImageType)EditorGUILayout.EnumPopup(
-            new GUIContent("Image Type", "렌더링 모드: Sliced (가장자리 픽셀 타일링) / Tiled (조건부 타일링)"),
+            new GUIContent("Image Type", "Sliced: 9-slice처럼 셀당 1쿼드 고정 | Tiled: 조건부 타일링"),
             targetImg.imageType
         );
         bool imageTypeChanged = EditorGUI.EndChangeCheck();
@@ -93,6 +93,26 @@ public class MultiSliceImageInspector : GraphicEditor
         if (targetImage.sprite == null)
         {
             EditorGUILayout.HelpBox("스프라이트를 할당해야 Set Native Size를 사용할 수 있습니다.", MessageType.Info);
+        }
+
+        // Slice 타입 사용 시 정점 수 표시 (메시 빌드 후 갱신됨)
+        EditorGUILayout.Space(3);
+        int vertCount = targetImage.lastPopulateVertexCount;
+        if (vertCount > 0)
+        {
+            int quadCount = vertCount / 4;
+            EditorGUILayout.LabelField("Mesh (현재)", $"{vertCount} 정점 (쿼드 {quadCount}개)");
+        }
+        else if (targetImage.sprite != null)
+        {
+            EditorGUILayout.LabelField("Mesh (현재)", "메시 미빌드 (캔버스 갱신 후 표시)");
+            if (GUILayout.Button("메시 갱신하여 정점 수 확인", GUILayout.Height(18)))
+            {
+                targetImage.SetVerticesDirty();
+                targetImage.SetMaterialDirty();
+                Canvas.ForceUpdateCanvases();
+                Repaint();
+            }
         }
 
         EditorGUILayout.Space(5);
