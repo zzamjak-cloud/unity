@@ -485,9 +485,14 @@ namespace CAT.UI
         // ─────────────────────────────────────────────
 
         /// <summary>
-        /// 월드 좌표 → 마스크 UV (0~1) 변환 행렬 계산
+        /// Canvas 로컬 좌표 → 마스크 UV (0~1) 변환 행렬 계산
         /// RectTransform의 회전, 스케일을 모두 반영
         /// Atlas 스프라이트 트리밍(투명 여백 제거) 보정 포함
+        ///
+        /// UI 셰이더에서 v.vertex는 Canvas 로컬 좌표로 전달됨
+        /// Canvas.localToWorldMatrix를 곱하여 Canvas 로컬 → 월드 → 마스크 로컬 변환을 구성
+        /// Screen Space - Overlay 모드에서도 정확한 좌표 변환 보장
+        /// (unity_ObjectToWorld 의존성 제거)
         /// </summary>
         internal Matrix4x4 ComputeWorldToMaskUV()
         {
@@ -504,6 +509,18 @@ namespace CAT.UI
             localToUV.m11 = 1f / contentRect.height;
             localToUV.m03 = -contentRect.x / contentRect.width;
             localToUV.m13 = -contentRect.y / contentRect.height;
+
+            // Canvas 로컬 좌표 기반 변환:
+            // 셰이더에서 v.vertex.xyz(Canvas 로컬 좌표)를 직접 사용하므로
+            // Canvas.localToWorldMatrix를 곱하여 Canvas 로컬 → 마스크 UV 변환 구성
+            Canvas rootCanvas = _uiGraphic != null ? _uiGraphic.canvas : null;
+            if (rootCanvas != null) rootCanvas = rootCanvas.rootCanvas;
+
+            if (rootCanvas != null)
+            {
+                Matrix4x4 canvasLocalToWorld = rootCanvas.transform.localToWorldMatrix;
+                return localToUV * worldToLocal * canvasLocalToWorld;
+            }
 
             return localToUV * worldToLocal;
         }

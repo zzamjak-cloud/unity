@@ -323,11 +323,11 @@ Shader "CAT/UI/TMP_SoftMask"
                 output.underlayParam = half2(layerScale, layerBias);
                 #endif
 
-                // SoftMask UV (월드 좌표 -> 마스크 UV, 버텍스에서 계산)
-                float3 worldPos = mul(unity_ObjectToWorld, vert).xyz;
-                output.softMaskUV = mul(_SoftMaskWorldToUV, float4(worldPos, 1)).xy;
+                // SoftMask UV (Canvas 로컬 좌표 → 마스크 UV, 버텍스에서 계산)
+                // vert는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
+                output.softMaskUV = mul(_SoftMaskWorldToUV, float4(vert.xyz, 1)).xy;
                 #if defined(_SOFTMASK_NESTED)
-                output.softMaskUV2 = mul(_SoftMaskWorldToUV2, float4(worldPos, 1)).xy;
+                output.softMaskUV2 = mul(_SoftMaskWorldToUV2, float4(vert.xyz, 1)).xy;
                 #endif
 
                 return output;

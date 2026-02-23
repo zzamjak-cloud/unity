@@ -208,12 +208,12 @@ Shader "CAT/UI/SoftMask"
                 OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
                 OUT.color = v.color;
 
-                // 월드 좌표 → 마스크 UV (버텍스에서 계산, 프래그먼트 비용 절감)
-                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-                OUT.maskUV = mul(_MaskWorldToUV, float4(worldPos, 1)).xy;
+                // Canvas 로컬 좌표 → 마스크 UV (버텍스에서 계산, 프래그먼트 비용 절감)
+                // v.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
+                OUT.maskUV = mul(_MaskWorldToUV, v.vertex).xy;
 
                 #if defined(_SOFTMASK_NESTED)
-                OUT.maskUV2 = mul(_MaskWorldToUV2, float4(worldPos, 1)).xy;
+                OUT.maskUV2 = mul(_MaskWorldToUV2, v.vertex).xy;
                 #endif
 
                 return OUT;
@@ -310,11 +310,11 @@ Shader "CAT/UI/SoftMask"
                 OUT.texcoord = TRANSFORM_TEX(IN.texcoord, _MainTex);
                 OUT.color = IN.color;
 
-                float3 worldPos = mul(unity_ObjectToWorld, IN.vertex).xyz;
-                OUT.maskUV = mul(_MaskWorldToUV, float4(worldPos, 1)).xy;
+                // v.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
+                OUT.maskUV = mul(_MaskWorldToUV, IN.vertex).xy;
 
                 #if defined(_SOFTMASK_NESTED)
-                OUT.maskUV2 = mul(_MaskWorldToUV2, float4(worldPos, 1)).xy;
+                OUT.maskUV2 = mul(_MaskWorldToUV2, IN.vertex).xy;
                 #endif
 
                 #ifdef PIXELSNAP_ON

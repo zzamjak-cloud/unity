@@ -10,8 +10,8 @@
 //    #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
 // 3. #include "CAT_SoftMask_Core.cginc"
 // 4. v2f에 CAT_SOFTMASK_COORDS(idx1, idx2) 추가
-// 5. 버텍스: float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-//           CAT_SOFTMASK_VERT(worldPos, o)
+// 5. 버텍스: CAT_SOFTMASK_VERT(v.vertex.xyz, o)
+//    (v.vertex는 Canvas 로컬 좌표, unity_ObjectToWorld 미사용 → Overlay 호환)
 // 6. 프래그먼트: half mask = CAT_SOFTMASK_FRAG(i);
 //              color.a *= mask; (또는 premultiplied additive: color *= mask;)
 // ─────────────────────────────────────────────────────────

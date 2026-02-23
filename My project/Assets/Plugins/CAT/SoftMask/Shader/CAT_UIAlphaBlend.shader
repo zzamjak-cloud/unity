@@ -97,8 +97,8 @@ Category {
                 v.texcoord = TRANSFORM_TEX(IN.texcoord, _MainTex);
                 UNITY_TRANSFER_FOG(v, v.vertex);
 
-                float3 worldPos = mul(unity_ObjectToWorld, IN.vertex).xyz;
-                CAT_SOFTMASK_VERT(worldPos, v)
+                // IN.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
+                CAT_SOFTMASK_VERT(IN.vertex.xyz, v)
 
                 return v;
             }

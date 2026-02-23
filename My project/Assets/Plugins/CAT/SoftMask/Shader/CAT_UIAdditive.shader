@@ -98,8 +98,8 @@ Shader "CAT/Particles/UIAdditive"
                 #endif
                 OUT.color = IN.color * _Color;
 
-                float3 worldPos = mul(unity_ObjectToWorld, IN.vertex).xyz;
-                CAT_SOFTMASK_VERT(worldPos, OUT)
+                // IN.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
+                CAT_SOFTMASK_VERT(IN.vertex.xyz, OUT)
 
                 return OUT;
             }

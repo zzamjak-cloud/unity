@@ -172,11 +172,9 @@ Shader "Hidden/UI/Default (UIEffect)"
                 // ==== UIEFFECT END ====
 
                 // ==== CAT SOFTMASK START ====
-                // UIEffect는 오브젝트 공간 좌표를 worldPosition으로 전달하므로
-                // unity_ObjectToWorld 변환으로 실제 월드 좌표 계산
+                // v.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
                 #if _CAT_SOFTMASK
-                float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-                CAT_SOFTMASK_VERT(worldPos, OUT)
+                CAT_SOFTMASK_VERT(v.vertex.xyz, OUT)
                 #endif
                 // ==== CAT SOFTMASK END ====
 
