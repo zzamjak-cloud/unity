@@ -19,16 +19,17 @@ namespace CAT.UI
     [AddComponentMenu("CAT/UI/SoftMask")]
     public class SoftMask : MonoBehaviour
     {
-        public const string VERSION = "1.2.0";
+        public const string VERSION = "1.4.0";
 
-        public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
-        public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
-        private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
-        private static readonly string KEYWORD_SLICE = "_SOFTMASK_SLICE";
-        private static readonly string KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE";
-        private static readonly string PARTICLE_SHADER_PREFIX = "CAT/Particles/";
-        private static readonly string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
-        private static readonly string UIEFFECT_SHADER_NAME = "Hidden/UI/Default (UIEffect)";
+        // 셰이더/키워드 상수 (const: 컴파일 타임 인라인, static readonly 대비 비교 비용 절감)
+        public const string SHADER_NAME = "CAT/UI/SoftMask";
+        public const string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
+        private const string KEYWORD_NESTED = "_SOFTMASK_NESTED";
+        private const string KEYWORD_SLICE = "_SOFTMASK_SLICE";
+        private const string KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE";
+        private const string PARTICLE_SHADER_PREFIX = "CAT/Particles/";
+        private const string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
+        private const string UIEFFECT_SHADER_NAME = "Hidden/UI/Default (UIEffect)";
 
         // 셰이더 직렬화 참조 (빌드에서 Shader.Find() 실패 방지)
         // 직렬화된 참조가 있으면 빌드에 셰이더가 자동 포함됨
@@ -115,6 +116,7 @@ namespace CAT.UI
 
         private UnityEngine.UI.Graphic _uiGraphic;
         private RectTransform _rectTransform;
+        private Canvas _rootCanvas; // ComputeWorldToMaskUV()에서 프레임당 탐색 방지용 캐시
         private bool _initialized;
 
         // 공유 Material (이 SoftMask의 모든 자식이 공유)
@@ -260,6 +262,9 @@ namespace CAT.UI
                 return;
             }
 
+            // Canvas 참조 캐싱 (ComputeWorldToMaskUV에서 프레임당 탐색 방지)
+            CacheRootCanvas();
+
             _initialized = true;
         }
 
@@ -362,9 +367,10 @@ namespace CAT.UI
         {
             if (!_initialized || !enabled) return;
 
-            // 부모 SoftMask 재검색
+            // 부모 SoftMask 재검색 + Canvas 재캐싱 (새 Canvas 계층일 수 있음)
             _parentSoftMask = FindParentSoftMask();
             _hasParentMask = _parentSoftMask != null;
+            CacheRootCanvas();
 
             // 레이아웃 완료 후 갱신 예약
             _pendingLayoutRefresh = true;
@@ -513,16 +519,24 @@ namespace CAT.UI
             // Canvas 로컬 좌표 기반 변환:
             // 셰이더에서 v.vertex.xyz(Canvas 로컬 좌표)를 직접 사용하므로
             // Canvas.localToWorldMatrix를 곱하여 Canvas 로컬 → 마스크 UV 변환 구성
-            Canvas rootCanvas = _uiGraphic != null ? _uiGraphic.canvas : null;
-            if (rootCanvas != null) rootCanvas = rootCanvas.rootCanvas;
-
-            if (rootCanvas != null)
+            if (_rootCanvas != null)
             {
-                Matrix4x4 canvasLocalToWorld = rootCanvas.transform.localToWorldMatrix;
+                Matrix4x4 canvasLocalToWorld = _rootCanvas.transform.localToWorldMatrix;
                 return localToUV * worldToLocal * canvasLocalToWorld;
             }
 
             return localToUV * worldToLocal;
+        }
+
+        /// <summary>
+        /// Root Canvas 참조 캐싱 (ComputeWorldToMaskUV에서 프레임당 탐색 방지)
+        /// Graphic.canvas는 내부 캐시를 사용하지만, rootCanvas는 계층 탐색이 발생하므로
+        /// Initialize / OnTransformParentChanged 시점에만 갱신
+        /// </summary>
+        private void CacheRootCanvas()
+        {
+            Canvas canvas = _uiGraphic != null ? _uiGraphic.canvas : null;
+            _rootCanvas = canvas != null ? canvas.rootCanvas : null;
         }
 
         /// <summary>
@@ -1756,6 +1770,19 @@ namespace CAT.UI
                 if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
                 mat.SetVector(PropMaskUVRect, maskUVRect);
 
+                // 슬라이스 프로퍼티 전파
+                if (_cachedIsSliced)
+                {
+                    if (!mat.IsKeywordEnabled(KEYWORD_SLICE))
+                        mat.EnableKeyword(KEYWORD_SLICE);
+                    mat.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
+                    mat.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
+                }
+                else if (mat.IsKeywordEnabled(KEYWORD_SLICE))
+                {
+                    mat.DisableKeyword(KEYWORD_SLICE);
+                }
+
                 if (_hasParentMask && _parentSoftMask != null)
                 {
                     if (!mat.IsKeywordEnabled(KEYWORD_NESTED))
@@ -1768,6 +1795,19 @@ namespace CAT.UI
                     Texture parentTex = _parentSoftMask.GetMaskTexture();
                     if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
                     mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+
+                    // 중첩 슬라이스 프로퍼티 전파
+                    if (_cachedParentIsSliced)
+                    {
+                        if (!mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                            mat.EnableKeyword(KEYWORD_NESTED_SLICE);
+                        mat.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
+                        mat.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                    }
+                    else if (mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                    {
+                        mat.DisableKeyword(KEYWORD_NESTED_SLICE);
+                    }
                 }
             }
         }

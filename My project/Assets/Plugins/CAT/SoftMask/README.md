@@ -1,4 +1,4 @@
-# CAT SoftMask v1.3.0
+# CAT SoftMask v1.4.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
@@ -9,13 +9,15 @@ Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너�
 ```
 Assets/Plugins/CAT/SoftMask/
 ├── Scripts/
-│   └── SoftMask.cs                   # 메인 컴포넌트 (~1560줄)
+│   ├── SoftMask.cs                   # 메인 컴포넌트 (~2090줄)
+│   └── UIEffectSoftMaskProxy.cs      # UIEffect 프록시 컴포넌트 (116줄)
 ├── Shader/
-│   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (344줄)
+│   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (~344줄)
 │   ├── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (~410줄)
-│   ├── CAT_SoftMask_Core.cginc       # 파티클 셰이더용 공용 마스크 샘플링 (106줄)
-│   ├── CAT_UIAdditive.shader         # 이펙트용 Additive 기본 셰이더 (115줄)
-│   └── CAT_UIAlphaBlend.shader       # 이펙트용 AlphaBlend 기본 셰이더 (113줄)
+│   ├── CAT_SoftMask_Core.cginc       # 파티클/UIEffect 셰이더용 공용 마스크 샘플링 (~160줄)
+│   ├── UIDefault_UIEffect.shader     # UIEffect 셰이더 오버라이드 (CAT SoftMask 지원 추가)
+│   ├── CAT_UIAdditive.shader         # 이펙트용 Additive 기본 셰이더
+│   └── CAT_UIAlphaBlend.shader       # 이펙트용 AlphaBlend 기본 셰이더
 └── Editor/
     └── SoftMaskEditor.cs             # 커스텀 인스펙터 (165줄)
 ```
@@ -32,6 +34,7 @@ Assets/Plugins/CAT/SoftMask/
 | **회전/스케일 대응** | `Matrix4x4` 기반 월드->UV 변환으로 회전, 스케일 완전 지원 |
 | **Sprite Atlas 호환** | `DataUtility.GetOuterUV()` + 트리밍 보정으로 Atlas 스프라이트 정확한 UV 매핑 |
 | **Sliced 이미지 마스킹** | `Image.Type.Sliced` 마스크의 Width/Height 변경 대응 (9-slice UV 리매핑, 코너 보존) |
+| **Screen Space Overlay 호환** | Canvas 로컬 좌표 기반 변환으로 Overlay/Camera 모드 모두 지원 |
 | **ScrollView 호환** | `UNITY_UI_CLIP_RECT` 지원으로 ScrollView 내 정상 동작 |
 | **UI Mask 호환** | Stencil 래핑 Material에 프로퍼티 전파로 UI Mask 내 정상 동작 |
 | **UI Mask 동적 배치** | UI Mask 하위에 동적 로드/이동 시 자동 갱신 (Canvas 레이아웃 완료 대기) |
@@ -40,6 +43,7 @@ Assets/Plugins/CAT/SoftMask/
 | **TMP Material Preset 자동 감지** | 외부 Material 변경 시 마스크 자동 재적용 |
 | **TMP Material Preset 플레이모드 보존** | 직렬화 백업으로 플레이모드 전환 시 프리셋 유실 방지 |
 | **UIParticle 지원** | `com.coffee.ui-particle` 파티클의 원본 셰이더/블렌드 모드 유지하며 마스킹 |
+| **UIEffect 지원** | `com.coffee.ui-effect`의 Tone/Blur/Transition 효과와 SoftMask 동시 적용 |
 | **에디터 실시간 프리뷰** | `[ExecuteAlways]`로 에디터에서 즉시 결과 확인 |
 
 ## 아키텍처
@@ -50,11 +54,12 @@ Assets/Plugins/CAT/SoftMask/
 ┌──────────────────────────────────────────────────────────────┐
 │ SoftMask (부모)                                               │
 │  ├─ 자신의 UI.Graphic 알파 -> 마스크 텍스처로 사용             │
-│  ├─ ComputeWorldToMaskUV() -> Matrix4x4 (worldToLocal x UV)  │
+│  ├─ ComputeWorldToMaskUV() -> Matrix4x4 (Canvas→UV 변환)     │
+│  │   └─ Canvas.localToWorldMatrix 포함 (Overlay/Camera 호환)  │
 │  └─ 1개 공유 Material 생성 -> 모든 자식에 적용                 │
 │                                                               │
 │  자식 Graphic들 (일반)                                        │
-│  ├─ Vertex Shader: 월드좌표 -> 마스크 UV 계산                  │
+│  ├─ Vertex Shader: Canvas 로컬좌표 -> 마스크 UV 계산          │
 │  └─ Fragment Shader: tex2D(마스크) -> smoothstep -> alpha 곱   │
 │                                                               │
 │  자식 TMP_Text (TextMeshPro)                                  │
@@ -68,6 +73,13 @@ Assets/Plugins/CAT/SoftMask/
 │  ├─ CreateParticleMaskMaterial() → 원본 복제 + _CAT_SOFTMASK  │
 │  ├─ 원본 블렌드 모드 보존 (Additive/AlphaBlend)               │
 │  └─ DetectParticleMaterialChanges() → 비활성/활성 자동 재적용 │
+│                                                               │
+│  자식 UIEffect (com.coffee.ui-effect)                         │
+│  ├─ UIEffectSoftMaskProxy (IMaterialModifier) 자동 추가       │
+│  ├─ UIEffect.GetModifiedMaterial() → 프록시.GetModifiedMaterial()│
+│  │   └─ 복제 + _CAT_SOFTMASK + CopyProperties 동기화         │
+│  ├─ ApplyMaskPropertiesToMaterial() → 마스크 프로퍼티 직접 적용│
+│  └─ DetectUIEffectMaterialChanges() → 머티리얼 재생성 감지    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,6 +91,7 @@ Assets/Plugins/CAT/SoftMask/
 4. **더티 체크**: `Matrix4x4` 비교, 텍스처 ID 비교, 프로퍼티 값 비교로 불필요한 업데이트 스킵
 5. **버텍스 셰이더 UV 계산**: 마스크 UV를 버텍스에서 계산하여 프래그먼트 비용 절감
 6. **분기 없는 셰이더**: `step()`, `smoothstep()`, `lerp()`로 GPU 분기 완전 회피
+7. **Canvas 좌표 기반**: `v.vertex.xyz`(Canvas 로컬 좌표) 직접 사용으로 Overlay/Camera 모드 호환
 
 ### Material 업데이트 흐름
 
@@ -89,7 +102,9 @@ LateUpdate()
   │                 → SaveTMPOriginalBackup(새 Material) ← 직렬화 백업 갱신
   ├── DetectParticleMaterialChanges()  ← UIParticle Material 재할당 감지
   │    └── 변경됨? → 기존 Material 파괴 → CreateParticleMaskMaterial(새 Material)
-  ├── 자식 수 변경 감지                ← UIParticle 활성/비활성 시 새 자식 추가
+  ├── DetectUIEffectMaterialChanges()  ← UIEffect 머티리얼 재생성 감지
+  │    └── ProxyMaterial==null? → SetMaterialDirty() → GetModifiedMaterial() 재호출
+  ├── 자식 수 변경 감지                ← UIParticle/UIEffect 활성/비활성 시 새 자식 추가
   │    └── 변경됨? → ApplyMaskToChildren()
   └── UpdateSharedMaterial()
        ├── ComputeWorldToMaskUV() -> Matrix4x4 비교 (또는 _materialDirty 플래그)
@@ -103,6 +118,7 @@ LateUpdate()
        └── anyChange?
             ├── UpdateTMPMaterials()         ← TMP Material에 마스크 프로퍼티 전파
             ├── UpdateParticleMaterials()    ← Particle Material에 마스크 프로퍼티 전파
+            ├── UpdateUIEffectMaterials()    ← UIEffect 프록시 Material에 마스크 프로퍼티 전파
             └── PropagateToStencilMaterials()
                  └── 각 자식의 materialForRendering에도 프로퍼티 복사
                      (UI Mask의 StencilMaterial 복사본 대응)
@@ -117,6 +133,7 @@ LateUpdate()
 | Material 인스턴스 (일반) | SoftMask당 1개 (일반 자식 수 무관) |
 | Material 인스턴스 (TMP) | TMP 자식 수만큼 추가 (폰트별 개별 Material) |
 | Material 인스턴스 (Particle) | 파티클 자식 수만큼 추가 (원본 셰이더 보존) |
+| Material 인스턴스 (UIEffect) | UIEffect 자식 수만큼 추가 (IMaterialModifier 프록시) |
 | RenderTexture | **없음** (1-Pass 방식) |
 | Dictionary 오버헤드 | 자식 수 x (Graphic ref + Material ref) |
 | 셰이더 Variant | 일반: 32개 (ClipRect × AlphaClip × Nested × Slice × NestedSlice) × 2 SubShader / TMP: 48개 (Outline × Underlay × ClipRect × AlphaClip × Nested) |
@@ -129,6 +146,7 @@ LateUpdate()
 | **Transform 변경** | Matrix4x4 계산 + `Material.SetMatrix()` 1회 + TMP/Stencil 전파 |
 | **프로퍼티 변경** | `Material.SetFloat()` 2회 + TMP/Stencil 전파 |
 | **TMP Material 전파** | TMP Material 수 x `Material.Set*()` 호출 (Matrix + Float + Texture) |
+| **UIEffect Material 전파** | UIEffect 프록시 수 x `ApplyMaskPropertiesToMaterial()` (캔버스 리빌드 시 자동 동기화) |
 | **Stencil 전파** | 자식 수 x `materialForRendering` 접근 (UI Mask 내에서만) |
 
 ### GPU (프래그먼트당)
@@ -153,6 +171,61 @@ LateUpdate()
 4. **Atlas 스프라이트 트리밍**: `GetContentLocalRect()`에서 `sprite.textureRectOffset`, `sprite.textureRect` 접근이 매 프레임 발생하지만, 이는 Unity 내부 캐싱된 프로퍼티로 오버헤드가 거의 없습니다.
 
 5. **TMP Material 개수**: TMP 자식은 일반 Graphic과 달리 공유 Material을 사용할 수 없습니다 (폰트 아틀라스, SDF 파라미터가 다름). TMP 자식이 많은 경우 Material 인스턴스가 비례하여 증가합니다.
+
+6. **UIEffect Material 동기화 비용**: UIEffect는 매 캔버스 리빌드마다 `CopyPropertiesFromMaterial`로 속성을 갱신합니다. 프록시가 이를 다시 복제하므로, UIEffect 자식이 많은 경우 리빌드 시 `CopyPropertiesFromMaterial` 호출이 자식 수만큼 발생합니다. 정적 UI에서는 Canvas 리빌드 자체가 발생하지 않으므로 영향 없습니다.
+
+7. **Screen Space Overlay 좌표**: 모든 셰이더에서 `v.vertex.xyz`(Canvas 로컬 좌표)를 직접 사용하고, C# 측 `ComputeWorldToMaskUV()`에서 `rootCanvas.localToWorldMatrix`를 행렬에 포함합니다. 이로써 Overlay/Camera 모드 모두 동일 코드 경로로 처리되며, 추가 분기 비용이 없습니다.
+
+## UIEffect (com.coffee.ui-effect) 지원
+
+### 개요
+
+UIEffect는 `IMaterialModifier.GetModifiedMaterial()`로 자체 머티리얼(`Hidden/UI/Default (UIEffect)`)을 생성합니다. CAT SoftMask는 일반 자식에게 `child.material = _sharedMaskMaterial` 방식으로 머티리얼을 교체하지만, 이 방식은 UIEffect와 충돌합니다. 이를 해결하기 위해 **IMaterialModifier 프록시 체인** 방식을 사용합니다.
+
+### 동작 방식
+
+1. `ApplyMaskToChildren()` 시 자식이 `UIEffect` 또는 `UIEffectReplica` 컴포넌트를 가진 경우 자동 감지
+2. `UIEffectSoftMaskProxy` 컴포넌트를 자식에 추가 (IMaterialModifier 체인에 삽입)
+3. Canvas 리빌드 시 IMaterialModifier 체인 실행:
+   - UIEffect.GetModifiedMaterial(base) → UIEffect 머티리얼 생성
+   - UIEffectSoftMaskProxy.GetModifiedMaterial(UIEffectMat) → 복제 + `_CAT_SOFTMASK` 키워드 활성화
+4. 프록시가 매 리빌드마다 `CopyPropertiesFromMaterial`로 UIEffect 속성 동기화
+5. `ApplyMaskPropertiesToMaterial()`로 마스크 프로퍼티 적용 (행렬, 텍스처, softness 등)
+
+### UIEffect 셰이더 오버라이드
+
+UIEffect 패키지 셰이더(`Hidden/UI/Default (UIEffect)`)를 Assets 폴더의 동명 셰이더로 오버라이드합니다.
+
+**파일**: `Assets/Plugins/CAT/SoftMask/Shader/UIDefault_UIEffect.shader`
+
+추가된 내용:
+- `#pragma multi_compile_local _ _CAT_SOFTMASK _SOFTMASK_NESTED _SOFTMASK_SLICE _SOFTMASK_NESTED_SLICE`
+- `#include "CAT_SoftMask_Core.cginc"` (마스크 샘플링 공용 include)
+- v2f 구조체에 `CAT_SOFTMASK_COORDS(4, 5)` (TEXCOORD 4, 5 슬롯)
+- 버텍스: `CAT_SOFTMASK_VERT(v.vertex.xyz, OUT)` (Canvas 로컬 좌표)
+- 프래그먼트: `c *= CAT_SOFTMASK_FRAG(IN)` (premultiplied alpha)
+- mob-sakai `SOFTMASKABLE` 호환 코드 보존 (기존 기능 보존)
+
+### UIEffect 기술적 주의사항
+
+| 항목 | 설명 |
+|------|------|
+| **프록시 컴포넌트** | `UIEffectSoftMaskProxy` — `[HideInInspector]`로 인스펙터에서 숨김 |
+| **Material 동기화** | 매 캔버스 리빌드마다 `CopyPropertiesFromMaterial` + 키워드/마스크 재적용 |
+| **셰이더 오버라이드** | `Hidden/UI/Default (UIEffect)` 전역 오버라이드 — UIEffect 패키지 업데이트 시 수동 병합 필요 |
+| **Premultiplied Alpha** | `c *= mask` (RGB+A 모두 적용, UIEffect의 `Blend One OneMinusSrcAlpha`) |
+| **TEXCOORD 슬롯** | UIEffect: 0~3 사용, CAT SoftMask: 4~5 사용 |
+
+### UIEffect 지원 기능
+
+- Tone (Grayscale, Sepia, Negative, Retro, Posterize)
+- Color Filter
+- Sampling (Blur, Pixelation, RGB Shift, Edge)
+- Transition (Fade, Cutoff, Dissolve, Shiny, Mask, Melt, Burn, Pattern, Blaze)
+- Gradation
+- UIEffectReplica 지원
+- 중첩 SoftMask + UIEffect 조합
+- UI Mask (Stencil) + SoftMask + UIEffect 조합
 
 ## TextMeshPro 지원
 
@@ -315,6 +388,8 @@ private List<TMPOriginalEntry> _tmpOriginalBackup;
 | SpriteRenderer | X (셰이더만 준비, C# 미구현) | X (UI 전용) |
 | TextMeshPro | O (전용 셰이더 자동 적용) | O (샘플 임포트 + 경로 설정) |
 | TMP Material Preset 동적 변경 | O (자동 감지 + 플레이모드 보존) | O |
+| UIEffect 호환 | O (프록시 + 셰이더 오버라이드) | O (기존 SOFTMASKABLE 내장) |
+| Screen Space Overlay | O (Canvas 좌표 기반) | O |
 | MaskingShape (가산/감산) | X | O |
 | Anti-Aliasing 모드 | X | O (Stencil+Vertex 방식) |
 | Alpha Hit Test (Raycast) | X | O |
@@ -371,7 +446,8 @@ private List<TMPOriginalEntry> _tmpOriginalBackup;
 [SoftMask + Image (마스크 이미지)]    <- 부모: 알파가 마스킹 영역
   ├── [Image (자식 1)]                <- 자동으로 마스킹됨
   ├── [TextMeshProUGUI (자식 2)]      <- TMP 자동 감지, 전용 셰이더 적용
-  └── [RawImage (자식 3)]             <- 자동으로 마스킹됨
+  ├── [UIEffect Image (자식 3)]       <- UIEffect 자동 감지, 프록시 적용
+  └── [RawImage (자식 4)]             <- 자동으로 마스킹됨
 ```
 
 ### 중첩 마스크
@@ -423,10 +499,30 @@ CGINCLUDE
   SliceRemap1D(u, uA, uB, pA, pB)  // 9-slice 1D UV 리매핑 (분기 없음, step 기반)
   SampleMask1(maskUV)               // 마스크 1 샘플링 (half precision, 분기 없음)
   SampleMask2(maskUV)               // 마스크 2 샘플링 (중첩 시에만 컴파일)
+
+  // 버텍스: v.vertex.xyz 직접 사용 (Canvas 로컬 좌표, Overlay 호환)
+  OUT.maskUV = mul(_MaskWorldToUV, v.vertex).xy;
 ENDCG
 
 SubShader 0: UI     // UNITY_UI_CLIP_RECT, Stencil, ZTest [unity_GUIZTestMode]
 SubShader 1: Sprite  // PIXELSNAP_ON, GPU Instancing
+```
+
+### CAT_SoftMask_Core.cginc (파티클/UIEffect용 공용 include)
+
+```hlsl
+// 사용법:
+// 1. Properties에 SoftMask 프로퍼티 추가 ([HideInInspector])
+// 2. #pragma multi_compile_local _ _CAT_SOFTMASK _SOFTMASK_NESTED ...
+// 3. #include "CAT_SoftMask_Core.cginc"
+// 4. v2f에 CAT_SOFTMASK_COORDS(idx1, idx2)
+// 5. 버텍스: CAT_SOFTMASK_VERT(v.vertex.xyz, o)
+//    (v.vertex는 Canvas 로컬 좌표, unity_ObjectToWorld 미사용 → Overlay 호환)
+// 6. 프래그먼트: half mask = CAT_SOFTMASK_FRAG(i);
+
+// 기능: 9-slice UV 리매핑, 경계 체크, smoothstep 소프트 엣지
+// 중첩 마스크, 슬라이스 마스크 조건 컴파일
+// _CAT_SOFTMASK 비활성 시 빈 매크로 (오버헤드 제로)
 ```
 
 ### CAT_TMP_SoftMask.shader (TextMeshPro)
@@ -453,11 +549,43 @@ c *= SampleSoftMask1(input.softMaskUV);
 | `_SOFTMASK_NESTED` | `multi_compile_local` | 중첩 마스크 활성화 (비활성 시 추가 코드 완전 제거) |
 | `_SOFTMASK_SLICE` | `multi_compile_local` | Sliced 이미지 마스크 활성화 (`Image.Type.Sliced` 9-slice UV 리매핑) |
 | `_SOFTMASK_NESTED_SLICE` | `multi_compile_local` | 중첩 마스크 2의 Sliced 이미지 활성화 |
-| `_CAT_SOFTMASK` | `multi_compile_local` | 파티클 셰이더 SoftMask 활성화 (CAT_SoftMask_Core.cginc) |
+| `_CAT_SOFTMASK` | `multi_compile_local` | 파티클/UIEffect 셰이더 SoftMask 활성화 (CAT_SoftMask_Core.cginc) |
 | `UNITY_UI_CLIP_RECT` | `multi_compile_local` | RectMask2D/ScrollView 클리핑 |
 | `UNITY_UI_ALPHACLIP` | `multi_compile_local` | 알파 클리핑 |
 | `OUTLINE_ON` | `multi_compile` | TMP Outline (TMP 셰이더 전용, 빌드 variant 보호) |
 | `UNDERLAY_ON` / `UNDERLAY_INNER` | `multi_compile` | TMP Underlay (TMP 셰이더 전용, 빌드 variant 보호) |
+
+## 좌표 시스템 및 Screen Space Overlay 호환
+
+### 문제
+
+Unity UI 셰이더에서 `v.vertex`는 Canvas 로컬 좌표를 포함합니다. Screen Space - Camera 모드에서는 `unity_ObjectToWorld`와 C#의 `RectTransform.worldToLocalMatrix`가 일치하지만, **Screen Space - Overlay 모드에서는 `unity_ObjectToWorld`가 Identity에 가까운 값**을 반환하여 C# 측 좌표와 불일치합니다.
+
+### 해결
+
+모든 셰이더에서 `unity_ObjectToWorld` 대신 `v.vertex.xyz`를 직접 사용하고, C# 측 `ComputeWorldToMaskUV()`에서 `rootCanvas.localToWorldMatrix`를 행렬에 포함합니다.
+
+```
+셰이더: maskUV = mul(_MaskWorldToUV, float4(v.vertex.xyz, 1)).xy
+C#:     _MaskWorldToUV = localToUV * worldToLocal * canvas.localToWorldMatrix
+```
+
+이 방식이 두 모드에서 모두 동작하는 이유:
+
+- **Camera 모드**: `v.vertex`는 Canvas 로컬 좌표이며, `canvas.localToWorldMatrix`는 Camera 뷰에 맞는 월드 변환을 포함. C# 측 `worldToLocal`과 상쇄되어 정확한 UV 계산.
+- **Overlay 모드**: `v.vertex`는 스크린 픽셀에 가까운 Canvas 로컬 좌표. `canvas.localToWorldMatrix`로 보정되어 `worldToLocal`과 정확히 상쇄.
+
+### 영향 범위
+
+| 파일 | 변경 |
+|------|------|
+| `SoftMask.cs` | `ComputeWorldToMaskUV()`에 `rootCanvas.localToWorldMatrix` 포함 |
+| `CAT_SoftMask.shader` | UI/Sprite 양쪽 vertex에서 `v.vertex.xyz` 직접 사용 |
+| `CAT_TMP_SoftMask.shader` | `vert.xyz` 직접 사용 |
+| `CAT_SoftMask_Core.cginc` | 사용법 주석 업데이트 (Overlay 호환 명시) |
+| `UIDefault_UIEffect.shader` | `v.vertex.xyz` 직접 사용 |
+| `CAT_UIAdditive.shader` | `IN.vertex.xyz` 직접 사용 |
+| `CAT_UIAlphaBlend.shader` | `IN.vertex.xyz` 직접 사용 |
 
 ## 호환성
 
@@ -467,6 +595,8 @@ c *= SampleSoftMask1(input.softMaskUV);
 | URP 17.2.0 | O |
 | Sprite Atlas | O (트리밍 보정 포함) |
 | Image.Type.Sliced 마스크 | O (9-slice UV 리매핑, 테두리 크기 변경 대응) |
+| Screen Space - Camera | O |
+| Screen Space - Overlay | O (Canvas 좌표 기반 변환) |
 | UI Mask (Stencil) | O |
 | RectMask2D | O |
 | ScrollView | O |
@@ -476,6 +606,8 @@ c *= SampleSoftMask1(input.softMaskUV);
 | TMP Outline/Underlay | O |
 | TMP Material Preset | O (동적 변경 감지 + 플레이모드 보존) |
 | UIParticle (com.coffee.ui-particle) | O (원본 셰이더/블렌드 모드 보존) |
+| UIEffect (com.coffee.ui-effect) | O (IMaterialModifier 프록시 + 셰이더 오버라이드) |
+| UIEffectReplica | O (UIEffect와 동일 방식) |
 | 에디터 실시간 편집 | O |
 
 ## 빌드 안정성
@@ -519,13 +651,79 @@ c *= SampleSoftMask1(input.softMaskUV);
 ## 제한사항
 
 - 최대 **2단계** 중첩 마스크 (셰이더 키워드 제한)
-- 자식의 기존 Material을 SoftMask 전용 셰이더로 교체하므로, **커스텀 셰이더를 사용하는 자식**에는 별도 대응 필요 (단, `CAT/Particles/*` 셰이더는 자동 지원)
+- 자식의 기존 Material을 SoftMask 전용 셰이더로 교체하므로, **커스텀 셰이더를 사용하는 자식**에는 별도 대응 필요 (단, `CAT/Particles/*` 셰이더 및 UIEffect는 자동 지원)
 - SpriteRenderer 미지원 (셰이더 SubShader는 준비되어 있으나 C# 로직 미구현)
 - MaskingShape (가산/감산 영역) 미지원
 - TMP 자식은 폰트별 개별 Material 생성 필요 (공유 Material 불가)
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
+- **UIEffect 셰이더 오버라이드 유지보수**: `UIDefault_UIEffect.shader`는 `Hidden/UI/Default (UIEffect)` 전역 오버라이드. UIEffect 패키지 업데이트 시 패키지 셰이더와 수동 병합 필요
+- TMP + UIEffect 조합은 미지원 (TMP는 별도 UIEffect 셰이더 사용)
+
+## 최적화 주의사항
+
+### C# 최적화
+
+| 항목 | 설명 |
+|------|------|
+| **const 문자열 상수** | 모든 셰이더/키워드 문자열을 `const string`으로 선언 (컴파일 타임 인라인, `static readonly` 대비 비교 비용 절감) |
+| **Root Canvas 캐싱** | `CacheRootCanvas()`로 `rootCanvas` 참조를 Initialize/OnTransformParentChanged 시점에만 갱신. `Graphic.canvas.rootCanvas`는 계층 탐색이 발생하므로 프레임당 호출 방지 |
+| **Shader Property ID** | 모든 셰이더 프로퍼티를 `static readonly int`로 캐싱 (`Shader.PropertyToID()` 반복 호출 방지) |
+| **더티 체크** | Matrix4x4, float, int, bool 비교로 변경 없으면 `Material.Set*()` 호출 스킵 |
+| **GC 방지** | 재사용 리스트(`_toRemove`), Dictionary 사전 할당, Update에서 `new` 금지 |
+| **프록시 동기화** | UIEffect 프록시는 Canvas 리빌드 시점(`GetModifiedMaterial()`)에 자동 동기화되므로 LateUpdate에서의 추가 비용 최소화 |
+
+### 셰이더 최적화
+
+| 항목 | 설명 |
+|------|------|
+| **half precision** | 마스크 알파, softness, invert 등 0~1 범위 값은 `half` 사용 (모바일 GPU 절반 레지스터) |
+| **분기 없는 연산** | `step()`, `smoothstep()`, `lerp()`로 GPU 분기 완전 회피. 9-slice 리매핑도 `step` 기반 |
+| **조건 컴파일** | `multi_compile_local`로 비사용 기능 코드 완전 제거 (중첩, 슬라이스 등) |
+| **버텍스 UV 계산** | 마스크 UV를 버텍스 셰이더에서 계산 → 보간 → 프래그먼트에서는 텍스처 샘플링만 |
+| **Canvas 좌표 직접 사용** | `v.vertex.xyz` 직접 사용, `unity_ObjectToWorld` 행렬 곱 제거 (Overlay 호환 + 연산 절감) |
+
+### 유지보수 주의사항
+
+1. **UIEffect 패키지 업데이트 시**: `UIDefault_UIEffect.shader`가 패키지 원본 셰이더를 오버라이드합니다. UIEffect 패키지 업데이트 후 패키지 셰이더(`Library/PackageCache/com.coffee.ui-effect/.../Shaders/UIEffect.shader`)와 수동 병합이 필요합니다. `==== CAT SOFTMASK START/END ====` 마커 사이의 코드 블록만 병합하면 됩니다.
+
+2. **Canvas 부모 변경 시**: `OnTransformParentChanged()`에서 `CacheRootCanvas()`가 호출되어 rootCanvas 캐시가 갱신됩니다. 런타임에서 Canvas 계층을 동적으로 변경하는 경우 이 콜백이 정상 호출되는지 확인하세요.
+
+3. **UIEffect 자식 동적 추가**: 런타임에서 UIEffect 자식을 추가하면 자식 수 변경 감지(`_lastChildCount`)에 의해 자동으로 `ApplyMaskToChildren()`이 호출됩니다. 별도의 수동 처리는 불필요합니다.
 
 ## 변경 이력
+
+### v1.4.0 (2026-02-23)
+
+UIEffect 호환, Screen Space Overlay 지원, 코드 최적화
+
+**신규 기능**
+- **UIEffect (com.coffee.ui-effect) 호환**: Tone/Blur/Transition 등 UIEffect 효과와 SoftMask 동시 적용
+  - `UIEffectSoftMaskProxy` 컴포넌트: IMaterialModifier 체인에 삽입하여 UIEffect 머티리얼에 SoftMask 키워드/프로퍼티 주입
+  - `UIDefault_UIEffect.shader`: 패키지 셰이더 오버라이드 (`CAT_SoftMask_Core.cginc` 통합)
+  - `ApplyMaskToUIEffect()`: UIEffect/UIEffectReplica 자식 자동 감지 및 프록시 적용
+  - `UpdateUIEffectMaterials()`: LateUpdate에서 마스크 프로퍼티 전파
+  - `DetectUIEffectMaterialChanges()`: UIEffect 머티리얼 재생성 감지 및 자동 재적용
+- **Screen Space - Overlay 모드 지원**: 모든 셰이더에서 `unity_ObjectToWorld` 대신 `v.vertex.xyz` 직접 사용, C# 측 `ComputeWorldToMaskUV()`에 `rootCanvas.localToWorldMatrix` 포함
+
+**셰이더 변경**
+- `CAT_SoftMask.shader`: UI/Sprite 양쪽 vertex에서 `unity_ObjectToWorld` → `v.vertex.xyz` 변경
+- `CAT_TMP_SoftMask.shader`: `unity_ObjectToWorld` → `vert.xyz` 변경
+- `CAT_UIAdditive.shader`, `CAT_UIAlphaBlend.shader`: `unity_ObjectToWorld` → `IN.vertex.xyz` 변경
+- `CAT_SoftMask_Core.cginc`: 9-slice 슬라이스 지원 추가 (파티클/UIEffect 셰이더용), 사용법 주석 업데이트
+- `UIDefault_UIEffect.shader` (신규): UIEffect 셰이더 오버라이드 + CAT SoftMask 통합
+
+**코드 최적화**
+- `static readonly string` → `const string`: 모든 셰이더/키워드 상수를 컴파일 타임 인라인으로 변경
+- `CacheRootCanvas()`: rootCanvas 캐싱으로 `ComputeWorldToMaskUV()` 프레임당 계층 탐색 제거
+- `ApplyMaskPropertiesToMaterial()`: UIEffect 프록시와 공유하는 마스크 프로퍼티 적용 메서드 추출
+
+**버그 수정**
+- `UpdateParticleMaterials()` 슬라이스 프로퍼티 전파 누락 수정: 파티클 머티리얼에 `_SOFTMASK_SLICE`, `_MaskSliceBorder`, `_MaskSliceInnerUV` 키워드/프로퍼티가 전파되지 않던 버그 수정 (중첩 슬라이스도 동일)
+
+**파일 변경**
+- `SoftMask.cs`: UIEffect 감지/처리 추가, Overlay 변환 수정, const 최적화, rootCanvas 캐싱, 파티클 슬라이스 전파 수정
+- `UIEffectSoftMaskProxy.cs` (신규): UIEffect IMaterialModifier 프록시 컴포넌트
+- `UIDefault_UIEffect.shader` (신규): UIEffect 셰이더 오버라이드
 
 ### v1.3.0 (2026-02-23)
 
