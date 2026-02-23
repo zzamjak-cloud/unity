@@ -870,7 +870,7 @@ namespace CAT.UI
         private void UpdateSharedMaterial()
         {
             if (_originalChildMaterials.Count == 0) return;
-            if (_sharedMaskMaterial == null && _tmpMaskMaterials.Count == 0 && _particleMaskMaterials.Count == 0) return;
+            if (_sharedMaskMaterial == null && _tmpMaskMaterials.Count == 0 && _particleMaskMaterials.Count == 0 && _uiEffectProxies.Count == 0) return;
 
             bool anyChange = false;
 
@@ -1297,7 +1297,13 @@ namespace CAT.UI
 
                 // UIEffect 자식은 _originalChildMaterials 값이 null로 저장됨
                 // → 원본 머티리얼 복원 불필요 (프록시 컴포넌트 제거만 처리)
-                if (kvp.Value == null) continue;
+                // → 다만 materialForRendering이 파괴될 프록시 머티리얼을 참조하므로
+                //   canvas 재빌드를 트리거하여 IMaterialModifier 체인 갱신
+                if (kvp.Value == null)
+                {
+                    kvp.Key.SetMaterialDirty();
+                    continue;
+                }
 
                 // TMP_Text는 fontSharedMaterial로 복원
                 if (kvp.Key is TMP_Text tmpText)
@@ -1839,8 +1845,10 @@ namespace CAT.UI
             if (_originalChildMaterials.ContainsKey(child)) return;
 
             // 프록시 컴포넌트 확보 (없으면 추가)
+            // Cleanup() → Destroy(this)로 프레임 끝 지연 파괴 중인 zombie 프록시는 재사용 불가
+            // → 새 프록시 추가 (zombie는 GetModifiedMaterial에서 패스스루, OnDestroy에서 머티리얼 미파괴)
             var proxy = child.GetComponent<UIEffectSoftMaskProxy>();
-            if (proxy == null)
+            if (proxy == null || proxy.IsCleanedUp)
                 proxy = child.gameObject.AddComponent<UIEffectSoftMaskProxy>();
 
             proxy.Initialize(this);
@@ -1872,8 +1880,14 @@ namespace CAT.UI
             Texture maskTex = GetMaskTexture();
             Vector4 maskUVRect = GetMaskUVRect();
 
+            // 캐시가 아직 초기화되지 않았을 수 있으므로 (GetModifiedMaterial이 LateUpdate 이전에 호출되는 경우)
+            // 캐시가 zero matrix이면 직접 계산하여 안전한 값 보장
+            Matrix4x4 worldToUV = _cachedWorldToUV;
+            if (worldToUV.m00 == 0f && worldToUV.m11 == 0f)
+                worldToUV = ComputeWorldToMaskUV();
+
             // 기본 마스크 프로퍼티
-            mat.SetMatrix(PropMaskWorldToUV, _cachedWorldToUV);
+            mat.SetMatrix(PropMaskWorldToUV, worldToUV);
             mat.SetFloat(PropSoftness, _cachedSoftness);
             mat.SetFloat(PropInvertMask, _cachedInvertMask ? 1f : 0f);
             if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
@@ -1900,7 +1914,10 @@ namespace CAT.UI
                 if (!mat.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
                     mat.EnableKeyword(KEYWORD_CAT_SOFTMASK);
 
-                mat.SetMatrix(PropMaskWorldToUV2, _cachedParentWorldToUV);
+                Matrix4x4 parentWorldToUV = _cachedParentWorldToUV;
+                if (parentWorldToUV.m00 == 0f && parentWorldToUV.m11 == 0f)
+                    parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
+                mat.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
                 mat.SetFloat(PropSoftness2, _cachedParentSoftness);
                 mat.SetFloat(PropInvertMask2, _cachedParentInvertMask ? 1f : 0f);
 
