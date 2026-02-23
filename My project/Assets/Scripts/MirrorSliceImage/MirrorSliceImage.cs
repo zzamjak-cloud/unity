@@ -52,6 +52,12 @@ namespace CAT.UI
         private float cachedBorderBottomUV;
         private float cachedBorderTopUV;
 
+        /// <summary>마지막 OnPopulateMesh에서 생성된 정점 수. 에디터에서 정점/쿼드 수 확인용.</summary>
+        private int _lastPopulateVertexCount;
+
+        /// <summary>현재 메시의 정점 수 (마지막 빌드 기준). 에디터 전용.</summary>
+        public int lastPopulateVertexCount => _lastPopulateVertexCount;
+
         public Sprite sprite
         {
             get { return m_Sprite; }
@@ -197,7 +203,11 @@ namespace CAT.UI
         protected override void OnPopulateMesh(VertexHelper vh)
         {
             vh.Clear();
-            if (m_Sprite == null) return;
+            if (m_Sprite == null)
+            {
+                _lastPopulateVertexCount = 0;
+                return;
+            }
 
             Rect rect = GetPixelAdjustedRect();
             
@@ -624,6 +634,8 @@ namespace CAT.UI
                     currentY += rowHeight;
                 }
             }
+
+            _lastPopulateVertexCount = vh.currentVertCount;
         }
 
         /// <summary>

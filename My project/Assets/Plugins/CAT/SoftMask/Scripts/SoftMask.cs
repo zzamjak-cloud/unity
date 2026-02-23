@@ -23,6 +23,8 @@ namespace CAT.UI
         public static readonly string SHADER_NAME = "CAT/UI/SoftMask";
         public static readonly string TMP_SHADER_NAME = "CAT/UI/TMP_SoftMask";
         private static readonly string KEYWORD_NESTED = "_SOFTMASK_NESTED";
+        private static readonly string KEYWORD_SLICE = "_SOFTMASK_SLICE";
+        private static readonly string KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE";
         private static readonly string PARTICLE_SHADER_PREFIX = "CAT/Particles/";
         private static readonly string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
 
@@ -41,11 +43,15 @@ namespace CAT.UI
         private static readonly int PropInvertMask = Shader.PropertyToID("_InvertMask");
         private static readonly int PropMaskWorldToUV = Shader.PropertyToID("_MaskWorldToUV");
         private static readonly int PropMaskUVRect = Shader.PropertyToID("_MaskUVRect");
+        private static readonly int PropMaskSliceBorder = Shader.PropertyToID("_MaskSliceBorder");
+        private static readonly int PropMaskSliceInnerUV = Shader.PropertyToID("_MaskSliceInnerUV");
         private static readonly int PropMaskTex2 = Shader.PropertyToID("_MaskTex2");
         private static readonly int PropSoftness2 = Shader.PropertyToID("_Softness2");
         private static readonly int PropInvertMask2 = Shader.PropertyToID("_InvertMask2");
         private static readonly int PropMaskWorldToUV2 = Shader.PropertyToID("_MaskWorldToUV2");
         private static readonly int PropMaskUVRect2 = Shader.PropertyToID("_MaskUVRect2");
+        private static readonly int PropMaskSliceBorder2 = Shader.PropertyToID("_MaskSliceBorder2");
+        private static readonly int PropMaskSliceInnerUV2 = Shader.PropertyToID("_MaskSliceInnerUV2");
 
         // TMP 셰이더용 프로퍼티 ID (_SoftMask* 접두사: TMP의 _MaskTex 충돌 방지)
         private static readonly int PropTMPMaskTex = Shader.PropertyToID("_SoftMaskTex");
@@ -53,11 +59,15 @@ namespace CAT.UI
         private static readonly int PropTMPInvertMask = Shader.PropertyToID("_SoftMaskInvert");
         private static readonly int PropTMPMaskWorldToUV = Shader.PropertyToID("_SoftMaskWorldToUV");
         private static readonly int PropTMPMaskUVRect = Shader.PropertyToID("_SoftMaskUVRect");
+        private static readonly int PropTMPMaskSliceBorder = Shader.PropertyToID("_SoftMaskSliceBorder");
+        private static readonly int PropTMPMaskSliceInnerUV = Shader.PropertyToID("_SoftMaskSliceInnerUV");
         private static readonly int PropTMPMaskTex2 = Shader.PropertyToID("_SoftMaskTex2");
         private static readonly int PropTMPSoftness2 = Shader.PropertyToID("_SoftMaskSoftness2");
         private static readonly int PropTMPInvertMask2 = Shader.PropertyToID("_SoftMaskInvert2");
         private static readonly int PropTMPMaskWorldToUV2 = Shader.PropertyToID("_SoftMaskWorldToUV2");
         private static readonly int PropTMPMaskUVRect2 = Shader.PropertyToID("_SoftMaskUVRect2");
+        private static readonly int PropTMPMaskSliceBorder2 = Shader.PropertyToID("_SoftMaskSliceBorder2");
+        private static readonly int PropTMPMaskSliceInnerUV2 = Shader.PropertyToID("_SoftMaskSliceInnerUV2");
 
         // ─────────────────────────────────────────────
         // 직렬화 필드
@@ -130,6 +140,14 @@ namespace CAT.UI
         private int _cachedMaskTexId;
         private int _cachedParentMaskTexId;
         private bool _materialDirty;
+
+        // 슬라이스 마스크 더티 체크용 캐싱
+        private bool _cachedIsSliced;
+        private Vector4 _cachedSliceBorder;
+        private Vector4 _cachedSliceInnerUV;
+        private bool _cachedParentIsSliced;
+        private Vector4 _cachedParentSliceBorder;
+        private Vector4 _cachedParentSliceInnerUV;
 
         // TMP 전용 Material 리스트 (폰트 아틀라스별 개별 Material 필요)
         private readonly List<Material> _tmpMaskMaterials = new List<Material>(2);
@@ -353,7 +371,11 @@ namespace CAT.UI
                 if (_hasParentMask)
                     _sharedMaskMaterial.EnableKeyword(KEYWORD_NESTED);
                 else
+                {
                     _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED);
+                    _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED_SLICE);
+                    _cachedParentIsSliced = false;
+                }
             }
 
 #if UNITY_EDITOR
@@ -548,6 +570,97 @@ namespace CAT.UI
             return new Vector4(0, 0, 1, 1);
         }
 
+        /// <summary>
+        /// 마스크 이미지가 Sliced 타입인지 확인
+        /// </summary>
+        internal bool IsSlicedMask()
+        {
+            return _uiGraphic is UnityEngine.UI.Image image &&
+                   image.type == UnityEngine.UI.Image.Type.Sliced &&
+                   image.sprite != null &&
+                   image.sprite.border != Vector4.zero;
+        }
+
+        /// <summary>
+        /// 9-슬라이스 테두리 break point 계산 (rect 정규화 좌표 기준)
+        /// 반환값: (leftBreak, bottomBreak, rightBreak, topBreak)
+        ///   leftBreak  = 왼쪽 테두리 폭 / rect 폭  (0~1)
+        ///   bottomBreak = 아래쪽 테두리 높이 / rect 높이  (0~1)
+        ///   rightBreak  = 1 - (오른쪽 테두리 폭 / rect 폭)
+        ///   topBreak    = 1 - (위쪽 테두리 높이 / rect 높이)
+        /// </summary>
+        internal Vector4 GetMaskSliceBorder()
+        {
+            if (!IsSlicedMask()) return new Vector4(0f, 0f, 1f, 1f);
+
+            var image = (UnityEngine.UI.Image)_uiGraphic;
+            var sprite = image.sprite;
+
+            Rect rect = _rectTransform.rect;
+            float rectW = rect.width;
+            float rectH = rect.height;
+            if (rectW < 0.001f || rectH < 0.001f) return new Vector4(0f, 0f, 1f, 1f);
+
+            // 스프라이트 테두리 픽셀 → 캔버스 단위 변환 (Image.pixelsPerUnit 사용)
+            float ppu = image.pixelsPerUnit;
+            if (ppu < 0.001f) ppu = 1f;
+
+            float bL = sprite.border.x / ppu;
+            float bB = sprite.border.y / ppu;
+            float bR = sprite.border.z / ppu;
+            float bT = sprite.border.w / ppu;
+
+            // 반대편 테두리 합이 rect 크기를 초과할 경우 스케일 조정 (Unity 내부 동작과 동일)
+            float totalX = bL + bR;
+            if (totalX > rectW)
+            {
+                float scale = rectW / totalX;
+                bL *= scale;
+                bR *= scale;
+            }
+            float totalY = bB + bT;
+            if (totalY > rectH)
+            {
+                float scale = rectH / totalY;
+                bB *= scale;
+                bT *= scale;
+            }
+
+            return new Vector4(
+                bL / rectW,         // leftBreak
+                bB / rectH,         // bottomBreak
+                1f - bR / rectW,    // rightBreak
+                1f - bT / rectH     // topBreak
+            );
+        }
+
+        /// <summary>
+        /// 9-슬라이스 내부 UV break point 계산 (스프라이트 UV 공간 기준)
+        /// 반환값: (innerLeft, innerBottom, innerRight, innerTop) in [0,1]
+        /// </summary>
+        internal Vector4 GetMaskSliceInnerUV()
+        {
+            if (!IsSlicedMask()) return new Vector4(0f, 0f, 1f, 1f);
+
+            var image = (UnityEngine.UI.Image)_uiGraphic;
+            var sprite = image.sprite;
+
+            Vector4 outerUV = UnityEngine.Sprites.DataUtility.GetOuterUV(sprite);
+            Vector4 innerUV = UnityEngine.Sprites.DataUtility.GetInnerUV(sprite);
+
+            float outerW = outerUV.z - outerUV.x;
+            float outerH = outerUV.w - outerUV.y;
+            if (outerW < 0.0001f || outerH < 0.0001f) return new Vector4(0f, 0f, 1f, 1f);
+
+            // 스프라이트 UV 공간 (0~1) 기준으로 내부 UV 정규화
+            return new Vector4(
+                (innerUV.x - outerUV.x) / outerW,  // innerLeft
+                (innerUV.y - outerUV.y) / outerH,  // innerBottom
+                (innerUV.z - outerUV.x) / outerW,  // innerRight
+                (innerUV.w - outerUV.y) / outerH   // innerTop
+            );
+        }
+
         // ─────────────────────────────────────────────
         // 중첩 마스크
         // ─────────────────────────────────────────────
@@ -643,6 +756,24 @@ namespace CAT.UI
             _cachedSoftness = _softness;
             _cachedInvertMask = _invertMask;
 
+            // 슬라이스 마스크 초기 설정
+            bool isSliced = IsSlicedMask();
+            _cachedIsSliced = isSliced;
+            if (isSliced)
+            {
+                _sharedMaskMaterial.EnableKeyword(KEYWORD_SLICE);
+                _cachedSliceBorder = GetMaskSliceBorder();
+                _cachedSliceInnerUV = GetMaskSliceInnerUV();
+                _sharedMaskMaterial.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
+                _sharedMaskMaterial.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
+            }
+            else
+            {
+                _sharedMaskMaterial.DisableKeyword(KEYWORD_SLICE);
+                _cachedSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+                _cachedSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
+            }
+
             // 중첩 마스크 설정
             if (_hasParentMask && _parentSoftMask != null)
             {
@@ -660,10 +791,31 @@ namespace CAT.UI
                 _cachedParentWorldToUV = parentWorldToUV;
                 _cachedParentSoftness = _parentSoftMask._softness;
                 _cachedParentInvertMask = _parentSoftMask._invertMask;
+
+                // 중첩 슬라이스 초기 설정
+                bool parentIsSliced = _parentSoftMask.IsSlicedMask();
+                _cachedParentIsSliced = parentIsSliced;
+                if (parentIsSliced)
+                {
+                    _sharedMaskMaterial.EnableKeyword(KEYWORD_NESTED_SLICE);
+                    _cachedParentSliceBorder = _parentSoftMask.GetMaskSliceBorder();
+                    _cachedParentSliceInnerUV = _parentSoftMask.GetMaskSliceInnerUV();
+                    _sharedMaskMaterial.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
+                    _sharedMaskMaterial.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                }
+                else
+                {
+                    _cachedParentSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+                    _cachedParentSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
+                }
             }
             else
             {
                 _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED);
+                _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED_SLICE);
+                _cachedParentIsSliced = false;
+                _cachedParentSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+                _cachedParentSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
             }
 
             _materialDirty = false;
@@ -683,8 +835,11 @@ namespace CAT.UI
             bool anyChange = false;
 
             // 자신의 변환 행렬 더티 체크
+            // _materialDirty 도 포함: OnCanvasPreRender가 _cachedWorldToUV를 미리 갱신하면
+            // 다음 LateUpdate에서 currentWorldToUV == _cachedWorldToUV 가 되어 SetMatrix가
+            // 호출되지 않는 문제를 방지 (_sharedMaskMaterial 은 PropagateToStencilMaterials에서 스킵됨)
             Matrix4x4 currentWorldToUV = ComputeWorldToMaskUV();
-            if (currentWorldToUV != _cachedWorldToUV)
+            if (_materialDirty || currentWorldToUV != _cachedWorldToUV)
             {
                 if (_sharedMaskMaterial != null)
                     _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV, currentWorldToUV);
@@ -719,11 +874,36 @@ namespace CAT.UI
                 anyChange = true;
             }
 
+            // 슬라이스 타입 변경 체크 (Image.Type 변경 또는 Rect 크기 변경 시)
+            bool isSliced = IsSlicedMask();
+            Vector4 sliceBorder = isSliced ? GetMaskSliceBorder() : new Vector4(0f, 0f, 1f, 1f);
+            Vector4 sliceInnerUV = isSliced ? GetMaskSliceInnerUV() : new Vector4(0f, 0f, 1f, 1f);
+            if (_materialDirty || isSliced != _cachedIsSliced || sliceBorder != _cachedSliceBorder || sliceInnerUV != _cachedSliceInnerUV)
+            {
+                _cachedIsSliced = isSliced;
+                _cachedSliceBorder = sliceBorder;
+                _cachedSliceInnerUV = sliceInnerUV;
+                if (_sharedMaskMaterial != null)
+                {
+                    if (isSliced)
+                    {
+                        _sharedMaskMaterial.EnableKeyword(KEYWORD_SLICE);
+                        _sharedMaskMaterial.SetVector(PropMaskSliceBorder, sliceBorder);
+                        _sharedMaskMaterial.SetVector(PropMaskSliceInnerUV, sliceInnerUV);
+                    }
+                    else
+                    {
+                        _sharedMaskMaterial.DisableKeyword(KEYWORD_SLICE);
+                    }
+                }
+                anyChange = true;
+            }
+
             // 부모 마스크 업데이트 (중첩 마스크)
             if (_hasParentMask && _parentSoftMask != null && _parentSoftMask.enabled)
             {
                 Matrix4x4 parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
-                if (parentWorldToUV != _cachedParentWorldToUV)
+                if (_materialDirty || parentWorldToUV != _cachedParentWorldToUV)
                 {
                     if (_sharedMaskMaterial != null)
                         _sharedMaskMaterial.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
@@ -754,6 +934,31 @@ namespace CAT.UI
                     }
                     _cachedParentSoftness = _parentSoftMask._softness;
                     _cachedParentInvertMask = _parentSoftMask._invertMask;
+                    anyChange = true;
+                }
+
+                // 부모 마스크 슬라이스 타입 변경 체크
+                bool parentIsSliced = _parentSoftMask.IsSlicedMask();
+                Vector4 parentSliceBorder = parentIsSliced ? _parentSoftMask.GetMaskSliceBorder() : new Vector4(0f, 0f, 1f, 1f);
+                Vector4 parentSliceInnerUV = parentIsSliced ? _parentSoftMask.GetMaskSliceInnerUV() : new Vector4(0f, 0f, 1f, 1f);
+                if (_materialDirty || parentIsSliced != _cachedParentIsSliced || parentSliceBorder != _cachedParentSliceBorder || parentSliceInnerUV != _cachedParentSliceInnerUV)
+                {
+                    _cachedParentIsSliced = parentIsSliced;
+                    _cachedParentSliceBorder = parentSliceBorder;
+                    _cachedParentSliceInnerUV = parentSliceInnerUV;
+                    if (_sharedMaskMaterial != null)
+                    {
+                        if (parentIsSliced)
+                        {
+                            _sharedMaskMaterial.EnableKeyword(KEYWORD_NESTED_SLICE);
+                            _sharedMaskMaterial.SetVector(PropMaskSliceBorder2, parentSliceBorder);
+                            _sharedMaskMaterial.SetVector(PropMaskSliceInnerUV2, parentSliceInnerUV);
+                        }
+                        else
+                        {
+                            _sharedMaskMaterial.DisableKeyword(KEYWORD_NESTED_SLICE);
+                        }
+                    }
                     anyChange = true;
                 }
             }
@@ -799,6 +1004,8 @@ namespace CAT.UI
                 int pTex2, pSoftness2, pInvert2, pWorldToUV2, pUVRect2;
 
                 string shaderName = rendered.shader != null ? rendered.shader.name : "";
+                int pSliceBorder, pSliceInnerUV, pSliceBorder2, pSliceInnerUV2;
+
                 if (shaderName == TMP_SHADER_NAME)
                 {
                     // CAT/UI/TMP_SoftMask 셰이더 (_SoftMask* 접두사)
@@ -806,6 +1013,8 @@ namespace CAT.UI
                     pWorldToUV = PropTMPMaskWorldToUV; pUVRect = PropTMPMaskUVRect;
                     pTex2 = PropTMPMaskTex2; pSoftness2 = PropTMPSoftness2; pInvert2 = PropTMPInvertMask2;
                     pWorldToUV2 = PropTMPMaskWorldToUV2; pUVRect2 = PropTMPMaskUVRect2;
+                    pSliceBorder = PropTMPMaskSliceBorder; pSliceInnerUV = PropTMPMaskSliceInnerUV;
+                    pSliceBorder2 = PropTMPMaskSliceBorder2; pSliceInnerUV2 = PropTMPMaskSliceInnerUV2;
                 }
                 else if (shaderName == SHADER_NAME)
                 {
@@ -814,6 +1023,8 @@ namespace CAT.UI
                     pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
                     pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
                     pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
+                    pSliceBorder = PropMaskSliceBorder; pSliceInnerUV = PropMaskSliceInnerUV;
+                    pSliceBorder2 = PropMaskSliceBorder2; pSliceInnerUV2 = PropMaskSliceInnerUV2;
                 }
                 else if (shaderName.StartsWith(PARTICLE_SHADER_PREFIX))
                 {
@@ -825,6 +1036,8 @@ namespace CAT.UI
                     pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
                     pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
                     pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
+                    pSliceBorder = PropMaskSliceBorder; pSliceInnerUV = PropMaskSliceInnerUV;
+                    pSliceBorder2 = PropMaskSliceBorder2; pSliceInnerUV2 = PropMaskSliceInnerUV2;
                 }
                 else
                 {
@@ -840,6 +1053,19 @@ namespace CAT.UI
                 if (maskTex != null) rendered.SetTexture(pTex, maskTex);
                 rendered.SetVector(pUVRect, maskUVRect);
 
+                // 슬라이스 프로퍼티 전파
+                if (_cachedIsSliced)
+                {
+                    if (!rendered.IsKeywordEnabled(KEYWORD_SLICE))
+                        rendered.EnableKeyword(KEYWORD_SLICE);
+                    rendered.SetVector(pSliceBorder, _cachedSliceBorder);
+                    rendered.SetVector(pSliceInnerUV, _cachedSliceInnerUV);
+                }
+                else if (rendered.IsKeywordEnabled(KEYWORD_SLICE))
+                {
+                    rendered.DisableKeyword(KEYWORD_SLICE);
+                }
+
                 if (_hasParentMask)
                 {
                     if (!rendered.IsKeywordEnabled(KEYWORD_NESTED))
@@ -853,6 +1079,19 @@ namespace CAT.UI
                     if (parentTex != null) rendered.SetTexture(pTex2, parentTex);
                     if (_parentSoftMask != null)
                         rendered.SetVector(pUVRect2, _parentSoftMask.GetMaskUVRect());
+
+                    // 중첩 슬라이스 프로퍼티 전파
+                    if (_cachedParentIsSliced)
+                    {
+                        if (!rendered.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                            rendered.EnableKeyword(KEYWORD_NESTED_SLICE);
+                        rendered.SetVector(pSliceBorder2, _cachedParentSliceBorder);
+                        rendered.SetVector(pSliceInnerUV2, _cachedParentSliceInnerUV);
+                    }
+                    else if (rendered.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                    {
+                        rendered.DisableKeyword(KEYWORD_NESTED_SLICE);
+                    }
                 }
             }
         }
@@ -1187,6 +1426,14 @@ namespace CAT.UI
             tmpMat.SetFloat(PropTMPInvertMask, _invertMask ? 1f : 0f);
             tmpMat.SetVector(PropTMPMaskUVRect, GetMaskUVRect());
 
+            // 슬라이스 마스크 설정
+            if (_cachedIsSliced)
+            {
+                tmpMat.EnableKeyword(KEYWORD_SLICE);
+                tmpMat.SetVector(PropTMPMaskSliceBorder, _cachedSliceBorder);
+                tmpMat.SetVector(PropTMPMaskSliceInnerUV, _cachedSliceInnerUV);
+            }
+
             // 중첩 마스크 설정
             if (_hasParentMask && _parentSoftMask != null)
             {
@@ -1198,6 +1445,14 @@ namespace CAT.UI
                 tmpMat.SetFloat(PropTMPSoftness2, _parentSoftMask._softness);
                 tmpMat.SetFloat(PropTMPInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
                 tmpMat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+
+                // 중첩 슬라이스 설정
+                if (_cachedParentIsSliced)
+                {
+                    tmpMat.EnableKeyword(KEYWORD_NESTED_SLICE);
+                    tmpMat.SetVector(PropTMPMaskSliceBorder2, _cachedParentSliceBorder);
+                    tmpMat.SetVector(PropTMPMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                }
             }
             else
             {
@@ -1234,6 +1489,19 @@ namespace CAT.UI
                 if (maskTex != null) tmpMat.SetTexture(PropTMPMaskTex, maskTex);
                 tmpMat.SetVector(PropTMPMaskUVRect, maskUVRect);
 
+                // 슬라이스 프로퍼티 업데이트
+                if (_cachedIsSliced)
+                {
+                    if (!tmpMat.IsKeywordEnabled(KEYWORD_SLICE))
+                        tmpMat.EnableKeyword(KEYWORD_SLICE);
+                    tmpMat.SetVector(PropTMPMaskSliceBorder, _cachedSliceBorder);
+                    tmpMat.SetVector(PropTMPMaskSliceInnerUV, _cachedSliceInnerUV);
+                }
+                else if (tmpMat.IsKeywordEnabled(KEYWORD_SLICE))
+                {
+                    tmpMat.DisableKeyword(KEYWORD_SLICE);
+                }
+
                 if (_hasParentMask && _parentSoftMask != null)
                 {
                     if (!tmpMat.IsKeywordEnabled(KEYWORD_NESTED))
@@ -1246,6 +1514,19 @@ namespace CAT.UI
                     Texture parentTex = _parentSoftMask.GetMaskTexture();
                     if (parentTex != null) tmpMat.SetTexture(PropTMPMaskTex2, parentTex);
                     tmpMat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
+
+                    // 중첩 슬라이스 프로퍼티 업데이트
+                    if (_cachedParentIsSliced)
+                    {
+                        if (!tmpMat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                            tmpMat.EnableKeyword(KEYWORD_NESTED_SLICE);
+                        tmpMat.SetVector(PropTMPMaskSliceBorder2, _cachedParentSliceBorder);
+                        tmpMat.SetVector(PropTMPMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                    }
+                    else if (tmpMat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
+                    {
+                        tmpMat.DisableKeyword(KEYWORD_NESTED_SLICE);
+                    }
                 }
             }
         }

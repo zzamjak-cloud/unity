@@ -63,10 +63,18 @@ Shader "CAT/UI/TMP_SoftMask"
         _SoftMaskInvert     ("SoftMask Invert", Float) = 0
         _SoftMaskUVRect     ("SoftMask UV Rect", Vector) = (0, 0, 1, 1)
 
+        // 슬라이스 마스크 파라미터 (Image.Type.Sliced 대응)
+        [HideInInspector] _SoftMaskSliceBorder   ("SoftMask Slice Border", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _SoftMaskSliceInnerUV  ("SoftMask Slice Inner UV", Vector) = (0, 0, 1, 1)
+
         [HideInInspector] _SoftMaskTex2      ("SoftMask Texture 2", 2D) = "white" {}
         [HideInInspector] _SoftMaskSoftness2  ("SoftMask Softness 2", Range(0, 1)) = 0.1
         [HideInInspector] _SoftMaskInvert2    ("SoftMask Invert 2", Float) = 0
         [HideInInspector] _SoftMaskUVRect2    ("SoftMask UV Rect 2", Vector) = (0, 0, 1, 1)
+
+        // 중첩 슬라이스 마스크 파라미터
+        [HideInInspector] _SoftMaskSliceBorder2  ("SoftMask Slice Border 2", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _SoftMaskSliceInnerUV2 ("SoftMask Slice Inner UV 2", Vector) = (0, 0, 1, 1)
     }
 
     SubShader
@@ -105,6 +113,8 @@ Shader "CAT/UI/TMP_SoftMask"
             #pragma multi_compile __ UNITY_UI_CLIP_RECT
             #pragma multi_compile __ UNITY_UI_ALPHACLIP
             #pragma multi_compile_local _ _SOFTMASK_NESTED
+            #pragma multi_compile_local _ _SOFTMASK_SLICE
+            #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
 
             #include "UnityCG.cginc"
             #include "UnityUI.cginc"
@@ -130,6 +140,32 @@ Shader "CAT/UI/TMP_SoftMask"
             float4x4 _SoftMaskWorldToUV2;
             float4 _SoftMaskUVRect2;
 
+            // 슬라이스 유니폼 (마스크 1)
+            #if defined(_SOFTMASK_SLICE)
+            float4 _SoftMaskSliceBorder;   // (leftBreak, bottomBreak, rightBreak, topBreak) rect 정규화 [0,1]
+            float4 _SoftMaskSliceInnerUV;  // (innerLeft, innerBottom, innerRight, innerTop) 스프라이트 UV [0,1]
+            #endif
+
+            // 슬라이스 유니폼 (마스크 2, 중첩)
+            #if defined(_SOFTMASK_NESTED) && defined(_SOFTMASK_NESTED_SLICE)
+            float4 _SoftMaskSliceBorder2;
+            float4 _SoftMaskSliceInnerUV2;
+            #endif
+
+            // ─────────────────────────────────────────
+            // 9-슬라이스 1D 리매핑 (브랜치 없음, 모바일 최적화)
+            // ─────────────────────────────────────────
+            inline float SliceRemap1D_TMP(float u, float uA, float uB, float pA, float pB)
+            {
+                float s1 = step(u, uA);
+                float s3 = step(uB, u);
+                float s2 = 1.0 - s1 - s3;
+                float r1 = u * pA / max(uA, 0.00001);
+                float r2 = pA + (u - uA) * (pB - pA) / max(uB - uA, 0.00001);
+                float r3 = pB + (u - uB) * (1.0 - pB) / max(1.0 - uB, 0.00001);
+                return s1 * r1 + s2 * r2 + s3 * r3;
+            }
+
             // ─────────────────────────────────────────
             // SoftMask 샘플링 (half precision, 분기 없음)
             // Metal 백엔드 호환: 전역 유니폼 직접 접근
@@ -138,6 +174,15 @@ Shader "CAT/UI/TMP_SoftMask"
             {
                 half inBounds = step(0.0h, uv.x) * step(uv.x, 1.0h)
                               * step(0.0h, uv.y) * step(uv.y, 1.0h);
+
+                // 슬라이스 타입: 9-slice UV 리매핑 적용
+                #if defined(_SOFTMASK_SLICE)
+                uv = float2(
+                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder.x, _SoftMaskSliceBorder.z, _SoftMaskSliceInnerUV.x, _SoftMaskSliceInnerUV.z),
+                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder.y, _SoftMaskSliceBorder.w, _SoftMaskSliceInnerUV.y, _SoftMaskSliceInnerUV.w)
+                );
+                #endif
+
                 float2 atlasUV = _SoftMaskUVRect.xy + uv * _SoftMaskUVRect.zw;
                 half maskAlpha = tex2D(_SoftMaskTex, atlasUV).a;
                 half softEdge = smoothstep(0.0h, max(_SoftMaskSoftness, 0.001h), maskAlpha);
@@ -150,6 +195,15 @@ Shader "CAT/UI/TMP_SoftMask"
             {
                 half inBounds = step(0.0h, uv.x) * step(uv.x, 1.0h)
                               * step(0.0h, uv.y) * step(uv.y, 1.0h);
+
+                // 중첩 마스크 슬라이스 타입: 9-slice UV 리매핑 적용
+                #if defined(_SOFTMASK_NESTED_SLICE)
+                uv = float2(
+                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder2.x, _SoftMaskSliceBorder2.z, _SoftMaskSliceInnerUV2.x, _SoftMaskSliceInnerUV2.z),
+                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder2.y, _SoftMaskSliceBorder2.w, _SoftMaskSliceInnerUV2.y, _SoftMaskSliceInnerUV2.w)
+                );
+                #endif
+
                 float2 atlasUV = _SoftMaskUVRect2.xy + uv * _SoftMaskUVRect2.zw;
                 half maskAlpha = tex2D(_SoftMaskTex2, atlasUV).a;
                 half softEdge = smoothstep(0.0h, max(_SoftMaskSoftness2, 0.001h), maskAlpha);

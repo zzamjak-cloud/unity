@@ -156,6 +156,26 @@ public class MirrorSliceImageEditor : GraphicEditor
         }
         EditorGUI.EndDisabledGroup();
 
+        // 메시 정점/쿼드 수 표시 (메시 빌드 후 갱신됨)
+        EditorGUILayout.Space(3);
+        int vertCount = targetImage.lastPopulateVertexCount;
+        if (vertCount > 0)
+        {
+            int quadCount = vertCount / 4;
+            EditorGUILayout.LabelField("Mesh (현재)", $"{vertCount} 정점 (쿼드 {quadCount}개)");
+        }
+        else if (targetImage.sprite != null)
+        {
+            EditorGUILayout.LabelField("Mesh (현재)", "메시 미빌드 (캔버스 갱신 후 표시)");
+            if (GUILayout.Button("메시 갱신하여 정점 수 확인", GUILayout.Height(18)))
+            {
+                targetImage.SetVerticesDirty();
+                targetImage.SetMaterialDirty();
+                Canvas.ForceUpdateCanvases();
+                Repaint();
+            }
+        }
+
         if (targetImage.sprite == null)
         {
             EditorGUILayout.HelpBox("스프라이트를 할당해야 합니다.", MessageType.Info);

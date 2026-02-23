@@ -1,4 +1,4 @@
-# CAT SoftMask v1.2.0
+# CAT SoftMask v1.3.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
@@ -9,10 +9,10 @@ Unity UI의 기본 `Mask` 컴포넌트는 Stencil 버퍼 기반으로 바이너�
 ```
 Assets/Plugins/CAT/SoftMask/
 ├── Scripts/
-│   └── SoftMask.cs                   # 메인 컴포넌트 (1430줄)
+│   └── SoftMask.cs                   # 메인 컴포넌트 (~1560줄)
 ├── Shader/
-│   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (283줄)
-│   ├── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (337줄)
+│   ├── CAT_SoftMask.shader           # UI + Sprite 통합 셰이더 (344줄)
+│   ├── CAT_TMP_SoftMask.shader       # TextMeshPro 전용 셰이더 (~410줄)
 │   ├── CAT_SoftMask_Core.cginc       # 파티클 셰이더용 공용 마스크 샘플링 (106줄)
 │   ├── CAT_UIAdditive.shader         # 이펙트용 Additive 기본 셰이더 (115줄)
 │   └── CAT_UIAlphaBlend.shader       # 이펙트용 AlphaBlend 기본 셰이더 (113줄)
@@ -31,6 +31,7 @@ Assets/Plugins/CAT/SoftMask/
 | **중첩 마스크** | 최대 2단계 중첩 SoftMask 지원 (`_SOFTMASK_NESTED` 키워드) |
 | **회전/스케일 대응** | `Matrix4x4` 기반 월드->UV 변환으로 회전, 스케일 완전 지원 |
 | **Sprite Atlas 호환** | `DataUtility.GetOuterUV()` + 트리밍 보정으로 Atlas 스프라이트 정확한 UV 매핑 |
+| **Sliced 이미지 마스킹** | `Image.Type.Sliced` 마스크의 Width/Height 변경 대응 (9-slice UV 리매핑, 코너 보존) |
 | **ScrollView 호환** | `UNITY_UI_CLIP_RECT` 지원으로 ScrollView 내 정상 동작 |
 | **UI Mask 호환** | Stencil 래핑 Material에 프로퍼티 전파로 UI Mask 내 정상 동작 |
 | **UI Mask 동적 배치** | UI Mask 하위에 동적 로드/이동 시 자동 갱신 (Canvas 레이아웃 완료 대기) |
@@ -91,7 +92,7 @@ LateUpdate()
   ├── 자식 수 변경 감지                ← UIParticle 활성/비활성 시 새 자식 추가
   │    └── 변경됨? → ApplyMaskToChildren()
   └── UpdateSharedMaterial()
-       ├── ComputeWorldToMaskUV() -> Matrix4x4 비교
+       ├── ComputeWorldToMaskUV() -> Matrix4x4 비교 (또는 _materialDirty 플래그)
        │   └── 변경됨? -> _sharedMaskMaterial.SetMatrix()
        ├── GetMaskTexture() -> InstanceID 비교
        │   └── 변경됨? -> _sharedMaskMaterial.SetTexture()
@@ -118,7 +119,7 @@ LateUpdate()
 | Material 인스턴스 (Particle) | 파티클 자식 수만큼 추가 (원본 셰이더 보존) |
 | RenderTexture | **없음** (1-Pass 방식) |
 | Dictionary 오버헤드 | 자식 수 x (Graphic ref + Material ref) |
-| 셰이더 Variant | 일반: 2개 x 2 SubShader / TMP: 48개 (Outline x Underlay x ClipRect x AlphaClip x Nested) |
+| 셰이더 Variant | 일반: 32개 (ClipRect × AlphaClip × Nested × Slice × NestedSlice) × 2 SubShader / TMP: 48개 (Outline × Underlay × ClipRect × AlphaClip × Nested) |
 
 ### CPU (프레임당)
 
@@ -180,7 +181,9 @@ Shader "CAT/UI/TMP_SoftMask"
 
         // SoftMask 프로퍼티 (_SoftMask 접두사 - TMP의 _MaskTex 충돌 방지)
         _SoftMaskTex, _SoftMaskSoftness, _SoftMaskInvert, _SoftMaskUVRect
+        _SoftMaskSliceBorder, _SoftMaskSliceInnerUV       // Sliced 마스크 파라미터
         _SoftMaskTex2, _SoftMaskSoftness2, _SoftMaskInvert2, _SoftMaskUVRect2
+        _SoftMaskSliceBorder2, _SoftMaskSliceInnerUV2     // 중첩 Sliced 마스크 파라미터
     }
 
     // #include "TMPro_Properties.cginc"  (TMP 유니폼 직접 포함)
@@ -413,10 +416,13 @@ SoftMask parent = mask.ParentSoftMask;
 ```hlsl
 CGINCLUDE
   // 공유 변수: _MaskTex, _Softness, _InvertMask, _MaskWorldToUV, _MaskUVRect
+  // Sliced 전용 (#if _SOFTMASK_SLICE): _MaskSliceBorder, _MaskSliceInnerUV
   // 중첩 전용 (#if _SOFTMASK_NESTED): _MaskTex2, _Softness2, ...
+  // 중첩 Sliced (#if _SOFTMASK_NESTED_SLICE): _MaskSliceBorder2, _MaskSliceInnerUV2
 
-  SampleMask1(maskUV)  // 마스크 1 샘플링 (half precision, 분기 없음)
-  SampleMask2(maskUV)  // 마스크 2 샘플링 (중첩 시에만 컴파일)
+  SliceRemap1D(u, uA, uB, pA, pB)  // 9-slice 1D UV 리매핑 (분기 없음, step 기반)
+  SampleMask1(maskUV)               // 마스크 1 샘플링 (half precision, 분기 없음)
+  SampleMask2(maskUV)               // 마스크 2 샘플링 (중첩 시에만 컴파일)
 ENDCG
 
 SubShader 0: UI     // UNITY_UI_CLIP_RECT, Stencil, ZTest [unity_GUIZTestMode]
@@ -445,6 +451,8 @@ c *= SampleSoftMask1(input.softMaskUV);
 | 키워드 | 타입 | 설명 |
 |--------|------|------|
 | `_SOFTMASK_NESTED` | `multi_compile_local` | 중첩 마스크 활성화 (비활성 시 추가 코드 완전 제거) |
+| `_SOFTMASK_SLICE` | `multi_compile_local` | Sliced 이미지 마스크 활성화 (`Image.Type.Sliced` 9-slice UV 리매핑) |
+| `_SOFTMASK_NESTED_SLICE` | `multi_compile_local` | 중첩 마스크 2의 Sliced 이미지 활성화 |
 | `_CAT_SOFTMASK` | `multi_compile_local` | 파티클 셰이더 SoftMask 활성화 (CAT_SoftMask_Core.cginc) |
 | `UNITY_UI_CLIP_RECT` | `multi_compile_local` | RectMask2D/ScrollView 클리핑 |
 | `UNITY_UI_ALPHACLIP` | `multi_compile_local` | 알파 클리핑 |
@@ -458,6 +466,7 @@ c *= SampleSoftMask1(input.softMaskUV);
 | Unity 6 (6000.0.x) | O |
 | URP 17.2.0 | O |
 | Sprite Atlas | O (트리밍 보정 포함) |
+| Image.Type.Sliced 마스크 | O (9-slice UV 리매핑, 테두리 크기 변경 대응) |
 | UI Mask (Stencil) | O |
 | RectMask2D | O |
 | ScrollView | O |
@@ -517,6 +526,40 @@ c *= SampleSoftMask1(input.softMaskUV);
 - TMPro_Properties.cginc 경로가 하드코딩됨 (`Assets/Plugins/TextMesh Pro/Shaders/`)
 
 ## 변경 이력
+
+### v1.3.0 (2026-02-23)
+
+`Image.Type.Sliced` 마스크 지원 추가 및 Material 업데이트 버그 수정
+
+**신규 기능**
+- `Image.Type.Sliced` 이미지를 마스크로 사용할 때 Width/Height 변경이 마스킹에 정상 반영됨
+  - 기존: Simple 타입과 동일하게 처리되어 크기 변경 시 마스킹 엣지가 늘어짐
+  - 변경: 9-slice UV 리매핑으로 코너는 고정 크기 유지, 중앙만 스트레치
+- `IsSlicedMask()` — `Image.Type.Sliced` + 테두리(`sprite.border != zero`) 여부 판정
+- `GetMaskSliceBorder()` — rect 정규화 break point 계산 (픽셀 → 캔버스 단위 변환, 스케일 보정)
+- `GetMaskSliceInnerUV()` — Atlas 상대 inner UV 계산 (`DataUtility.GetInnerUV/GetOuterUV` 활용)
+
+**셰이더 변경 (CAT_SoftMask.shader, CAT_TMP_SoftMask.shader)**
+- `SliceRemap1D()` 함수 추가: 분기 없는 9-slice 1D UV 리매핑 (`step` 기반, 모바일 최적화)
+- `SampleMask1/2()` 내 `#if _SOFTMASK_SLICE` / `#if _SOFTMASK_NESTED_SLICE` 조건 컴파일 추가
+- 신규 셰이더 키워드: `_SOFTMASK_SLICE`, `_SOFTMASK_NESTED_SLICE` (`multi_compile_local`)
+- 신규 셰이더 프로퍼티: `_MaskSliceBorder`, `_MaskSliceInnerUV` (및 중첩용 `*2` 버전)
+- UI SubShader variant 수: 8개 → 32개 (Slice × NestedSlice 추가)
+
+**버그 수정**
+- `UpdateSharedMaterial()` 행렬 업데이트 누락 버그 수정 ([#issue: 마스킹된 이미지 비표시])
+  - **원인**: `OnCanvasPreRender()`가 `_cachedWorldToUV`를 먼저 갱신한 뒤 `_materialDirty = true`를 설정하면, `LateUpdate`에서 `currentWorldToUV == _cachedWorldToUV`가 true가 되어 `SetMatrix()`가 호출되지 않음 → `_sharedMaskMaterial`이 초기 단위 행렬을 유지 → maskUV가 [0,1] 범위 벗어남 → `inBounds = 0` → 자식 전체 투명
+  - **수정**: `if (currentWorldToUV != _cachedWorldToUV)` → `if (_materialDirty || currentWorldToUV != _cachedWorldToUV)` (부모 행렬 체크도 동일 수정)
+- `GetOrCreateSharedMaterial()`의 비-Sliced 분기에 `DisableKeyword(KEYWORD_SLICE)` 명시 추가
+- `GetOrCreateSharedMaterial()`의 비-중첩 분기에 `DisableKeyword(KEYWORD_NESTED_SLICE)` 명시 추가
+
+**SoftMask.cs 변경**
+- 상수 추가: `KEYWORD_SLICE = "_SOFTMASK_SLICE"`, `KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE"`
+- Property ID 추가: `PropMaskSliceBorder`, `PropMaskSliceInnerUV` (및 중첩·TMP용 변형)
+- 더티 체크 캐시 필드 추가: `_cachedIsSliced`, `_cachedSliceBorder`, `_cachedSliceInnerUV` (및 부모용)
+- `UpdateSharedMaterial()` — Slice 파라미터 더티 체크 블록 추가 (슬라이스 경계/inner UV 변경 감지)
+- `PropagateToStencilMaterials()` — Slice 키워드 및 파라미터를 Stencil Material에 전파
+- `CreateTMPMaskMaterial()` / `UpdateTMPMaterials()` — TMP Material에 Slice 지원 추가
 
 ### v1.2.1 (2026-02-21)
 
