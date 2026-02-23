@@ -519,6 +519,9 @@ namespace CAT.UI
             // Canvas 로컬 좌표 기반 변환:
             // 셰이더에서 v.vertex.xyz(Canvas 로컬 좌표)를 직접 사용하므로
             // Canvas.localToWorldMatrix를 곱하여 Canvas 로컬 → 마스크 UV 변환 구성
+            // 캐시 미스 시 즉시 재조회 (Initialize 시점에 Canvas 미준비 대응)
+            if (_rootCanvas == null) CacheRootCanvas();
+
             if (_rootCanvas != null)
             {
                 Matrix4x4 canvasLocalToWorld = _rootCanvas.transform.localToWorldMatrix;
