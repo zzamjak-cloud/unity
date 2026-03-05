@@ -73,6 +73,7 @@ namespace CAT.UI
         private bool stopsDirty = true;
         private Rect cachedRect;
         private Sprite cachedSprite;
+        private Canvas cachedCanvas;
         private int cachedVCutsHash = 0;
         private int cachedHCutsHash = 0;
 
@@ -160,7 +161,8 @@ namespace CAT.UI
             if (rectTransform == null) return;
 
             rectTransform.anchorMax = rectTransform.anchorMin;
-            rectTransform.sizeDelta = m_Sprite.rect.size;
+            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas);
+            rectTransform.sizeDelta = m_Sprite.rect.size / ppu;
             SetVerticesDirty();
         }
 
@@ -245,13 +247,15 @@ namespace CAT.UI
             int currentHCutsHash = GetListHash(horizontalCuts);
             bool cutsChanged = currentVCutsHash != cachedVCutsHash || currentHCutsHash != cachedHCutsHash;
             
-            // 변경 감지: 스프라이트, 크기, 또는 컷 리스트가 변경되었는지 확인
-            bool needsUpdate = stopsDirty || cachedSprite != m_Sprite || cachedRect != rect || cutsChanged;
-            
+            // 변경 감지: 스프라이트, 크기, Canvas, 또는 컷 리스트가 변경되었는지 확인
+            Canvas currentCanvas = canvas;
+            bool needsUpdate = stopsDirty || cachedSprite != m_Sprite || cachedRect != rect || cutsChanged || cachedCanvas != currentCanvas;
+
             if (needsUpdate)
             {
                 cachedSprite = m_Sprite;
                 cachedRect = rect;
+                cachedCanvas = currentCanvas;
                 cachedVCutsHash = currentVCutsHash;
                 cachedHCutsHash = currentHCutsHash;
                 stopsDirty = false;
@@ -266,9 +270,11 @@ namespace CAT.UI
                 cachedUvMin.x = cachedOuterUV.x;
                 cachedUvMin.y = cachedOuterUV.y;
                 
-                cachedSpriteW = m_Sprite.rect.width;
-                cachedSpriteH = m_Sprite.rect.height;
-                
+                // Pixel Per Unit 적용: 스프라이트 크기를 UI 좌표 단위로 변환
+                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, cachedCanvas);
+                cachedSpriteW = m_Sprite.rect.width / ppu;
+                cachedSpriteH = m_Sprite.rect.height / ppu;
+
                 // 나눗셈을 곱셈으로 최적화 (역수 캐싱)
                 float invSpriteW = 1f / cachedSpriteW;
                 float invSpriteH = 1f / cachedSpriteH;

@@ -4,6 +4,21 @@ using UnityEngine.UI;
 
 namespace CAT.UI
 {
+    // Pixel Per Unit 대응을 위한 확장 헬퍼
+    internal static class MirrorSliceImageHelper
+    {
+        /// <summary>
+        /// Canvas의 referencePixelsPerUnit과 Sprite의 pixelsPerUnit을 고려한 배율 계산.
+        /// Unity 내장 Image 컴포넌트와 동일한 방식.
+        /// </summary>
+        public static float GetMultipliedPixelsPerUnit(Sprite sprite, Canvas canvas)
+        {
+            float spritePixelsPerUnit = (sprite != null) ? sprite.pixelsPerUnit : 100f;
+            float referencePixelsPerUnit = (canvas != null) ? canvas.referencePixelsPerUnit : 100f;
+            return spritePixelsPerUnit / referencePixelsPerUnit;
+        }
+    }
+
     /// <summary>
     /// 대칭 이미지를 위한 미러 슬라이스 이미지 컴포넌트
     /// 절반 스프라이트만 사용하여 나머지 절반을 자동으로 반전시켜 생성합니다.
@@ -39,11 +54,12 @@ namespace CAT.UI
         private Rect cachedRect;
         private Sprite cachedSprite;
         private MirrorMode cachedMirrorMode;
+        private Canvas cachedCanvas;
         private Vector4 cachedOuterUV;
         private Vector4 cachedInnerUV;
-        private Vector4 cachedBorder;
-        private float cachedSpriteW;
-        private float cachedSpriteH;
+        private Vector4 cachedBorder;       // PPU 적용된 UI 좌표 단위 border
+        private float cachedSpriteW;        // PPU 적용된 UI 좌표 단위 너비
+        private float cachedSpriteH;        // PPU 적용된 UI 좌표 단위 높이
         private float cachedUvWidth;
         private float cachedUvHeight;
         private Vector2 cachedUvMin;
@@ -182,7 +198,8 @@ namespace CAT.UI
             if (rectTransform == null) return;
 
             rectTransform.anchorMax = rectTransform.anchorMin;
-            Vector2 spriteSize = m_Sprite.rect.size;
+            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas);
+            Vector2 spriteSize = m_Sprite.rect.size / ppu;
             
             if (mirrorMode == MirrorMode.None)
             {
@@ -212,20 +229,26 @@ namespace CAT.UI
             Rect rect = GetPixelAdjustedRect();
             
             // 변경 감지: 스프라이트, 크기, 또는 모드가 변경되었는지 확인
-            bool needsUpdate = cacheDirty || cachedSprite != m_Sprite || cachedRect != rect || cachedMirrorMode != mirrorMode;
-            
+            Canvas currentCanvas = canvas;
+            bool needsUpdate = cacheDirty || cachedSprite != m_Sprite || cachedRect != rect || cachedMirrorMode != mirrorMode || cachedCanvas != currentCanvas;
+
             if (needsUpdate)
             {
                 cachedSprite = m_Sprite;
                 cachedRect = rect;
                 cachedMirrorMode = mirrorMode;
-                
+                cachedCanvas = currentCanvas;
+
                 cachedOuterUV = UnityEngine.Sprites.DataUtility.GetOuterUV(m_Sprite);
                 cachedInnerUV = UnityEngine.Sprites.DataUtility.GetInnerUV(m_Sprite);
-                cachedBorder = m_Sprite.border;
-                
-                cachedSpriteW = m_Sprite.rect.width;
-                cachedSpriteH = m_Sprite.rect.height;
+
+                // Pixel Per Unit 적용: border와 스프라이트 크기를 UI 좌표 단위로 변환
+                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, currentCanvas);
+                Vector4 rawBorder = m_Sprite.border;
+                cachedBorder = rawBorder / ppu;
+
+                cachedSpriteW = m_Sprite.rect.width / ppu;
+                cachedSpriteH = m_Sprite.rect.height / ppu;
                 
                 // UV 좌표 범위 (아틀라스 내에서의 범위)
                 cachedUvWidth = cachedOuterUV.z - cachedOuterUV.x;
