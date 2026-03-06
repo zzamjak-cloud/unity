@@ -16,7 +16,7 @@ Assets/Plugins/CAT/HierarchyUtility/Editor/
 └── Modules/
     ├── HierarchyRenamerModule.cs     — 일괄 이름 변경 UI (UIOrder = 0)
     ├── HierarchyMarkerModule.cs      — 참조 관계 아이콘 표시 (UIOrder = 10)
-    └── PrefabMenuModule.cs           — 프리팹 생성 드롭다운 메뉴 (UIOrder = 20)
+    └── HierarchyPresetMenuModule.cs  — 프리팹 생성 드롭다운 메뉴 (UIOrder = 20)
 ```
 
 ---
@@ -86,9 +86,9 @@ Hierarchy 창 하단 오른쪽에 이름 변경 UI가 표시됩니다.
 
 ---
 
-### 3. PrefabMenu — 프리팹 생성 드롭다운
+### 3. HierarchyPresetMenu — 프리팹 생성 드롭다운
 
-Hierarchy 창 상단 오른쪽에 **▼ 프리셋 추가** 버튼이 표시됩니다.
+Hierarchy 창 상단 오른쪽에 **▼ (폴더이름)** 버튼이 표시됩니다.
 클릭 시 프로젝트 내 지정된 이름의 폴더에서 프리팹 목록을 드롭다운으로 표시합니다.
 
 - 검색 및 스크롤 지원 (`AdvancedDropdown` 기반)
@@ -99,7 +99,10 @@ Hierarchy 창 상단 오른쪽에 **▼ 프리셋 추가** 버튼이 표시됩�
 
 **기본 대상 폴더:** `Presets`
 프로젝트 전체에서 해당 이름의 폴더를 모두 탐색합니다.
-폴더 이름 변경은 `PrefabMenuModule.SetTargetFolderName(string)` 호출로 가능합니다.
+
+**폴더 이름 변경:**
+- 버튼 **우클릭** → "폴더 이름 변경..." 메뉴 선택 (EditorPrefs에 저장, 코드 수정 불필요)
+- 코드에서: `HierarchyPresetMenuModule.SetTargetFolderName(string)` 호출
 
 ---
 
