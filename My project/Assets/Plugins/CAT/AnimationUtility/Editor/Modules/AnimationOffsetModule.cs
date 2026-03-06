@@ -644,7 +644,8 @@ namespace CAT.AnimationUtility
             }
         }
 
-        // 이전/이후 키와 값이 동일한 중간 키 제거
+        // 이전/이후 키와 값이 동일하고 커브 구간이 평탄한 중간 키만 제거
+        // 값이 같아도 탄젠트에 의해 커브 형태가 달라지는 키는 유지
         private AnimationCurve RemoveUnnecessaryKeys(AnimationCurve originalCurve)
         {
             if (originalCurve.keys.Length <= 2) return originalCurve;
@@ -653,10 +654,31 @@ namespace CAT.AnimationUtility
             var cleanedKeys = new List<Keyframe>();
             cleanedKeys.Add(keys[0]);
 
+            const float tangentEpsilon = 0.001f;
+
             for (int i = 1; i < keys.Count - 1; i++)
             {
-                bool isUnnecessary = Mathf.Approximately(keys[i].value, keys[i - 1].value) &&
-                                     Mathf.Approximately(keys[i].value, keys[i + 1].value);
+                // 조건 1: 이전, 현재, 다음 키의 값이 모두 동일
+                bool sameValues = Mathf.Approximately(keys[i].value, keys[i - 1].value) &&
+                                  Mathf.Approximately(keys[i].value, keys[i + 1].value);
+
+                if (!sameValues)
+                {
+                    cleanedKeys.Add(keys[i]);
+                    continue;
+                }
+
+                // 조건 2: A→B 구간이 평탄 (A의 outTangent ≈ 0, B의 inTangent ≈ 0)
+                bool flatBefore = Mathf.Abs(keys[i - 1].outTangent) < tangentEpsilon &&
+                                  Mathf.Abs(keys[i].inTangent) < tangentEpsilon;
+
+                // 조건 3: B→C 구간이 평탄 (B의 outTangent ≈ 0, C의 inTangent ≈ 0)
+                bool flatAfter = Mathf.Abs(keys[i].outTangent) < tangentEpsilon &&
+                                 Mathf.Abs(keys[i + 1].inTangent) < tangentEpsilon;
+
+                // 모든 구간이 평탄할 때만 제거 (커브 형태에 영향을 주지 않는 경우)
+                bool isUnnecessary = flatBefore && flatAfter;
+
                 if (!isUnnecessary) cleanedKeys.Add(keys[i]);
             }
             cleanedKeys.Add(keys[keys.Count - 1]);
