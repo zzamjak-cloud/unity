@@ -26,7 +26,7 @@ Assets/Plugins/CAT/Windable/
 | **Sprite Atlas 호환** | `textureRect` / `pivot` 기반 UV 보정으로 Atlas 스프라이트 정확한 처리 |
 | **ClipRect 지원** | ScrollView / RectMask2D 클리핑 영역 반영 (`_ClipRect`) |
 | **UI Mask 호환** | Stencil 프로퍼티 내장으로 UI Mask 내 정상 동작 |
-| **에디터 미리보기** | 에디터 전용 10초 애니메이션 테스트 (`EditorApplication.update` 활용) |
+| **에디터 미리보기** | 에디터 전용 60초 애니메이션 테스트 (`EditorApplication.update` 활용) |
 
 ## 아키텍처
 
@@ -36,7 +36,8 @@ Assets/Plugins/CAT/Windable/
 Windable (컴포넌트)
   ├─ Awake()  → ValidateComponents()   : SpriteRenderer / Graphic 감지 + 타입 결정
   ├─ OnEnable()  → SetupMaterial()     : 인스턴스 Material 생성 + 초기 프로퍼티 전달
-  ├─ Update()                          : _CustomTime = Time.time (매 프레임 셰이더에 전달)
+  ├─ Update()                          : _CustomTime 갱신 (base + ActiveMaterial)
+  │    └─ 머티리얼 인스턴스 변경 감지 시 전체 프로퍼티 동기화
   └─ OnDisable() → CleanupMaterial()   : Material 파괴 + 원본 Material null 복원
 
 CAT_Windable.shader (프래그먼트)
@@ -162,7 +163,7 @@ clip(_SpriteUVRect.w - finalUV.y);
 
 | 버튼 | 설명 |
 |------|------|
-| **▶️ 바람 효과 테스트 (10초)** | `EditorApplication.update`로 10초간 애니메이션 미리보기 |
+| **▶️ 바람 효과 테스트 (60초)** | `EditorApplication.update`로 60초간 애니메이션 미리보기 |
 | **⏹️ 테스트 중지** | 테스트 중단 + `_CustomTime = 0` 리셋 |
 | **🔄 즉시 업데이트** | 현재 프로퍼티 값으로 Material 즉시 갱신 |
 | **🔄 효과 리셋** | `_CustomTime = 0`으로 초기 상태 복원 |
@@ -216,7 +217,7 @@ windable.UpdateMaterialProperties(customTime: 0f);
 | 항목 | 비용 |
 |------|------|
 | Material 인스턴스 | Windable 컴포넌트당 1개 (공유 없음) |
-| Update 비용 | `Material.SetFloat()` 1회 (`_CustomTime`) |
+| Update 비용 | `Material.SetFloat()` 2회 (base + active `_CustomTime`), 인스턴스 변경 시 전체 동기화 |
 | 텍스처 샘플링 | `_MainTex` 1회 + `_NoiseTex` 1회 |
 | 추가 패스 | 없음 (단일 패스) |
 
@@ -242,8 +243,48 @@ windable.UpdateMaterialProperties(customTime: 0f);
 | Sprite Atlas | O (UV 보정 포함) |
 | UI Mask (Stencil) | O |
 | RectMask2D / ScrollView | O (`_ClipRect`) |
-| 에디터 미리보기 | O (10초 테스트) |
+| 에디터 미리보기 | O (60초 테스트) |
 | GPU Instancing | X (인스턴스별 _CustomTime 불일치) |
+
+## 마스크 호환성
+
+Windable은 다음 마스크 시스템 모두에서 정상 동작합니다:
+
+| 마스크 시스템 | 지원 | 방식 |
+|--------------|------|------|
+| **Unity 기본 Mask** (Stencil) | ✅ | `ActiveMaterial` → `canvasRenderer.GetMaterial(0)` |
+| **SoftMaskLight** (자체) | ✅ | `ActiveMaterial` → `_graphic.material` 교체 감지 |
+| **mob-sakai SoftMask** | ✅ | `ActiveMaterial` → `canvasRenderer.GetMaterial(0)` |
+| **RectMask2D** | ✅ | 셰이더 내장 `_ClipRect` |
+
+### ActiveMaterial 패턴 + 머티리얼 인스턴스 변경 감지
+
+Windable은 매 프레임 `_CustomTime`만 갱신하고 나머지 프로퍼티는 정적이므로, **머티리얼 인스턴스 변경 감지** 패턴을 사용합니다:
+
+- `_lastActiveMaterial`로 CanvasRenderer 머티리얼 인스턴스가 변경되었는지 감지
+- 변경 시: 전체 프로퍼티 동기화 (`ApplyPropertiesToTarget`)
+- 미변경 시: `_CustomTime`만 갱신 (효율적)
+
+**배경**: mob-sakai의 `SoftMask`은 Unity `Mask`를 상속하므로, `StencilMaterial.Add`가 캐시된 stencil 복사본을 생성합니다. `SoftMaskable` 체인 재구축 시 새 머티리얼이 생성될 수 있으며, 이때 정적 프로퍼티(`_NoiseTex`, `_WindSpeed` 등)가 손실됩니다. `materialForRendering` 대신 `canvasRenderer.GetMaterial(0)`을 사용하고, 인스턴스 변경 시 전체 프로퍼티를 동기화하여 해결합니다.
+
+## 소프트 마스크 대응 셰이더
+
+Windable은 두 가지 소프트 마스크 시스템에 대응하는 Hidden 변형 셰이더를 제공합니다.
+
+### 변형 셰이더
+
+| 파일 | 셰이더 이름 | 시스템 |
+|------|-------------|--------|
+| `Hidden-CAT-Windable-SoftMaskLight.shader` | `Hidden/CAT/Effects/Windable (SoftMaskLight)` | SoftMaskLight (자체) |
+| `Hidden-CAT-Windable-SoftMaskable.shader` | `Hidden/CAT/Effects/Windable (SoftMaskable)` | mob-sakai SoftMask |
+
+### SoftMaskable 셰이더 주의사항
+
+- SoftMask 적용은 `col.a *= SoftMask(...)` (알파만 적용). `col *= SoftMask(...)` (전체 색상 곱셈)을 사용하면 안 됩니다.
+
+### 등록
+
+`SoftMaskLightInstaller.cs`의 `HiddenShaderNames` 배열에 두 변형 모두 등록되어 있으며, `Tools > SoftMaskLight > Refresh Settings` 실행 시 빌드에 자동 포함됩니다.
 
 ## 제한사항
 

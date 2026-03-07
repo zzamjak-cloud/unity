@@ -27,6 +27,8 @@ namespace CAT.Effects
         private static readonly int PropProgressOffset = Shader.PropertyToID("_ProgressOffset");
         private static readonly int PropShineColor = Shader.PropertyToID("_ShineColor");
         private static readonly int PropSoftness = Shader.PropertyToID("_Softness");
+        // SoftMaskLight Hidden 변형에서는 _Softness가 마스크에 사용되므로 _ShineSoftness로 분리
+        private static readonly int PropShineSoftness = Shader.PropertyToID("_ShineSoftness");
         private static readonly int PropBurnBias = Shader.PropertyToID("_BurnBias");
         private static readonly int PropBlendStrength = Shader.PropertyToID("_BlendStrength");
         private static readonly int PropMainTex = Shader.PropertyToID("_MainTex");
@@ -82,10 +84,10 @@ namespace CAT.Effects
         private bool _forward = true;
         private float _intervalRemaining;
         private bool _meshDirtyNeeded;
+        private Vector4 _lastSpriteUVRect;
 
-        /// <summary>에디터 전용: true일 때 에디터에서도 루프 애니메이션 재생 (60초간)</summary>
+        // 기존 직렬화 호환용 (사용하지 않음 — 에디터 테스트는 UIShiningEditor가 직접 구동)
         [SerializeField, HideInInspector] private bool _editorTestRunning;
-        /// <summary>에디터 전용: 테스트 재생 시작 시간 (60초 타이머용)</summary>
         [SerializeField, HideInInspector] private double _editorTestStartTime;
 
         /// <summary>진행을 0으로 되돌리고 Material에 반영. 에디터 테스트 중지 시 즉시 초기화용.</summary>
@@ -94,8 +96,62 @@ namespace CAT.Effects
             _rawProgress = 0f;
             _forward = true;
             _intervalRemaining = 0f;
-            if (_material != null)
+            if (ActiveMaterial != null)
                 ApplyProgressToMaterial();
+        }
+
+        /// <summary>
+        /// 에디터 전용: 외부에서 deltaTime을 전달하여 애니메이션을 진행시킨다.
+        /// EditorApplication.update 콜백에서 호출되며, [ExecuteAlways] Update()에 의존하지 않는다.
+        /// </summary>
+        public void EditorAdvance(float dt)
+        {
+            if (ActiveMaterial == null || _graphic == null) return;
+
+            SetSpriteUVRect();
+
+            if (_intervalRemaining > 0f)
+            {
+                _intervalRemaining -= dt;
+                if (_intervalRemaining <= 0f)
+                    _intervalRemaining = 0f;
+                ApplyProgressToMaterial();
+                return;
+            }
+
+            float step = dt / _duration;
+            if (!_forward)
+                step = -step;
+
+            _rawProgress += step;
+
+            if (_loopType == LoopType.Replay)
+            {
+                if (_rawProgress >= 1f)
+                {
+                    _rawProgress = 0f;
+                    _intervalRemaining = Random.Range(_intervalMin, _intervalMax);
+                }
+                else if (_rawProgress < 0f)
+                    _rawProgress = 0f;
+            }
+            else
+            {
+                if (_rawProgress >= 1f)
+                {
+                    _rawProgress = 1f;
+                    _forward = false;
+                    _intervalRemaining = Random.Range(_intervalMin, _intervalMax);
+                }
+                else if (_rawProgress <= 0f)
+                {
+                    _rawProgress = 0f;
+                    _forward = true;
+                    _intervalRemaining = Random.Range(_intervalMin, _intervalMax);
+                }
+            }
+
+            ApplyProgressToMaterial();
         }
 
         private static readonly List<UIVertex> s_vertexBuffer = new List<UIVertex>(64);
@@ -238,7 +294,7 @@ namespace CAT.Effects
 
         private void Update()
         {
-            if (_material == null || _graphic == null) return;
+            if (_graphic == null || ActiveMaterial == null) return;
 
             // Material 설정 후 첫 프레임에 mesh 재구축 (Image가 Material 변경 감지 후 mesh 재생성하므로)
             if (_meshDirtyNeeded)
@@ -250,39 +306,25 @@ namespace CAT.Effects
             // 버텍스 전달 실패 대비: fallback _SpriteUVRect 항상 설정 (Windable 방식)
             SetSpriteUVRect();
 
-            // 에디터 전용: _editorTestRunning이 아니면 옵션값만 갱신, true면 60초간 루프 재생
+            // 에디터 모드: 프로퍼티 갱신만 수행 (애니메이션은 EditorAdvance()에서 처리)
             if (!Application.isPlaying)
             {
-                if (_editorTestRunning)
-                {
-                    #if UNITY_EDITOR
-                    // 60초 경과 확인
-                    double elapsed = UnityEditor.EditorApplication.timeSinceStartup - _editorTestStartTime;
-                    if (elapsed >= 60.0)
-                    {
-                        _editorTestRunning = false;
-                        ResetProgressToStart();
-                        return;
-                    }
-                    #endif
-                }
-                else
-                {
-                    ApplyProgressToMaterial();
-                    return;
-                }
+                ApplyProgressToMaterial();
+                return;
             }
+
+            float dt = Time.deltaTime;
 
             if (_intervalRemaining > 0f)
             {
-                _intervalRemaining -= Time.deltaTime;
+                _intervalRemaining -= dt;
                 if (_intervalRemaining <= 0f)
                     _intervalRemaining = 0f;
                 ApplyProgressToMaterial();
                 return;
             }
 
-            float step = Time.deltaTime / _duration;
+            float step = dt / _duration;
             if (!_forward)
                 step = -step;
 
@@ -319,26 +361,70 @@ namespace CAT.Effects
             ApplyProgressToMaterial();
         }
 
+        /// <summary>
+        /// 실제 렌더링에 사용되는 Material 반환.
+        /// CanvasRenderer에 설정된 최종 머티리얼을 직접 참조하여,
+        /// materialForRendering 접근 시 발생하는 체인 재평가(StencilMaterial 캐시 문제)를 회피.
+        /// </summary>
+        private Material ActiveMaterial
+        {
+            get
+            {
+                if (_graphic == null) return _material;
+                // 1) SoftMaskLight: _graphic.material을 직접 교체
+                Material graphicMat = _graphic.material;
+                if (graphicMat != null && graphicMat != _material)
+                    return graphicMat;
+                // 2) Unity Mask / SoftMaskable: CanvasRenderer에 이미 설정된 최종 머티리얼 참조
+                //    materialForRendering 대신 canvasRenderer.GetMaterial을 사용하여
+                //    SoftMaskable.CopyPropertiesFromMaterial이 StencilMaterial 캐시에서
+                //    stale 값을 복사하는 문제를 방지
+                var cr = _graphic.canvasRenderer;
+                if (cr != null)
+                {
+                    Material canvasMat = cr.GetMaterial(0);
+                    if (canvasMat != null && canvasMat != _material)
+                        return canvasMat;
+                }
+                return _material;
+            }
+        }
+
         private void ApplyProgressToMaterial()
         {
+            if (_material == null) return;
+
             float t = Mathf.Clamp01(_rawProgress);
             float progress = _movementCurve != null && _movementCurve.keys.Length > 0
                 ? _movementCurve.Evaluate(t)
                 : t;
 
-            _material.SetFloat(PropProgress, progress);
-            _material.SetFloat(PropWidthStart, _widthStart);
-            _material.SetFloat(PropWidthEnd, _widthEnd);
-            _material.SetFloat(PropIntensity, _intensity);
-            _material.SetFloat(PropCurvatureStart, _curvatureStart);
-            _material.SetFloat(PropCurvatureEnd, _curvatureEnd);
-            _material.SetFloat(PropAngle, _angle);
-            _material.SetFloat(PropProgressOffset, _progressOffset);
-            _material.SetColor(PropShineColor, _shineColor);
-            _material.SetFloat(PropSoftness, _softness);
-            _material.SetFloat(PropBurnBias, _burnBias);
-            _material.SetFloat(PropBlendStrength, _blendStrength);
+            // 기본 머티리얼에 항상 설정 (IMaterialModifier 체인 재구축 시 소스)
+            WriteShineProperties(_material, progress);
+
+            // 렌더링 머티리얼이 다르면 (Mask/SoftMaskable/SoftMaskLight) 거기에도 설정
+            Material active = ActiveMaterial;
+            if (active != null && active != _material)
+                WriteShineProperties(active, progress);
+
             SetSpriteUVRect();
+        }
+
+        private void WriteShineProperties(Material target, float progress)
+        {
+            target.SetFloat(PropProgress, progress);
+            target.SetFloat(PropWidthStart, _widthStart);
+            target.SetFloat(PropWidthEnd, _widthEnd);
+            target.SetFloat(PropIntensity, _intensity);
+            target.SetFloat(PropCurvatureStart, _curvatureStart);
+            target.SetFloat(PropCurvatureEnd, _curvatureEnd);
+            target.SetFloat(PropAngle, _angle);
+            target.SetFloat(PropProgressOffset, _progressOffset);
+            target.SetColor(PropShineColor, _shineColor);
+            target.SetFloat(PropSoftness, _softness);
+            target.SetFloat(PropShineSoftness, _softness); // SoftMaskLight Hidden 변형용
+            target.SetFloat(PropBurnBias, _burnBias);
+            target.SetFloat(PropBlendStrength, _blendStrength);
         }
 
         /// <summary>아틀라스 내 스프라이트 UV 영역을 Vector4로 반환 (머티리얼 유니폼 fallback용)</summary>
@@ -351,10 +437,24 @@ namespace CAT.Effects
         /// <summary>아틀라스 내 스프라이트 UV 영역을 머티리얼에 전달 (Windable과 동일 방식)</summary>
         private void SetSpriteUVRect()
         {
-            if (_material == null || _graphic == null) return;
-            _material.SetVector(PropSpriteUVRect, GetSpriteUVRectVector());
-            // Windable 방식: SetMaterialDirty 호출하여 Material 변경 알림
-            _graphic.SetMaterialDirty();
+            if (_graphic == null) return;
+            Vector4 uvRect = GetSpriteUVRectVector();
+
+            // 기본 머티리얼에 항상 설정
+            if (_material != null)
+                _material.SetVector(PropSpriteUVRect, uvRect);
+
+            // 렌더링 머티리얼이 다르면 거기에도 설정
+            Material active = ActiveMaterial;
+            if (active != null && active != _material)
+                active.SetVector(PropSpriteUVRect, uvRect);
+
+            // UV가 변경된 경우에만 MaterialDirty 호출 (매 프레임 체인 재평가 방지)
+            if (uvRect != _lastSpriteUVRect)
+            {
+                _lastSpriteUVRect = uvRect;
+                _graphic.SetMaterialDirty();
+            }
         }
 
         private Texture GetUITexture()

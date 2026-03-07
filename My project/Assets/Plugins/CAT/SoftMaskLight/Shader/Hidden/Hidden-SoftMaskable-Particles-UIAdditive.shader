@@ -54,10 +54,10 @@ Shader "Hidden/SoftMaskLight/Particles/UIAdditive (SoftMaskable)"
             #include "UnityCG.cginc"
 
             // ==== SOFTMASKABLE START (mob-sakai SoftMaskable) ====
-            #pragma shader_feature _ SOFTMASK_EDITOR
-            #pragma shader_feature_local_fragment _ SOFTMASKABLE
             #if SOFTMASKABLE
             #include "Packages/com.coffee.softmask-for-ugui/Shaders/SoftMask.cginc"
+            #pragma shader_feature _ SOFTMASK_EDITOR // Add for soft mask
+            #pragma shader_feature_local _ SOFTMASKABLE // Add for soft mask
             #endif
             // ==== SOFTMASKABLE END ====
 

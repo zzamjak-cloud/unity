@@ -221,6 +221,11 @@ namespace SoftMaskLight
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _customAppliedMaskMats =
             new Dictionary<UnityEngine.UI.Graphic, Material>(2);
 
+        // 커스텀 셰이더 공유 캐시: 동일한 원본 Material을 사용하는 자식끼리 clone 공유
+        // (예: 같은 ColorReplace .mat 에셋을 참조하는 여러 자식이 하나의 마스크 clone을 공유)
+        private readonly Dictionary<Material, Material> _sharedCustomClones =
+            new Dictionary<Material, Material>(2);
+
         // UIEffect 프록시 목록 (UIParticle의 _particleMaskMaterials와 유사한 구조)
         private readonly List<UIEffectSoftMaskLightProxy> _uiEffectProxies = new List<UIEffectSoftMaskLightProxy>(2);
 
@@ -1282,6 +1287,31 @@ namespace SoftMaskLight
         // ─────────────────────────────────────────────
 
         /// <summary>
+        /// 외부에서 자식의 머티리얼이 변경된 경우, 해당 자식의 추적을 무효화하여
+        /// 다음 ApplyMaskToChildren에서 재처리되도록 합니다.
+        /// (예: Windable/UIShining 에디터 테스트에서 _graphic.material을 교체한 경우)
+        /// </summary>
+        public void InvalidateChild(UnityEngine.UI.Graphic child)
+        {
+            if (child == null) return;
+            // 기존 커스텀 마스크 머티리얼 정리
+            if (_customAppliedMaskMats.TryGetValue(child, out Material customMat))
+            {
+                _customAppliedMaskMats.Remove(child);
+                // 공유 clone인 경우 다른 자식이 아직 사용 중이면 파괴하지 않음
+                if (customMat != null && !IsCustomCloneInUse(customMat))
+                {
+                    _customMaskMaterials.Remove(customMat);
+                    RemoveFromSharedCustomClones(customMat);
+                    if (Application.isPlaying) Destroy(customMat);
+                    else DestroyImmediate(customMat);
+                }
+            }
+            _originalChildMaterials.Remove(child);
+            ApplyMaskToChildren();
+        }
+
+        /// <summary>
         /// 자식 오브젝트에 공유 마스크 Material 적용
         /// </summary>
         public void ApplyMaskToChildren()
@@ -1343,6 +1373,22 @@ namespace SoftMaskLight
                 // 일반 Graphic (TMP_SubMeshUI 포함)
                 Material originalMat = child.material;
 
+                // 복제된 오브젝트 감지: graphic.material이 이미 마스크 관리 Material인 경우
+                // (Ctrl+D 등으로 복제하면 마스크 Material 참조가 그대로 복사됨)
+                if (IsSharedOptionalMaterial(originalMat))
+                {
+                    // 공유 Optional Material (UI/Default 등) → 그대로 재사용
+                    _originalChildMaterials[child] = child.defaultMaterial;
+                    child.SetAllDirty();
+                    continue;
+                }
+                Material realOriginal = FindOriginalForCustomClone(originalMat);
+                if (realOriginal != null)
+                {
+                    // 커스텀 clone → 원본 Material을 역추적
+                    originalMat = realOriginal;
+                }
+
                 // TMP_SubMeshUI도 동일한 DontSave Material 유실 문제 대응
                 Material subBackup = FindTMPOriginalBackup(child);
                 if (subBackup != null && originalMat != subBackup)
@@ -1385,7 +1431,7 @@ namespace SoftMaskLight
                 if (optShader == null) continue;
 
                 // UI/Default 등 기본 셰이더는 공유 Material (배칭 유지)
-                // 커스텀 셰이더(ColorReplace 등)는 개별 프로퍼티 보존을 위해 원본 복제
+                // 커스텀 셰이더(ColorReplace 등)는 원본 Material이 같으면 clone 공유 (배칭 유지)
                 bool isDefaultUI = originalMat.shader.name == "UI/Default";
                 if (isDefaultUI)
                 {
@@ -1398,7 +1444,7 @@ namespace SoftMaskLight
                 }
                 else
                 {
-                    Material cloneMat = CreateCustomMaskMaterial(originalMat, optShader);
+                    Material cloneMat = GetOrCreateSharedCustomMaterial(originalMat, optShader);
                     if (cloneMat != null)
                     {
                         child.material = cloneMat;
@@ -1451,9 +1497,14 @@ namespace SoftMaskLight
             }
             if (_customAppliedMaskMats.TryGetValue(child, out var customMat))
             {
-                if (customMat != null) { if (Application.isPlaying) Destroy(customMat); else DestroyImmediate(customMat); }
-                _customMaskMaterials.Remove(customMat);
                 _customAppliedMaskMats.Remove(child);
+                // 공유 clone인 경우 다른 자식이 아직 사용 중이면 파괴하지 않음
+                if (customMat != null && !IsCustomCloneInUse(customMat))
+                {
+                    _customMaskMaterials.Remove(customMat);
+                    RemoveFromSharedCustomClones(customMat);
+                    if (Application.isPlaying) Destroy(customMat); else DestroyImmediate(customMat);
+                }
             }
         }
 
@@ -1539,6 +1590,7 @@ namespace SoftMaskLight
             }
             _customMaskMaterials.Clear();
             _customAppliedMaskMats.Clear();
+            _sharedCustomClones.Clear();
 
             // UIEffect 프록시 컴포넌트 정리
             for (int i = 0; i < _uiEffectProxies.Count; i++)
@@ -1827,9 +1879,87 @@ namespace SoftMaskLight
         }
 
         /// <summary>
-        /// 커스텀 셰이더(ColorReplace 등) 전용 SoftMaskLight Material 생성
-        /// 원본 프로퍼티를 복제하고 Optional Shader로 교체하여 개별 프로퍼티 보존
+        /// 동일한 원본 Material을 사용하는 자식끼리 마스크 clone을 공유하여 배칭 유지.
+        /// (예: 같은 ColorReplace .mat 에셋을 참조하는 10개의 자식 → 1개의 마스크 clone 공유)
+        /// UIShining/Windable처럼 인스턴스별 고유 Material을 사용하는 경우는
+        /// 원본 Material 인스턴스 자체가 다르므로 자연스럽게 개별 clone이 생성됨.
         /// </summary>
+        private Material GetOrCreateSharedCustomMaterial(Material originalMat, Shader optShader)
+        {
+            if (optShader == null) return null;
+
+            // 동일한 원본 Material에 대해 이미 clone이 있으면 공유
+            if (_sharedCustomClones.TryGetValue(originalMat, out Material existing) && existing != null)
+                return existing;
+
+            Material mat = new Material(optShader)
+            {
+                name = $"{optShader.name} (SoftMaskLight: {gameObject.name})",
+                hideFlags = HideFlags.DontSave
+            };
+            mat.CopyPropertiesFromMaterial(originalMat);
+            mat.shader = optShader;
+
+            ApplyMaskPropertiesToMaterial(mat);
+
+            _customMaskMaterials.Add(mat);
+            _sharedCustomClones[originalMat] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// 공유 clone이 다른 자식에 의해 아직 사용 중인지 확인
+        /// </summary>
+        private bool IsCustomCloneInUse(Material clone)
+        {
+            foreach (var kvp in _customAppliedMaskMats)
+            {
+                if (kvp.Value == clone) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Material이 이미 마스크 clone인 경우 원본 Material을 역추적.
+        /// 오브젝트 복제 시 clone 참조가 그대로 복사되는 경우에 사용.
+        /// 공유 clone 캐시와 공유 Optional Material 모두 확인.
+        /// </summary>
+        private Material FindOriginalForCustomClone(Material mat)
+        {
+            if (mat == null) return null;
+            // 커스텀 셰이더 공유 clone에서 역추적
+            foreach (var kvp in _sharedCustomClones)
+            {
+                if (kvp.Value == mat) return kvp.Key;
+            }
+            // 공유 Optional Material (UI/Default 등)인지도 확인
+            if (_customMaskMaterials.Contains(mat))
+            {
+                // _customMaskMaterials에는 있지만 _sharedCustomClones에는 없는 경우
+                // (InvalidateChild 등으로 캐시만 제거된 상태) → null 반환하여 새로 처리
+                return null;
+            }
+            foreach (var kvp in _sharedOptionalMaterials)
+            {
+                if (kvp.Value == mat) return null; // Optional Material은 원본 추적 불필요
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// _sharedCustomClones에서 해당 clone을 역방향으로 찾아 제거
+        /// </summary>
+        private void RemoveFromSharedCustomClones(Material clone)
+        {
+            Material keyToRemove = null;
+            foreach (var kvp in _sharedCustomClones)
+            {
+                if (kvp.Value == clone) { keyToRemove = kvp.Key; break; }
+            }
+            if (keyToRemove != null)
+                _sharedCustomClones.Remove(keyToRemove);
+        }
+
         private Material CreateCustomMaskMaterial(Material originalMat, Shader optShader)
         {
             if (optShader == null) return null;

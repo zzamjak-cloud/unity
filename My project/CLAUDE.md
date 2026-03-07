@@ -247,8 +247,104 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 SoftMaskLight 변형:  Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/
 mob-sakai 변형:      Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/ (파티클)
 ColorReplace 변형:   Assets/Plugins/CAT/ColorReplace/Shader/
+UIShining 변형:      Assets/Plugins/CAT/UIShining/Shader/
+Windable 변형:       Assets/Plugins/CAT/Windable/Shader/
 VFX 커스텀 변형:     Assets/VFX_Work/Shader/Hidden/
 ```
+
+#### 프로퍼티 이름 충돌 주의
+
+셰이더가 `_Softness` 등 SoftMaskLight_Core.cginc와 동일한 이름의 프로퍼티를 사용하는 경우:
+- SoftMaskLight Hidden 변형에서는 해당 프로퍼티를 다른 이름으로 변경 (예: `_ShineSoftness`)
+- C# 스크립트에서 원본 이름과 변경된 이름 모두 설정하여 양쪽 셰이더 호환 유지
+- 참고: UIShining의 `_Softness` → `_ShineSoftness` 처리 사례
+
+#### 🔴 C# 스크립트: 마스크 환경에서 per-frame 프로퍼티 갱신 패턴
+
+**UI 이펙트 컴포넌트가 매 프레임 Material 프로퍼티를 갱신하는 경우 반드시 이 패턴을 따라야 합니다.**
+
+##### 문제: StencilMaterial 캐시 + SoftMaskable 체인 문제
+
+mob-sakai의 `SoftMask`은 Unity의 `Mask`를 상속(`SoftMask : Mask`)하므로, 자식 `MaskableGraphic`에서 `StencilMaterial.Add`로 **캐시된 stencil 복사본**이 생성됩니다. 이 캐시는 생성 시점의 프로퍼티를 유지하며, 이후 원본 Material의 프로퍼티 변경이 반영되지 않습니다.
+
+또한 `Graphic.materialForRendering`은 **접근할 때마다** 전체 `IMaterialModifier` 체인을 재평가하며, `SoftMaskable.CopyPropertiesFromMaterial`이 stale stencil 복사본에서 프로퍼티를 복사하여 값이 초기화됩니다.
+
+##### 해결: ActiveMaterial 패턴 (canvasRenderer.GetMaterial)
+
+```csharp
+// ❌ 잘못된 방법: materialForRendering 사용
+// → 매 접근마다 체인 재평가 → CopyPropertiesFromMaterial → stale 값 복사
+Material rendered = _graphic.materialForRendering;
+
+// ✅ 올바른 방법: CanvasRenderer에서 직접 참조
+// → 체인 재평가 없이 이미 설정된 최종 머티리얼 참조
+private Material ActiveMaterial
+{
+    get
+    {
+        if (_graphic == null) return _material;
+        // SoftMaskLight: graphic.material 직접 교체 방식
+        Material graphicMat = _graphic.material;
+        if (graphicMat != null && graphicMat != _material)
+            return graphicMat;
+        // Unity Mask / SoftMaskable: CanvasRenderer의 최종 머티리얼
+        var cr = _graphic.canvasRenderer;
+        if (cr != null)
+        {
+            Material canvasMat = cr.GetMaterial(0);
+            if (canvasMat != null && canvasMat != _material)
+                return canvasMat;
+        }
+        return _material;
+    }
+}
+```
+
+##### SetMaterialDirty 호출 최소화
+
+```csharp
+// ❌ 잘못된 방법: 매 프레임 SetMaterialDirty
+void Update() {
+    _material.SetFloat(PropProgress, progress);
+    _graphic.SetMaterialDirty(); // 매 프레임 체인 재구축 → 성능 낭비 + stale 값 문제
+}
+
+// ✅ 올바른 방법: 값이 변경된 경우에만 호출
+if (uvRect != _lastSpriteUVRect) {
+    _lastSpriteUVRect = uvRect;
+    _graphic.SetMaterialDirty();
+}
+```
+
+##### 머티리얼 인스턴스 변경 감지 (정적 프로퍼티가 많은 경우)
+
+매 프레임 갱신하는 프로퍼티가 1~2개이고 나머지는 정적인 경우, 머티리얼 인스턴스 변경을 감지하여 전체 동기화:
+
+```csharp
+private Material _lastActiveMaterial;
+
+void Update() {
+    _material.SetFloat("_CustomTime", time);
+    Material active = ActiveMaterial;
+    if (active != null && active != _material)
+    {
+        if (active != _lastActiveMaterial) // 체인 재구축으로 새 머티리얼 생성됨
+        {
+            _lastActiveMaterial = active;
+            ApplyAllProperties(active); // 전체 프로퍼티 동기화
+        }
+        else
+        {
+            active.SetFloat("_CustomTime", time); // 애니메이션 프로퍼티만
+        }
+    }
+}
+```
+
+##### 참고 구현
+
+- **UIShining**: 매 프레임 전체 프로퍼티 갱신 패턴 (`Assets/Plugins/CAT/UIShining/Scripts/UIShining.cs`)
+- **Windable**: 머티리얼 인스턴스 변경 감지 패턴 (`Assets/Plugins/CAT/Windable/Scripts/Windable.cs`)
 
 ### Git 워크플로우
 

@@ -10,7 +10,7 @@ namespace CAT.Effects
         private Windable _target;
         private bool _isPlaying = false;
         private double _startTime;
-        private const float DURATION = 10.0f; // 테스트 재생 시간
+        private const float DURATION = 60.0f; // 테스트 재생 시간
 
         // GUI 스타일
         private GUIStyle _headerStyle;
@@ -318,14 +318,17 @@ namespace CAT.Effects
         {
             EditorApplication.update -= EditorUpdate;
             _isPlaying = false;
-            _target.UpdateMaterialProperties(0);
+            if (_target != null)
+                _target.UpdateMaterialProperties(0);
             Repaint();
+            SceneView.RepaintAll();
 
             Debug.Log($"[Windable] {_target.name}: 바람 효과 테스트 중지");
         }
 
         /// <summary>
-        /// 에디터 업데이트 루프
+        /// 에디터 업데이트 루프: EditorAdvance()를 직접 호출하여 애니메이션 진행.
+        /// [ExecuteAlways] Update()에 의존하지 않는다.
         /// </summary>
         private void EditorUpdate()
         {
@@ -343,11 +346,12 @@ namespace CAT.Effects
                 return;
             }
 
-            // 경과 시간을 쉐이더의 _CustomTime으로 전달하여 애니메이션 효과
-            _target.UpdateMaterialProperties((float)elapsedTime);
-            
-            // 인스펙터 UI 업데이트 (버튼 텍스트 업데이트를 위해)
+            // 경과 시간을 EditorAdvance로 전달하여 애니메이션 효과
+            _target.EditorAdvance((float)elapsedTime);
+
+            // 인스펙터 + 씬뷰 업데이트
             Repaint();
+            SceneView.RepaintAll();
         }
     }
 }

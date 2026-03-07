@@ -176,8 +176,10 @@ namespace CAT.Effects
 
         /// <summary>
         /// 에디터 선택 시 동기화:
-        /// - 저장된 머티리얼 → 머티리얼 값을 컴포넌트로 읽어옴 (머티리얼이 진실의 원천)
-        /// - 임시 머티리얼 또는 없음 → 컴포넌트 값을 머티리얼에 적용
+        /// - 유효한 ColorReplace 머티리얼(에셋, SoftMaskLight 공유 clone 포함)
+        ///   → 머티리얼 값을 컴포넌트로 읽어옴 (머티리얼이 진실의 원천)
+        /// - 머티리얼 없음 또는 ColorReplace 셰이더가 아닌 경우
+        ///   → 컴포넌트 값을 머티리얼에 적용
         /// </summary>
         private void SyncOnEnable()
         {
@@ -187,34 +189,57 @@ namespace CAT.Effects
 
             Material mat = GetRendererMaterial(colorReplace);
 
-            if (IsColorReplaceAsset(mat))
+            // 유효한 ColorReplace 머티리얼이면 머티리얼에서 값을 읽어옴
+            // (저장된 에셋 또는 SoftMaskLight 공유 clone 모두 해당)
+            if (IsValidColorReplaceMaterial(mat))
             {
-                // 저장된 머티리얼의 값을 컴포넌트에 동기화
-                serializedObject.Update();
-                hsvRangeMin.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMin);
-                hsvRangeMax.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMax);
-                Vector4 adj = mat.GetVector(ColorReplace.PropHSVAdjust);
-                hsvAdjust.vector4Value = adj;
-                serializedObject.ApplyModifiedPropertiesWithoutUndo();
-
-                // pickerColor도 갱신
-                float midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue) * 0.5f;
-                if (hsvRangeMin.floatValue > hsvRangeMax.floatValue)
-                {
-                    midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue + 1f) * 0.5f;
-                    if (midHue > 1f) midHue -= 1f;
-                }
-                pickerColor = Color.HSVToRGB(midHue, 1f, 1f);
+                SyncFromMaterial(mat);
             }
             else
             {
-                // 임시 머티리얼이면 컴포넌트 값을 머티리얼에 적용
+                // 머티리얼이 없거나 ColorReplace 셰이더가 아니면 컴포넌트 값을 적용
                 ApplyToMaterial();
             }
         }
 
         /// <summary>
+        /// 머티리얼의 HSV 값을 컴포넌트에 동기화
+        /// </summary>
+        private void SyncFromMaterial(Material mat)
+        {
+            serializedObject.Update();
+            hsvRangeMin.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMin);
+            hsvRangeMax.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMax);
+            Vector4 adj = mat.GetVector(ColorReplace.PropHSVAdjust);
+            hsvAdjust.vector4Value = adj;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+            // pickerColor도 갱신
+            float midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue) * 0.5f;
+            if (hsvRangeMin.floatValue > hsvRangeMax.floatValue)
+            {
+                midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue + 1f) * 0.5f;
+                if (midHue > 1f) midHue -= 1f;
+            }
+            pickerColor = Color.HSVToRGB(midHue, 1f, 1f);
+        }
+
+        /// <summary>
+        /// ColorReplace 셰이더를 사용하는 유효한 머티리얼인지 확인
+        /// 저장된 에셋뿐 아니라 SoftMaskLight 공유 clone도 포함
+        /// </summary>
+        private bool IsValidColorReplaceMaterial(Material material)
+        {
+            if (material == null || material.shader == null) return false;
+            return material.shader.name == ColorReplace.SHADER_NAME ||
+                   material.shader.name.Contains("ColorReplace");
+        }
+
+        /// <summary>
         /// 렌더러의 머티리얼에 현재 HSV 값을 적용 (머티리얼이 없으면 생성)
+        /// Unity Mask / mob-sakai SoftMask 환경에서는 StencilMaterial 캐시가
+        /// base material의 프로퍼티 변경을 반영하지 않으므로,
+        /// CanvasRenderer의 최종 렌더링 머티리얼에도 직접 프로퍼티를 적용한다.
         /// </summary>
         private void ApplyToMaterial()
         {
@@ -228,6 +253,24 @@ namespace CAT.Effects
             mat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
             mat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
             mat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
+
+            // Mask/SoftMask 환경: CanvasRenderer에 설정된 렌더링 머티리얼에도 프로퍼티 적용
+            // StencilMaterial 캐시가 base material 프로퍼티 변경을 반영하지 않으므로 직접 갱신
+            var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic != null)
+            {
+                var cr = graphic.canvasRenderer;
+                if (cr != null)
+                {
+                    Material canvasMat = cr.GetMaterial(0);
+                    if (canvasMat != null && canvasMat != mat)
+                    {
+                        canvasMat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
+                        canvasMat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
+                        canvasMat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
+                    }
+                }
+            }
         }
 
         /// <summary>

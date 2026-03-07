@@ -34,6 +34,12 @@ namespace SoftMaskLight
             // mob-sakai SoftMaskable 전용 변형 (파티클 블렌드 모드 보존)
             "Hidden/SoftMaskLight/Particles/UIAdditive (SoftMaskable)",
             "Hidden/SoftMaskLight/Particles/UIAlphaBlend (SoftMaskable)",
+            // UIShining 변형
+            "Hidden/CAT/Effects/UIShining (SoftMaskLight)",
+            "Hidden/CAT/Effects/UIShining (SoftMaskable)",
+            // Windable 변형
+            "Hidden/CAT/Effects/Windable (SoftMaskLight)",
+            "Hidden/CAT/Effects/Windable (SoftMaskable)",
         };
 
         // redirect cginc 파일 이름 (Assets/ 루트에 생성)

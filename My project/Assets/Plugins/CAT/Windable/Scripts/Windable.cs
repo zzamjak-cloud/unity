@@ -11,6 +11,7 @@ namespace CAT.Effects
     }
 
     [DisallowMultipleComponent]
+    [ExecuteAlways]
     public class Windable : MonoBehaviour
     {
         public static readonly string SHADER_NAME = "CAT/Effects/Windable";
@@ -36,6 +37,35 @@ namespace CAT.Effects
         private Material _material;
         private SpriteRenderer _spriteRenderer;
         private Graphic _graphic;
+        private Material _lastActiveMaterial;
+
+        /// <summary>
+        /// 실제 렌더링에 사용 중인 Material 반환.
+        /// CanvasRenderer에 설정된 최종 머티리얼을 직접 참조하여,
+        /// materialForRendering 접근 시 발생하는 체인 재평가(StencilMaterial 캐시 문제)를 회피.
+        /// </summary>
+        private Material ActiveMaterial
+        {
+            get
+            {
+                if (_windableType == WindableType.UI && _graphic != null)
+                {
+                    // 1) SoftMaskLight: _graphic.material을 직접 교체
+                    Material graphicMat = _graphic.material;
+                    if (graphicMat != null && graphicMat != _material)
+                        return graphicMat;
+                    // 2) Unity Mask / SoftMaskable: CanvasRenderer에 이미 설정된 최종 머티리얼 참조
+                    var cr = _graphic.canvasRenderer;
+                    if (cr != null)
+                    {
+                        Material canvasMat = cr.GetMaterial(0);
+                        if (canvasMat != null && canvasMat != _material)
+                            return canvasMat;
+                    }
+                }
+                return _material;
+            }
+        }
 
         // 프로퍼티
         public WindableType WindableTypeValue => _windableType;
@@ -57,9 +87,70 @@ namespace CAT.Effects
 
         private void Update()
         {
-            if (_material != null)
+            // 에디터 비플레이 모드: 애니메이션 없이 정적 프로퍼티만 동기화
+            // (애니메이션은 EditorAdvance()에서 처리)
+            if (!Application.isPlaying)
             {
-                _material.SetFloat("_CustomTime", Time.time);
+                SyncStaticProperties();
+                return;
+            }
+
+            float time = Time.time;
+            // 기본 머티리얼에 항상 설정 (IMaterialModifier 체인 재구축 시 소스)
+            if (_material != null)
+                _material.SetFloat("_CustomTime", time);
+            // 렌더링 머티리얼이 다르면 (Mask/SoftMaskable/SoftMaskLight) 거기에도 설정
+            Material active = ActiveMaterial;
+            if (active != null && active != _material)
+            {
+                // CanvasRenderer 머티리얼 인스턴스가 변경된 경우 전체 프로퍼티 동기화
+                // (SoftMaskable/StencilMaterial 체인 재구축 시 새 머티리얼이 생성되므로)
+                if (active != _lastActiveMaterial)
+                {
+                    _lastActiveMaterial = active;
+                    ApplyPropertiesToTarget(active, time);
+                }
+                else
+                {
+                    active.SetFloat("_CustomTime", time);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 에디터 비플레이 모드에서 정적 프로퍼티만 동기화 (애니메이션 없음)
+        /// </summary>
+        private void SyncStaticProperties()
+        {
+            if (_material == null) return;
+            Material active = ActiveMaterial;
+            if (active != null && active != _material && active != _lastActiveMaterial)
+            {
+                _lastActiveMaterial = active;
+                ApplyPropertiesToTarget(active, 0);
+            }
+        }
+
+        /// <summary>
+        /// 에디터 전용: 외부에서 deltaTime 기반 경과 시간을 전달하여 바람 애니메이션을 진행시킨다.
+        /// EditorApplication.update 콜백에서 호출되며, [ExecuteAlways] Update()에 의존하지 않는다.
+        /// </summary>
+        public void EditorAdvance(float elapsedTime)
+        {
+            if (_material == null || _graphic == null) return;
+
+            // 기본 머티리얼에 프로퍼티 설정
+            ApplyPropertiesToTarget(_material, elapsedTime);
+
+            // 렌더링 머티리얼이 다르면 거기에도 설정
+            Material active = ActiveMaterial;
+            if (active != null && active != _material)
+            {
+                if (active != _lastActiveMaterial)
+                {
+                    _lastActiveMaterial = active;
+                }
+                ApplyPropertiesToTarget(active, elapsedTime);
             }
         }
 
@@ -114,8 +205,11 @@ namespace CAT.Effects
                     return;
                 }
 
-                _material = new Material(shader);
-                
+                _material = new Material(shader)
+                {
+                    hideFlags = HideFlags.DontSave
+                };
+
                 // 타입에 따라 머티리얼 할당
                 if (_windableType == WindableType.Sprite && _spriteRenderer != null)
                 {
@@ -124,6 +218,16 @@ namespace CAT.Effects
                 else if (_windableType == WindableType.UI && _graphic != null)
                 {
                     _graphic.material = _material;
+
+                    // 에디터 비재생 모드에서 SoftMaskLight가 이미 자식을 처리한 경우,
+                    // _graphic.material 교체로 마스킹이 해제되므로 재처리 요청
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                    {
+                        var sml = GetComponentInParent<SoftMaskLight.SoftMaskLight>();
+                        if (sml != null) sml.InvalidateChild(_graphic);
+                    }
+#endif
                 }
             }
 
@@ -166,31 +270,38 @@ namespace CAT.Effects
                 if (_material == null) return;
             }
 
-            // 타입에 따른 텍스처 설정
-            if (_windableType == WindableType.Sprite)
-            {
-                UpdateSpriteProperties(customTime);
-            }
-            else if (_windableType == WindableType.UI)
-            {
-                UpdateUIProperties(customTime);
-            }
+            // 기본 머티리얼에 프로퍼티 설정 (IMaterialModifier 체인 재구축 시 소스)
+            ApplyPropertiesToTarget(_material, customTime);
 
-            // 공통 프로퍼티 설정
-            SetCommonMaterialProperties(customTime);
+            // 렌더링 머티리얼이 다르면 거기에도 설정
+            Material active = ActiveMaterial;
+            if (active != null && active != _material)
+                ApplyPropertiesToTarget(active, customTime);
+        }
+
+        private void ApplyPropertiesToTarget(Material target, float customTime)
+        {
+            if (target == null) return;
+
+            if (_windableType == WindableType.Sprite)
+                UpdateSpriteProperties(target, customTime);
+            else if (_windableType == WindableType.UI)
+                UpdateUIProperties(target, customTime);
+
+            SetCommonMaterialProperties(target, customTime);
         }
 
         /// <summary>
         /// Sprite용 프로퍼티 업데이트
         /// </summary>
-        private void UpdateSpriteProperties(float customTime)
+        private void UpdateSpriteProperties(Material target, float customTime)
         {
             if (_spriteRenderer?.sprite == null) return;
 
             _MainTex = _spriteRenderer.sprite.texture;
             if (_MainTex == null) return;
 
-            _material.SetTexture("_MainTex", _MainTex);
+            target.SetTexture("_MainTex", _MainTex);
 
             Sprite sprite = _spriteRenderer.sprite;
             Rect r = sprite.textureRect;
@@ -198,31 +309,31 @@ namespace CAT.Effects
 
             // 아틀라스에 포함된 스프라이트의 UV 좌표 계산
             Vector4 uvRect = new Vector4(
-                r.x / t.width, 
-                r.y / t.height, 
-                (r.x + r.width) / t.width, 
+                r.x / t.width,
+                r.y / t.height,
+                (r.x + r.width) / t.width,
                 (r.y + r.height) / t.height
             );
-            _material.SetVector("_SpriteUVRect", uvRect);
+            target.SetVector("_SpriteUVRect", uvRect);
 
             // 스프라이트의 피벗을 UV 공간 기준으로 계산
             float pivotX = (r.x + sprite.pivot.x) / t.width;
             float pivotY = (r.y + sprite.pivot.y) / t.height;
             Vector2 spritePivot = new Vector2(pivotX, pivotY);
-            _material.SetVector("_SpritePivot", spritePivot);
+            target.SetVector("_SpritePivot", spritePivot);
         }
 
         /// <summary>
         /// UI용 프로퍼티 업데이트
         /// </summary>
-        private void UpdateUIProperties(float customTime)
+        private void UpdateUIProperties(Material target, float customTime)
         {
             if (_graphic == null) return;
 
             _MainTex = _graphic.mainTexture;
             if (_MainTex == null) return;
 
-            _material.SetTexture("_MainTex", _MainTex);
+            target.SetTexture("_MainTex", _MainTex);
 
             Vector2 spritePivot = new Vector2(0.5f, 0.5f);
 
@@ -233,12 +344,12 @@ namespace CAT.Effects
                 Texture t = sprite.texture;
 
                 Vector4 uvRect = new Vector4(
-                    r.x / t.width, 
-                    r.y / t.height, 
-                    (r.x + r.width) / t.width, 
+                    r.x / t.width,
+                    r.y / t.height,
+                    (r.x + r.width) / t.width,
                     (r.y + r.height) / t.height
                 );
-                _material.SetVector("_SpriteUVRect", uvRect);
+                target.SetVector("_SpriteUVRect", uvRect);
 
                 float pivotX = (r.x + sprite.pivot.x) / t.width;
                 float pivotY = (r.y + sprite.pivot.y) / t.height;
@@ -246,30 +357,29 @@ namespace CAT.Effects
             }
             else
             {
-                _material.SetVector("_SpriteUVRect", new Vector4(0, 0, 1, 1));
+                target.SetVector("_SpriteUVRect", new Vector4(0, 0, 1, 1));
             }
 
-            _material.SetVector("_SpritePivot", spritePivot);
-            _graphic.SetMaterialDirty();
+            target.SetVector("_SpritePivot", spritePivot);
         }
 
         /// <summary>
         /// 공통 머티리얼 프로퍼티 설정
         /// </summary>
-        private void SetCommonMaterialProperties(float customTime)
+        private void SetCommonMaterialProperties(Material target, float customTime)
         {
-            _material.SetFloat("_CustomTime", customTime);
-            _material.SetFloat("_RotateUV", _RotateUV);
-            _material.SetTexture("_NoiseTex", _NoiseTex);
-            _material.SetFloat("_WindSpeed", _WindSpeed);
-            _material.SetFloat("_WindStrength", _WindStrength);
-            _material.SetFloat("_WindFrequency", _WindFrequency);
-            _material.SetVector("_WindDirection", _WindDirection);
-            _material.SetVector("_ClipRect", _ClipRect);
-            _material.SetFloat("_WindScale", _WindScale);
-            _material.SetFloat("_ImageOffsetX", _ImageOffsetX);
-            _material.SetFloat("_ImageOffsetY", _ImageOffsetY);
-            _material.SetFloat("_ImageScale", _ImageScale);
+            target.SetFloat("_CustomTime", customTime);
+            target.SetFloat("_RotateUV", _RotateUV);
+            target.SetTexture("_NoiseTex", _NoiseTex);
+            target.SetFloat("_WindSpeed", _WindSpeed);
+            target.SetFloat("_WindStrength", _WindStrength);
+            target.SetFloat("_WindFrequency", _WindFrequency);
+            target.SetVector("_WindDirection", _WindDirection);
+            target.SetVector("_ClipRect", _ClipRect);
+            target.SetFloat("_WindScale", _WindScale);
+            target.SetFloat("_ImageOffsetX", _ImageOffsetX);
+            target.SetFloat("_ImageOffsetY", _ImageOffsetY);
+            target.SetFloat("_ImageScale", _ImageScale);
         }
 
         /// <summary>

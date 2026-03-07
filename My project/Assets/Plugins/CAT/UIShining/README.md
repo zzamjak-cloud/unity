@@ -50,6 +50,54 @@ if (g is Image img && img.sprite != null)
 
 콘솔에 스프라이트 이름, UV 사각형(rect), 버텍스 수가 출력됩니다.
 
+## 마스크 호환성
+
+UIShining은 다음 마스크 시스템 모두에서 정상 동작합니다:
+
+| 마스크 시스템 | 지원 | 방식 |
+|--------------|------|------|
+| **Unity 기본 Mask** (Stencil) | ✅ | `ActiveMaterial` → `canvasRenderer.GetMaterial(0)` |
+| **SoftMaskLight** (자체) | ✅ | `ActiveMaterial` → `_graphic.material` 교체 감지 |
+| **mob-sakai SoftMask** | ✅ | `ActiveMaterial` → `canvasRenderer.GetMaterial(0)` |
+| **RectMask2D** | ✅ | 셰이더 내장 `_ClipRect` |
+
+### ActiveMaterial 패턴
+
+UIShining은 매 프레임 `_Progress` 등 모든 셰이더 프로퍼티를 갱신하므로, `materialForRendering` 대신 `canvasRenderer.GetMaterial(0)`을 사용합니다.
+
+**배경**: mob-sakai의 `SoftMask`은 Unity `Mask`를 상속하므로, `MaskableGraphic`의 `StencilMaterial.Add`가 캐시된 stencil 복사본을 생성합니다. `materialForRendering`에 접근하면 `SoftMaskable.CopyPropertiesFromMaterial`이 이 stale 복사본에서 프로퍼티를 복사하여 `_Progress=0`으로 초기화되는 문제가 있습니다. `canvasRenderer.GetMaterial(0)`은 이미 CanvasRenderer에 설정된 최종 머티리얼을 직접 참조하므로 체인 재평가 없이 프로퍼티를 갱신할 수 있습니다.
+
+### SetMaterialDirty 최적화
+
+`SetMaterialDirty()`는 스프라이트 UV가 변경된 경우에만 호출합니다. 매 프레임 호출 시 IMaterialModifier 체인이 재구축되어 StencilMaterial 캐시 문제가 발생하고 성능도 저하됩니다.
+
+## 소프트 마스크 대응 셰이더
+
+UIShining은 두 가지 소프트 마스크 시스템에 대응하는 Hidden 변형 셰이더를 제공합니다.
+
+### 변형 셰이더
+
+| 파일 | 셰이더 이름 | 시스템 |
+|------|-------------|--------|
+| `Hidden-CAT-UIShining-SoftMaskLight.shader` | `Hidden/CAT/Effects/UIShining (SoftMaskLight)` | SoftMaskLight (자체) |
+| `Hidden-CAT-UIShining-SoftMaskable.shader` | `Hidden/CAT/Effects/UIShining (SoftMaskable)` | mob-sakai SoftMask |
+
+### SoftMaskable 셰이더 주의사항
+
+- SoftMask 적용은 `finalColor.a *= SoftMask(...)` (알파만 적용). `finalColor *= SoftMask(...)` (전체 색상 곱셈)을 사용하면 안 됩니다.
+- `Fallback` 선언 없음 — 폴백 셰이더가 있으면 의도치 않은 렌더링 문제 발생 가능
+
+### 프로퍼티 이름 충돌 주의
+
+- SoftMaskLight_Core.cginc와 UIShining 모두 `_Softness` 프로퍼티를 사용합니다.
+- **SoftMaskLight Hidden 변형**에서는 광택 소프트니스를 `_ShineSoftness`로 분리했습니다.
+- UIShining.cs는 `_Softness`와 `_ShineSoftness`를 모두 설정하므로 두 셰이더 모두 정상 동작합니다.
+- mob-sakai SoftMaskable 변형에서는 충돌이 없으므로 원본 `_Softness`를 그대로 사용합니다.
+
+### 등록
+
+`SoftMaskLightInstaller.cs`의 `HiddenShaderNames` 배열에 두 변형 모두 등록되어 있으며, `Tools > SoftMaskLight > Refresh Settings` 실행 시 빌드에 자동 포함됩니다.
+
 ## 참고
 
 - 다른 CAT 플러그인(PathFollower, ColorReplace 등)과 코드/씬 의존성은 없습니다.

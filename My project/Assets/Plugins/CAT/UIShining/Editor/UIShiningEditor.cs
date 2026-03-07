@@ -6,17 +6,25 @@ namespace CAT.Effects
     [CustomEditor(typeof(UIShining))]
     public class UIShiningEditor : Editor
     {
-        private SerializedProperty _editorTestRunningProp;
+        private UIShining _target;
+        private bool _isPlaying;
+        private double _startTime;
+        private double _prevTime;
+        private const double DURATION = 60.0;
 
         private void OnEnable()
         {
-            _editorTestRunningProp = serializedObject.FindProperty("_editorTestRunning");
+            _target = (UIShining)target;
+            EditorApplication.update -= EditorUpdate;
+            _isPlaying = false;
             Undo.undoRedoPerformed += OnUndoRedo;
         }
 
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= OnUndoRedo;
+            if (_isPlaying)
+                StopTest();
         }
 
         private void OnUndoRedo()
@@ -33,47 +41,78 @@ namespace CAT.Effects
             if (!Application.isPlaying)
             {
                 EditorGUILayout.Space(4f);
-                bool running = _editorTestRunningProp != null && _editorTestRunningProp.boolValue;
-                string label = running ? "재생 중지" : "에디터 재생 (60초)";
-                if (GUILayout.Button(label, GUILayout.Height(24f)))
+
+                if (_isPlaying)
                 {
-                    if (!running)
-                    {
-                        Undo.RecordObject(target, "Start UIShining Editor Test");
-                        _editorTestRunningProp.boolValue = true;
-                        var startTimeProp = serializedObject.FindProperty("_editorTestStartTime");
-                        if (startTimeProp != null)
-                            startTimeProp.doubleValue = EditorApplication.timeSinceStartup;
-                        serializedObject.ApplyModifiedProperties();
-                    }
-                    else
-                    {
-                        Undo.RecordObject(target, "Stop UIShining Editor Test");
-                        var uishining = (UIShining)target;
-                        uishining.ResetProgressToStart();
-                        _editorTestRunningProp.boolValue = false;
-                        serializedObject.ApplyModifiedProperties();
-                    }
-                    SceneView.RepaintAll();
+                    double remaining = System.Math.Max(0.0, DURATION - (EditorApplication.timeSinceStartup - _startTime));
+                    EditorGUILayout.HelpBox($"에디터 테스트 재생 중... (남은 시간: {remaining:F1}초)", MessageType.Info);
+
+                    GUI.backgroundColor = Color.red;
+                    if (GUILayout.Button("재생 중지", GUILayout.Height(24f)))
+                        StopTest();
+                    GUI.backgroundColor = Color.white;
                 }
-                if (running)
+                else
                 {
-                    var startTimeProp = serializedObject.FindProperty("_editorTestStartTime");
-                    if (startTimeProp != null)
-                    {
-                        double elapsed = EditorApplication.timeSinceStartup - startTimeProp.doubleValue;
-                        double remaining = System.Math.Max(0.0, 60.0 - elapsed);
-                        EditorGUILayout.HelpBox($"에디터 테스트 재생 중... (남은 시간: {remaining:F1}초)", MessageType.Info);
-                    }
-                    else
-                    {
-                        EditorGUILayout.HelpBox("에디터 테스트 재생 중... (60초 후 자동 중지)", MessageType.Info);
-                    }
+                    GUI.backgroundColor = Color.green;
+                    if (GUILayout.Button("에디터 재생 (60초)", GUILayout.Height(24f)))
+                        StartTest();
+                    GUI.backgroundColor = Color.white;
                 }
             }
 
             if (serializedObject.ApplyModifiedProperties() && !Application.isPlaying)
                 SceneView.RepaintAll();
+        }
+
+        private void StartTest()
+        {
+            if (_isPlaying) return;
+
+            _startTime = EditorApplication.timeSinceStartup;
+            _prevTime = _startTime;
+            _isPlaying = true;
+            _target.ResetProgressToStart();
+            EditorApplication.update += EditorUpdate;
+        }
+
+        private void StopTest()
+        {
+            EditorApplication.update -= EditorUpdate;
+            _isPlaying = false;
+            if (_target != null)
+                _target.ResetProgressToStart();
+            Repaint();
+        }
+
+        /// <summary>
+        /// EditorApplication.update 콜백: timeSinceStartup 기반으로 deltaTime을 계산하여
+        /// UIShining.EditorAdvance()를 직접 호출한다. [ExecuteAlways] Update()에 의존하지 않는다.
+        /// </summary>
+        private void EditorUpdate()
+        {
+            if (_target == null)
+            {
+                StopTest();
+                return;
+            }
+
+            double now = EditorApplication.timeSinceStartup;
+
+            if (now - _startTime >= DURATION)
+            {
+                StopTest();
+                return;
+            }
+
+            float dt = (float)(now - _prevTime);
+            dt = Mathf.Clamp(dt, 0f, 0.1f);
+            _prevTime = now;
+
+            _target.EditorAdvance(dt);
+
+            Repaint();
+            SceneView.RepaintAll();
         }
     }
 }
