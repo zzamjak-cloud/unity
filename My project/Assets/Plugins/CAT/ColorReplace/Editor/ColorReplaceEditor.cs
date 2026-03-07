@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using System.IO;
 
 namespace CAT.Effects
 {
@@ -7,12 +8,12 @@ namespace CAT.Effects
     [CustomEditor(typeof(ColorReplace))]
     public class ColorReplaceEditor : Editor
     {
-        // SerializedProperty
+        private const string DEFAULT_SAVE_FOLDER = "Assets/Plugins/CAT/ColorReplace/Materials";
+
         private SerializedProperty hsvRangeMin;
         private SerializedProperty hsvRangeMax;
         private SerializedProperty hsvAdjust;
 
-        // 에디터 전용 컬러 피커 (HSV 범위 자동 설정용)
         private Color pickerColor = Color.red;
 
         private void OnEnable()
@@ -21,13 +22,11 @@ namespace CAT.Effects
             hsvRangeMax = serializedObject.FindProperty("_hsvRangeMax");
             hsvAdjust = serializedObject.FindProperty("_hsvAdjust");
 
-            // 현재 HSV Range에서 대표 색상 추정
             if (hsvRangeMin != null && hsvRangeMax != null)
             {
                 float midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue) * 0.5f;
                 if (hsvRangeMin.floatValue > hsvRangeMax.floatValue)
                 {
-                    // wrap-around 케이스
                     midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue + 1f) * 0.5f;
                     if (midHue > 1f) midHue -= 1f;
                 }
@@ -35,6 +34,10 @@ namespace CAT.Effects
             }
 
             Undo.undoRedoPerformed += OnUndoRedo;
+
+            // 저장된 머티리얼이면 머티리얼 값을 컴포넌트에 동기화
+            // 임시 머티리얼이면 컴포넌트 값을 머티리얼에 적용
+            SyncOnEnable();
         }
 
         private void OnDisable()
@@ -44,6 +47,7 @@ namespace CAT.Effects
 
         private void OnUndoRedo()
         {
+            ApplyToMaterial();
             Repaint();
         }
 
@@ -51,22 +55,28 @@ namespace CAT.Effects
         {
             serializedObject.Update();
 
-            // 렌더러 타입 표시
-            Component renderer = ((ColorReplace)target).GetComponent<SpriteRenderer>();
-            bool isUIComponent = renderer == null;
-            if (isUIComponent)
-            {
-                renderer = ((ColorReplace)target).GetComponent<UnityEngine.UI.Graphic>();
-            }
+            var colorReplace = (ColorReplace)target;
 
+            // 렌더러 타입 표시
+            var spriteRenderer = colorReplace.GetComponent<SpriteRenderer>();
+            bool isUIComponent = spriteRenderer == null;
             string rendererType = isUIComponent ? "UI Graphic" : "SpriteRenderer";
             EditorGUILayout.HelpBox($"Mode: {rendererType}", MessageType.None);
 
-            EditorGUILayout.Space(5);
+            // 현재 머티리얼 상태 표시
+            Material currentMat = GetRendererMaterial(colorReplace);
+            bool isSavedAsset = IsColorReplaceAsset(currentMat);
 
+            if (isSavedAsset)
+            {
+                string matPath = AssetDatabase.GetAssetPath(currentMat);
+                EditorGUILayout.HelpBox($"저장된 머티리얼: {matPath}", MessageType.Info);
+            }
+
+            EditorGUILayout.Space(5);
             EditorGUI.BeginChangeCheck();
 
-            // 컬러 피커 (HSV 범위 자동 설정용)
+            // ─── Color Picker ───
             EditorGUILayout.LabelField("Color Picker", EditorStyles.boldLabel);
             EditorGUILayout.Space(3);
             EditorGUI.indentLevel++;
@@ -87,22 +97,16 @@ namespace CAT.Effects
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Compact", GUILayout.Width(80)))
-            {
                 SetHSVRangeFromColor(pickerColor, 0.02f);
-            }
             if (GUILayout.Button("Similar", GUILayout.Width(80)))
-            {
                 SetHSVRangeFromColor(pickerColor, 0.1f);
-            }
             if (GUILayout.Button("Wide", GUILayout.Width(80)))
-            {
                 SetHSVRangeFromColor(pickerColor, 0.2f);
-            }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(10);
 
-            // HSV Range
+            // ─── HSV Range ───
             EditorGUILayout.LabelField("HSV Range", EditorStyles.boldLabel);
             EditorGUILayout.Space(3);
 
@@ -123,17 +127,13 @@ namespace CAT.Effects
             EditorGUI.indentLevel--;
 
             if (Mathf.Abs(newMinValue - hsvRangeMin.floatValue) > 0.001f)
-            {
                 hsvRangeMin.floatValue = newMinValue;
-            }
             if (Mathf.Abs(newMaxValue - hsvRangeMax.floatValue) > 0.001f)
-            {
                 hsvRangeMax.floatValue = newMaxValue;
-            }
 
             EditorGUILayout.Space(10);
 
-            // HSV Adjust
+            // ─── HSV Adjust ───
             EditorGUILayout.LabelField("HSV Adjust", EditorStyles.boldLabel);
             EditorGUI.indentLevel++;
 
@@ -146,44 +146,232 @@ namespace CAT.Effects
             EditorGUI.indentLevel--;
             hsvAdjust.vector4Value = currentAdjust;
 
-            if (EditorGUI.EndChangeCheck())
+            bool valuesChanged = EditorGUI.EndChangeCheck();
+
+            if (valuesChanged)
             {
                 serializedObject.ApplyModifiedProperties();
                 EditorUtility.SetDirty(target);
 
                 if (PrefabUtility.IsPartOfAnyPrefab(target))
-                {
                     PrefabUtility.RecordPrefabInstancePropertyModifications(target);
-                }
+
+                // 값 변경 즉시 머티리얼 프로퍼티 갱신
+                ApplyToMaterial();
             }
 
             EditorGUILayout.Space(10);
 
-            // Reset 및 캐시 클리어 버튼
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Reset"))
+            // ─── 신규 머티리얼 생성 버튼 ───
+            if (GUILayout.Button("신규 머티리얼 생성", GUILayout.Height(30)))
             {
-                Undo.RecordObject(target, "Reset ColorReplace Values");
-
-                hsvRangeMin.floatValue = 0f;
-                hsvRangeMax.floatValue = 1f;
-                hsvAdjust.vector4Value = Vector4.zero;
-                pickerColor = Color.red;
-
-                serializedObject.ApplyModifiedProperties();
-                EditorUtility.SetDirty(target);
+                SaveAsNewMaterial(colorReplace);
             }
 
-            // 캐시 클리어 버튼 (플레이 모드에서만)
-            if (Application.isPlaying)
-            {
-                if (GUILayout.Button("Clear Cache"))
-                {
-                    ColorReplace.ClearMaterialCache();
-                }
-            }
-            EditorGUILayout.EndHorizontal();
         }
+
+        // ─────────────────────────────────────────────
+        // 머티리얼 동기화
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 에디터 선택 시 동기화:
+        /// - 저장된 머티리얼 → 머티리얼 값을 컴포넌트로 읽어옴 (머티리얼이 진실의 원천)
+        /// - 임시 머티리얼 또는 없음 → 컴포넌트 값을 머티리얼에 적용
+        /// </summary>
+        private void SyncOnEnable()
+        {
+            var colorReplace = target as ColorReplace;
+            if (colorReplace == null) return;
+            if (!colorReplace.gameObject.scene.IsValid()) return;
+
+            Material mat = GetRendererMaterial(colorReplace);
+
+            if (IsColorReplaceAsset(mat))
+            {
+                // 저장된 머티리얼의 값을 컴포넌트에 동기화
+                serializedObject.Update();
+                hsvRangeMin.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMin);
+                hsvRangeMax.floatValue = mat.GetFloat(ColorReplace.PropHSVRangeMax);
+                Vector4 adj = mat.GetVector(ColorReplace.PropHSVAdjust);
+                hsvAdjust.vector4Value = adj;
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+                // pickerColor도 갱신
+                float midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue) * 0.5f;
+                if (hsvRangeMin.floatValue > hsvRangeMax.floatValue)
+                {
+                    midHue = (hsvRangeMin.floatValue + hsvRangeMax.floatValue + 1f) * 0.5f;
+                    if (midHue > 1f) midHue -= 1f;
+                }
+                pickerColor = Color.HSVToRGB(midHue, 1f, 1f);
+            }
+            else
+            {
+                // 임시 머티리얼이면 컴포넌트 값을 머티리얼에 적용
+                ApplyToMaterial();
+            }
+        }
+
+        /// <summary>
+        /// 렌더러의 머티리얼에 현재 HSV 값을 적용 (머티리얼이 없으면 생성)
+        /// </summary>
+        private void ApplyToMaterial()
+        {
+            var colorReplace = target as ColorReplace;
+            if (colorReplace == null) return;
+            if (!colorReplace.gameObject.scene.IsValid()) return;
+
+            Material mat = EnsureColorReplaceMaterial(colorReplace);
+            if (mat == null) return;
+
+            mat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
+            mat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
+            mat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
+        }
+
+        /// <summary>
+        /// 렌더러에 ColorReplace 셰이더 머티리얼이 있는지 확인하고, 없으면 생성하여 할당
+        /// </summary>
+        private Material EnsureColorReplaceMaterial(ColorReplace colorReplace)
+        {
+            Material current = GetRendererMaterial(colorReplace);
+
+            // 이미 ColorReplace 셰이더 머티리얼이 할당되어 있으면 그대로 사용
+            if (current != null && current.shader != null && current.shader.name == ColorReplace.SHADER_NAME)
+                return current;
+
+            // 없으면 새로 생성하여 할당
+            Shader shader = Shader.Find(ColorReplace.SHADER_NAME);
+            if (shader == null)
+            {
+                Debug.LogError($"[ColorReplace] 셰이더를 찾을 수 없습니다: {ColorReplace.SHADER_NAME}");
+                return null;
+            }
+
+            Material newMat = new Material(shader)
+            {
+                name = $"{ColorReplace.SHADER_NAME} (Temp)",
+                hideFlags = HideFlags.DontSave
+            };
+
+            SetRendererMaterial(colorReplace, newMat);
+            return newMat;
+        }
+
+        // ─────────────────────────────────────────────
+        // 머티리얼 저장
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 현재 머티리얼을 새 에셋으로 저장하고 렌더러에 할당
+        /// </summary>
+        private void SaveAsNewMaterial(ColorReplace colorReplace)
+        {
+            Material current = GetRendererMaterial(colorReplace);
+            if (current == null) return;
+
+            Shader shader = Shader.Find(ColorReplace.SHADER_NAME);
+            if (shader == null) return;
+
+            EnsureFolderExists(DEFAULT_SAVE_FOLDER);
+
+            string sanitizedName = SanitizeFileName(colorReplace.gameObject.name);
+            string assetPath = AssetDatabase.GenerateUniqueAssetPath(
+                $"{DEFAULT_SAVE_FOLDER}/{sanitizedName}.mat"
+            );
+
+            // 현재 머티리얼 복사하여 에셋으로 저장
+            Material saved = new Material(current)
+            {
+                name = sanitizedName,
+                hideFlags = HideFlags.None
+            };
+
+            AssetDatabase.CreateAsset(saved, assetPath);
+            AssetDatabase.SaveAssets();
+
+            // 렌더러에 저장된 머티리얼 할당
+            Undo.RecordObject(GetRendererComponent(colorReplace), "Save ColorReplace Material");
+            SetRendererMaterial(colorReplace, saved);
+            EditorUtility.SetDirty(GetRendererComponent(colorReplace));
+
+            // 기존 임시 머티리얼 정리
+            if (!AssetDatabase.Contains(current) && current != null)
+                DestroyImmediate(current);
+
+            Debug.Log($"[ColorReplace] 머티리얼 저장 완료: {assetPath}");
+            EditorGUIUtility.PingObject(saved);
+        }
+
+        // ─────────────────────────────────────────────
+        // 유틸리티
+        // ─────────────────────────────────────────────
+
+        private Material GetRendererMaterial(ColorReplace colorReplace)
+        {
+            var sr = colorReplace.GetComponent<SpriteRenderer>();
+            if (sr != null) return sr.sharedMaterial;
+
+            var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic != null && graphic.material != graphic.defaultMaterial)
+                return graphic.material;
+
+            return null;
+        }
+
+        private void SetRendererMaterial(ColorReplace colorReplace, Material material)
+        {
+            var sr = colorReplace.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                sr.sharedMaterial = material;
+                return;
+            }
+
+            var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic != null)
+            {
+                graphic.material = material;
+            }
+        }
+
+        private Component GetRendererComponent(ColorReplace colorReplace)
+        {
+            var sr = colorReplace.GetComponent<SpriteRenderer>();
+            if (sr != null) return sr;
+            return colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+        }
+
+        private bool IsColorReplaceAsset(Material material)
+        {
+            if (material == null) return false;
+            if (!AssetDatabase.Contains(material)) return false;
+            if (material.shader == null) return false;
+            return material.shader.name == ColorReplace.SHADER_NAME;
+        }
+
+        private void EnsureFolderExists(string folderPath)
+        {
+            if (AssetDatabase.IsValidFolder(folderPath)) return;
+
+            string parent = Path.GetDirectoryName(folderPath).Replace('\\', '/');
+            string folderName = Path.GetFileName(folderPath);
+
+            EnsureFolderExists(parent);
+            AssetDatabase.CreateFolder(parent, folderName);
+        }
+
+        private string SanitizeFileName(string name)
+        {
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name;
+        }
+
+        // ─────────────────────────────────────────────
+        // HSV 다이어그램
+        // ─────────────────────────────────────────────
 
         private void DrawImprovedHSVDiagram(float minRange, float maxRange)
         {
@@ -222,7 +410,7 @@ namespace CAT.Effects
         {
             Color overlayColor = new Color(0.1f, 0.1f, 0.1f, 0.7f);
 
-            if (maxRange < minRange) // wrap-around
+            if (maxRange < minRange)
             {
                 Rect middleOverlay = new Rect(
                     rect.x + rect.width * maxRange,
@@ -232,26 +420,21 @@ namespace CAT.Effects
                 );
                 EditorGUI.DrawRect(middleOverlay, overlayColor);
             }
-            else // 일반 케이스
+            else
             {
                 if (minRange > 0)
                 {
                     Rect leftOverlay = new Rect(
-                        rect.x,
-                        rect.y,
-                        rect.width * minRange,
-                        rect.height
+                        rect.x, rect.y,
+                        rect.width * minRange, rect.height
                     );
                     EditorGUI.DrawRect(leftOverlay, overlayColor);
                 }
-
                 if (maxRange < 1)
                 {
                     Rect rightOverlay = new Rect(
-                        rect.x + rect.width * maxRange,
-                        rect.y,
-                        rect.width * (1f - maxRange),
-                        rect.height
+                        rect.x + rect.width * maxRange, rect.y,
+                        rect.width * (1f - maxRange), rect.height
                     );
                     EditorGUI.DrawRect(rightOverlay, overlayColor);
                 }
@@ -291,6 +474,8 @@ namespace CAT.Effects
 
             serializedObject.ApplyModifiedProperties();
             EditorUtility.SetDirty(target);
+
+            ApplyToMaterial();
         }
     }
 #endif

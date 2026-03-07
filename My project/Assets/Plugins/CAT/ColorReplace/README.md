@@ -13,7 +13,6 @@
 - [모바일 최적화](#모바일-최적화)
 - [사용법](#사용법)
 - [인스펙터 가이드](#인스펙터-가이드)
-- [런타임 API](#런타임-api)
 - [주의사항](#주의사항)
 
 ---
@@ -34,52 +33,37 @@ RGB 픽셀을 HSV 공간으로 변환 후, 지정한 Hue 범위에 속하는 픽
 ```
 ColorReplace/
 ├── Scripts/
-│   └── ColorReplace.cs          # 메인 컴포넌트
+│   └── ColorReplace.cs          # 에디터 전용 워크플로 컴포넌트
 ├── Editor/
-│   └── ColorReplaceEditor.cs    # 커스텀 인스펙터
-└── Shader/
-    └── CAT_ColorReplace.shader  # HSV 색상 변환 셰이더
+│   └── ColorReplaceEditor.cs    # 커스텀 인스펙터 (머티리얼 저장/갱신/프리뷰)
+├── Shader/
+│   └── CAT_ColorReplace.shader  # HSV 색상 변환 셰이더
+└── Materials/                   # 저장된 머티리얼 에셋 (자동 생성)
 ```
 
 ---
 
 ## 핵심 구현
 
-### Material 공유 전략
+### Material 에셋 저장 방식
 
-Draw Call을 최소화하기 위해 두 가지 방식으로 Material을 공유합니다.
+빌드 시 셰이더 누락을 방지하기 위해 **에디터에서 Material을 에셋으로 직접 저장**합니다.
 
-#### SpriteRenderer
+#### 워크플로
 
-- **Material**: 텍스처 단위로 공유 (`Dictionary<textureId, Material>`)
-- **HSV 값**: `MaterialPropertyBlock`으로 오브젝트별 개별 설정
-- 같은 텍스처를 쓰는 모든 SpriteRenderer가 동일 Material을 참조하면서도, 각자 다른 HSV 값을 가질 수 있어 **GPU 인스턴싱·배칭이 유지**됩니다
+1. ColorReplace 컴포넌트를 오브젝트에 추가
+2. 인스펙터에서 HSV 옵션 조정
+3. "프리뷰" 버튼으로 실시간 확인
+4. **"머티리얼 저장"** 버튼으로 Material 에셋 생성 → 렌더러에 자동 할당
+5. 옵션 변경 후 **"머티리얼 갱신"** 버튼으로 기존 에셋 업데이트
 
-```csharp
-// 텍스처가 같으면 Material 공유
-if (!spriteMaterialCache.TryGetValue(textureId, out currentMaterial))
-{
-    currentMaterial = new Material(shader) { ... };
-    spriteMaterialCache[textureId] = currentMaterial;
-}
-// 개별 HSV 값은 PropertyBlock으로 설정
-spriteRenderer.SetPropertyBlock(propertyBlock);
-```
+#### 빌드 안전성
 
-#### UI Graphic (Image / RawImage)
-
-- UI는 `MaterialPropertyBlock`을 지원하지 않으므로, **(텍스처 ID + HSV 설정값)의 해시**로 Material을 캐싱합니다
-- 완전히 동일한 설정의 UI 컴포넌트들은 하나의 Material을 공유합니다
-
-```csharp
-// 텍스처 + HSV 설정이 모두 같으면 Material 공유
-int cacheKey = hash(textureId, hsvRangeMin, hsvRangeMax, hsvAdjust);
-if (!uiMaterialCache.TryGetValue(cacheKey, out currentMaterial))
-{
-    currentMaterial = new Material(shader) { ... };
-    uiMaterialCache[cacheKey] = currentMaterial;
-}
-```
+| 항목 | 설명 |
+|------|------|
+| 셰이더 참조 | Material 에셋이 셰이더를 직접 참조 → 빌드 시 자동 포함 |
+| Addressable | 머티리얼이 셰이더를 의존성으로 포함 → 번들에 자동 포함 |
+| `Shader.Find()` | 런타임에서 호출하지 않음 → 셰이더 스트리핑 영향 없음 |
 
 ### 셰이더 구조
 
@@ -118,18 +102,7 @@ return lerp(normalCase, wrappedCase, isWrapped);
 | `half` precision | 모든 색상 연산에 16비트 사용 (float는 vertex 좌표/UV만) |
 | 분기문 제거 | `if` 대신 `step()`, `lerp()`, `saturate()` 수학 연산 사용 |
 | `CGINCLUDE` 공유 | 두 SubShader가 동일 함수를 중복 컴파일하지 않음 |
-| `[PerRendererData]` | PropertyBlock 방식으로 배칭 유지 지원 |
 | `#pragma target 2.0` | 구형 모바일 GPU까지 호환 |
-
-### C# 런타임
-
-| 기법 | 내용 |
-|------|------|
-| Material 공유 | 같은 설정이면 새 Material 생성 없이 캐시에서 반환 |
-| PropertyBlock 재사용 | Awake에서 생성, 매 프레임 내용만 갱신 |
-| Static Property ID | `Shader.PropertyToID()` 결과를 `static readonly`로 캐싱 |
-| 컴포넌트 캐싱 | `GetComponent<T>()`는 `Awake/Start`에서 한 번만 호출 |
-| `HideFlags.DontSave` | 런타임 생성 Material에 설정하여 에디터 직렬화 오류 방지 |
 
 ---
 
@@ -141,29 +114,13 @@ return lerp(normalCase, wrappedCase, isWrapped);
 2. 인스펙터에서 **Target Color**를 교체할 색상으로 설정
 3. **Similar** 버튼으로 HSV 범위 자동 설정
 4. **HSV Adjust**에서 H(색조)·S(채도)·V(명도)·A(알파) 조정값 입력
+5. **프리뷰** 버튼으로 결과 확인
+6. **머티리얼 저장** 버튼으로 Material 에셋 생성 및 렌더러에 할당
 
-### 런타임 코드
+### 머티리얼 갱신
 
-```csharp
-var cr = GetComponent<ColorReplace>();
-
-// HSV 범위 직접 설정
-cr.HSVRangeMin = 0.95f;
-cr.HSVRangeMax = 0.05f;  // wrap-around (빨간색)
-
-// HSV 조정값 설정 (H, S, V, A)
-cr.HSVAdjust = new Vector4(0.5f, 0f, 0f, 0f);  // 색조를 0.5(반바퀴) 이동
-
-// 색상 기반 자동 범위 설정 (tolerance = 허용 오차)
-cr.SetHSVRangeFromColor(Color.red, tolerance: 0.05f);
-```
-
-### 씬 전환 시 캐시 정리
-
-```csharp
-// 씬 전환 전 호출하여 Material 캐시 해제 (메모리 누수 방지)
-ColorReplace.ClearMaterialCache();
-```
+이미 저장된 머티리얼이 할당된 상태에서 HSV 값을 변경한 후:
+- **머티리얼 갱신** 버튼을 클릭하면 기존 에셋의 프로퍼티가 업데이트됩니다
 
 ---
 
@@ -202,44 +159,34 @@ ColorReplace.ClearMaterialCache();
 
 | 버튼 | 설명 |
 |------|------|
+| 머티리얼 저장 | 현재 HSV 설정으로 Material 에셋 생성 후 렌더러에 할당 |
+| 머티리얼 갱신 | 이미 저장된 머티리얼의 HSV 값을 현재 설정으로 업데이트 |
+| 프리뷰 / 프리뷰 해제 | 임시 머티리얼로 실시간 미리보기 토글 |
 | Reset | 모든 값을 기본값(Min=0, Max=1, Adjust=0)으로 초기화 |
-| Clear Cache | (플레이 모드 전용) Material 캐시를 즉시 비움 |
 
 ---
 
 ## 주의사항
 
-### SpriteRenderer vs UI 동작 차이
+### 에디터 전용 컴포넌트
 
-| | SpriteRenderer | UI Graphic |
-|---|---|---|
-| Material 공유 기준 | 텍스처 동일 여부 | 텍스처 + HSV 설정 모두 동일 |
-| 개별 값 설정 방식 | MaterialPropertyBlock | 별도 Material 생성 |
-| HSV 값 변경 비용 | 매우 낮음 (PropertyBlock 갱신) | 새 Material 생성 가능성 있음 |
+- ColorReplace 컴포넌트는 **에디터 워크플로 도구**입니다
+- 런타임에서는 저장된 Material 에셋이 렌더러에 직접 할당되어 있으므로 컴포넌트가 불필요합니다
+- 빌드 시 컴포넌트를 제거해도 무방합니다
 
-UI의 경우 런타임에 HSV 값을 자주 바꾸면 고유한 설정마다 새 Material이 생성됩니다.
-**빈번한 런타임 변경이 필요하다면 SpriteRenderer 방식을 권장합니다.**
+### 머티리얼 저장 경로
+
+- 기본 경로: `Assets/Plugins/CAT/ColorReplace/Materials/`
+- 오브젝트 이름으로 파일명이 결정됩니다
+- 동일 이름이 존재하면 자동으로 넘버링됩니다 (예: `MyObject 1.mat`)
 
 ### 아틀라스(Sprite Atlas) 사용 시
 
-- 아틀라스 스프라이트는 아틀라스 텍스처 ID로 캐시 키가 결정됩니다
-- 같은 아틀라스의 서로 다른 스프라이트라도 **동일한 Material을 공유**합니다
+- 아틀라스 스프라이트도 저장된 머티리얼이 셰이더를 직접 참조하므로 빌드에 안전합니다
 - UV는 셰이더가 스프라이트별 UV를 그대로 사용하므로 정상 동작합니다
-
-### ClearMaterialCache() 호출 시점
-
-- 씬 전환 후 이전 씬의 텍스처가 해제되면 캐시 내 Material의 텍스처 참조가 무효화됩니다
-- `SceneManager.sceneUnloaded` 이벤트 또는 씬 전환 직전에 `ClearMaterialCache()`를 호출하세요
-
-```csharp
-void OnDestroy()
-{
-    ColorReplace.ClearMaterialCache();
-}
-```
 
 ### 에디터에서의 동작
 
-- 씬에 배치된 오브젝트에서만 초기화됩니다 (`gameObject.scene.IsValid()` 체크)
-- 프리팹 에셋을 직접 편집할 때는 Material이 적용되지 않습니다 (씬에 배치 후 확인)
-- `OnValidate()`에서 인스펙터 값 변경 시 자동으로 Material에 반영됩니다
+- 프리뷰 기능은 임시 Material(`HideFlags.HideAndDontSave`)을 사용합니다
+- 프리뷰 해제 시 원본 머티리얼로 자동 복원됩니다
+- 인스펙터를 닫으면 프리뷰가 자동으로 해제됩니다
