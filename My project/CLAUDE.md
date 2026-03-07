@@ -199,6 +199,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `TMPOutGlow.cs` - Inner Glow 패턴
 - `TMPAnimation.cs` - 애니메이션 통합 패턴
 
+### 🔴 셰이더 마스킹 대응 필수 가이드라인 (SoftMask / SoftMaskLight)
+
+**UI용 셰이더를 새로 만들거나 수정할 때 반드시 확인해야 합니다.**
+
+이 프로젝트는 두 가지 소프트 마스크 시스템이 공존합니다:
+- **SoftMaskLight** (자체 개발): `Assets/Plugins/CAT/SoftMaskLight/`
+- **mob-sakai SoftMask** (패키지): `com.coffee.softmask-for-ugui`
+
+#### 핵심 원칙: 새 UI 셰이더 생성 시 체크리스트
+
+1. **SoftMaskLight Hidden 변형 셰이더 생성** (필수)
+   - 파일: `Hidden/{원본셰이더경로} (SoftMaskLight)`
+   - 원본 셰이더를 복사 + `#define _CAT_SOFTMASK 1` + `#include "SoftMaskLight_Core.cginc"`
+   - v2f에 `CAT_SOFTMASK_COORDS(N, N+1)`, vert에 `CAT_SOFTMASK_VERT`, frag에 `CAT_SOFTMASK_FRAG`
+   - 마스크 Properties 추가: `_MaskTex`, `_Softness`, `_InvertMask`, `_MaskWorldToUV`, `_MaskUVRect`, `_MaskSliceBorder`, `_MaskSliceInnerUV` + 중첩용 `*2` 버전
+   - 키워드: `_SOFTMASK_NESTED`, `_SOFTMASK_SLICE`, `_SOFTMASK_NESTED_SLICE` (multi_compile_local)
+   - 상세 가이드: `Assets/Plugins/CAT/SoftMaskLight/README.md` 참조
+
+2. **mob-sakai SoftMaskable 변형 셰이더 생성** (필수, 파티클/커스텀 블렌드 모드 셰이더)
+   - 파일: `Hidden/{원본셰이더경로} (SoftMaskable)`
+   - 원본 셰이더를 복사 + `SOFTMASKABLE` shader_feature + `SoftMask.cginc` include
+   - v2f에 `float4 worldPosition : TEXCOORD_N`, frag에 `SoftMask(IN.vertex, IN.worldPosition, col.a)`
+   - **중요**: 블렌드 모드를 반드시 원본과 동일하게 유지 (Additive: `Blend SrcAlpha One`, AlphaBlend: `Blend SrcAlpha OneMinusSrcAlpha`)
+   - 안 만들면 mob-sakai가 `Hidden/UI/Default (SoftMaskable)`로 폴백 → 블렌드 모드 깨짐
+
+3. **셰이더 등록** (빌드에서 누락 방지)
+   - `SoftMaskLightInstaller.cs`의 `HiddenShaderNames` 배열에 두 변형 모두 추가
+   - 에디터에서 `Tools > SoftMaskLight > Refresh Settings` 실행
+   - `SoftMaskLightSettings.asset` 인스펙터에서 셰이더 목록 확인
+
+4. **UIEffect 셰이더 특수 처리** (해당 시)
+   - UIEffect는 `shader_feature_local_fragment` 기반이므로 Hidden 셰이더 교체가 아닌 **키워드 방식** 사용
+   - `#pragma multi_compile_local _ _CAT_SOFTMASK` 추가
+   - `UIEffectSoftMaskLightProxy`가 키워드를 활성화하여 마스킹 적용
+
+#### 변형 셰이더 이름 규칙
+
+| 시스템 | 접미사 | 예시 |
+|--------|--------|------|
+| SoftMaskLight | `(SoftMaskLight)` | `Hidden/CAT/Effects/ColorReplace (SoftMaskLight)` |
+| mob-sakai SoftMask | `(SoftMaskable)` | `Hidden/SoftMaskLight/Particles/UIAdditive (SoftMaskable)` |
+
+#### 기존 변형 셰이더 위치 참고
+
+```
+SoftMaskLight 변형:  Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/
+mob-sakai 변형:      Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/ (파티클)
+ColorReplace 변형:   Assets/Plugins/CAT/ColorReplace/Shader/
+VFX 커스텀 변형:     Assets/VFX_Work/Shader/Hidden/
+```
+
 ### Git 워크플로우
 
 - **Main Branch**: `main`

@@ -238,7 +238,10 @@ namespace CAT.Effects
             Material current = GetRendererMaterial(colorReplace);
 
             // 이미 ColorReplace 셰이더 머티리얼이 할당되어 있으면 그대로 사용
-            if (current != null && current.shader != null && current.shader.name == ColorReplace.SHADER_NAME)
+            // SoftMaskLight Hidden 변형 셰이더도 유효한 ColorReplace 머티리얼로 인식
+            if (current != null && current.shader != null &&
+                (current.shader.name == ColorReplace.SHADER_NAME ||
+                 current.shader.name.Contains("ColorReplace")))
                 return current;
 
             // 없으면 새로 생성하여 할당
@@ -348,7 +351,8 @@ namespace CAT.Effects
             if (material == null) return false;
             if (!AssetDatabase.Contains(material)) return false;
             if (material.shader == null) return false;
-            return material.shader.name == ColorReplace.SHADER_NAME;
+            return material.shader.name == ColorReplace.SHADER_NAME ||
+                   material.shader.name.Contains("ColorReplace");
         }
 
         private void EnsureFolderExists(string folderPath)
