@@ -40,6 +40,10 @@ namespace CAT.Effects
             Yoyo
         }
 
+        [Header("머티리얼")]
+        [SerializeField, Tooltip("빌드 시 셰이더 스트리핑 방지용 저장된 머티리얼 에셋. 설정하면 Shader.Find 대신 이 머티리얼을 복제하여 사용합니다.")]
+        private Material _savedMaterial;
+
         [Header("타이밍")]
         [SerializeField, Min(0.01f)] private float _duration = 1.5f;
         [SerializeField] private AnimationCurve _movementCurve = AnimationCurve.Linear(0f, 0f, 1f, 1f);
@@ -76,6 +80,24 @@ namespace CAT.Effects
         public float Softness { get => _softness; set => _softness = Mathf.Clamp01(value); }
         public float BurnBias { get => _burnBias; set => _burnBias = Mathf.Clamp01(value); }
         public float BlendStrength { get => _blendStrength; set => _blendStrength = Mathf.Clamp(value, 0.5f, 2.5f); }
+
+        /// <summary>
+        /// 에디터에서 저장된 머티리얼 에셋에 접근하기 위한 프로퍼티
+        /// </summary>
+        public Material SavedMaterial
+        {
+            get => _savedMaterial;
+            set => _savedMaterial = value;
+        }
+
+        /// <summary>
+        /// 주어진 머티리얼이 UIShining 셰이더를 사용하는지 확인
+        /// </summary>
+        public static bool IsUIShiningShader(Material material)
+        {
+            if (material == null || material.shader == null) return false;
+            return material.shader.name == SHADER_NAME;
+        }
 
         private Graphic _graphic;
         private Material _material;
@@ -242,6 +264,27 @@ namespace CAT.Effects
             ReInitializeMaterial();
         }
 
+        /// <summary>
+        /// 머티리얼을 재초기화 (에디터에서 _savedMaterial 변경 시 호출)
+        /// </summary>
+        public void ResetMaterial()
+        {
+            if (_graphic == null) return;
+            // 기존 머티리얼 정리
+            if (_graphic != null && _originalMaterial != null)
+                _graphic.material = _originalMaterial;
+            if (_material != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_material);
+                else
+                    DestroyImmediate(_material);
+            }
+            _material = null;
+            // 재초기화
+            ReInitializeMaterial();
+        }
+
         /// <summary>Material 재초기화</summary>
         private void ReInitializeMaterial()
         {
@@ -253,11 +296,23 @@ namespace CAT.Effects
             Texture tex = GetUITexture();
             if (_material == null)
             {
-                _material = new Material(shader)
+                // 저장된 머티리얼이 있으면 복제하여 사용 (빌드 시 셰이더 스트리핑 방지)
+                if (_savedMaterial != null)
                 {
-                    name = $"{SHADER_NAME} (Instance)",
-                    hideFlags = HideFlags.DontSave
-                };
+                    _material = new Material(_savedMaterial)
+                    {
+                        name = $"{SHADER_NAME} (Instance)",
+                        hideFlags = HideFlags.DontSave
+                    };
+                }
+                else
+                {
+                    _material = new Material(shader)
+                    {
+                        name = $"{SHADER_NAME} (Instance)",
+                        hideFlags = HideFlags.DontSave
+                    };
+                }
             }
             if (tex != null)
                 _material.SetTexture(PropMainTex, tex);
