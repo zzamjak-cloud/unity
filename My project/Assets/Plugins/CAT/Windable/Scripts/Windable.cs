@@ -15,6 +15,7 @@ namespace CAT.Effects
     public class Windable : MonoBehaviour
     {
         public static readonly string SHADER_NAME = "CAT/Effects/Windable";
+        private const string DEFAULT_NOISE_RESOURCE = "Noise";
 
         // 셰이더 프로퍼티 ID 캐싱 (문자열 기반 호출 방지)
         private static readonly int PropCustomTime = Shader.PropertyToID("_CustomTime");
@@ -33,6 +34,10 @@ namespace CAT.Effects
         private static readonly int PropSpriteUVRect = Shader.PropertyToID("_SpriteUVRect");
         private static readonly int PropSpritePivot = Shader.PropertyToID("_SpritePivot");
         private static readonly int PropNormalizedWindDir = Shader.PropertyToID("_NormalizedWindDir");
+
+        [Header("머티리얼")]
+        [SerializeField, Tooltip("빌드 시 셰이더 스트리핑 방지용 저장된 머티리얼 에셋. 설정하면 Shader.Find 대신 이 머티리얼을 복제하여 사용합니다.")]
+        private Material _savedMaterial;
 
         [Header("컴포넌트 타입")]
         [SerializeField] private WindableType _windableType = WindableType.Sprite;
@@ -84,6 +89,24 @@ namespace CAT.Effects
 
         // 프로퍼티
         public WindableType WindableTypeValue => _windableType;
+
+        /// <summary>
+        /// 에디터에서 저장된 머티리얼 에셋에 접근하기 위한 프로퍼티
+        /// </summary>
+        public Material SavedMaterial
+        {
+            get => _savedMaterial;
+            set => _savedMaterial = value;
+        }
+
+        /// <summary>
+        /// 주어진 머티리얼이 Windable 셰이더를 사용하는지 확인
+        /// </summary>
+        public static bool IsWindableShader(Material material)
+        {
+            if (material == null || material.shader == null) return false;
+            return material.shader.name == SHADER_NAME;
+        }
 
         private void Awake()
         {
@@ -218,17 +241,29 @@ namespace CAT.Effects
 
             if (_material == null)
             {
-                Shader shader = Shader.Find(SHADER_NAME);
-                if (shader == null)
+                // 저장된 머티리얼이 있으면 복제하여 사용 (빌드 시 셰이더 스트리핑 방지)
+                if (_savedMaterial != null)
                 {
-                    Debug.LogError($"[Windable] 쉐이더를 찾을 수 없습니다: {SHADER_NAME}");
-                    return;
+                    _material = new Material(_savedMaterial)
+                    {
+                        hideFlags = HideFlags.DontSave
+                    };
                 }
-
-                _material = new Material(shader)
+                else
                 {
-                    hideFlags = HideFlags.DontSave
-                };
+                    // 폴백: Shader.Find로 셰이더 검색
+                    Shader shader = Shader.Find(SHADER_NAME);
+                    if (shader == null)
+                    {
+                        Debug.LogError($"[Windable] 쉐이더를 찾을 수 없습니다: {SHADER_NAME}");
+                        return;
+                    }
+
+                    _material = new Material(shader)
+                    {
+                        hideFlags = HideFlags.DontSave
+                    };
+                }
 
                 // 타입에 따라 머티리얼 할당
                 if (_windableType == WindableType.Sprite && _spriteRenderer != null)
@@ -247,6 +282,12 @@ namespace CAT.Effects
 
             // 머티리얼이 새로 생성되었으므로 _lastActiveMaterial 초기화
             _lastActiveMaterial = null;
+
+            // 노이즈 텍스쳐가 없으면 디폴트 리소스에서 로드
+            if (_NoiseTex == null)
+            {
+                _NoiseTex = Resources.Load<Texture>(DEFAULT_NOISE_RESOURCE);
+            }
 
             UpdateMaterialProperties();
         }
@@ -406,6 +447,15 @@ namespace CAT.Effects
         }
 
         /// <summary>
+        /// 머티리얼을 재초기화 (에디터에서 _savedMaterial 변경 시 호출)
+        /// </summary>
+        public void ResetMaterial()
+        {
+            CleanupMaterial();
+            SetupMaterial();
+        }
+
+        /// <summary>
         /// 타입을 수동으로 변경 (에디터용)
         /// </summary>
         public void ChangeWindableType(WindableType newType)
@@ -426,7 +476,13 @@ namespace CAT.Effects
         private void OnValidate()
         {
             if (Application.isPlaying) return;
-            
+
+            // 노이즈 텍스쳐가 없으면 디폴트 리소스에서 로드
+            if (_NoiseTex == null)
+            {
+                _NoiseTex = Resources.Load<Texture>(DEFAULT_NOISE_RESOURCE);
+            }
+
             ValidateComponents();
             if (_material != null)
             {
