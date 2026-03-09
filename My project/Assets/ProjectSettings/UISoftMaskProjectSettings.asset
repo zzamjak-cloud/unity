@@ -20,6 +20,16 @@ MonoBehaviour:
     m_OptionalShaders:
     - key: Hidden/UI/Default (UIEffect)
       value: Hidden/UI/Default (UIEffect)
+    - key: CAT/Effects/ColorReplace
+      value: Hidden/CAT/Effects/ColorReplace (SoftMaskable)
+    - key: SoftMaskLight/Particles/UIAdditive
+      value: Hidden/SoftMaskLight/Particles/UIAdditive (SoftMaskable)
+    - key: SoftMaskLight/Particles/UIAlphaBlend
+      value: Hidden/SoftMaskLight/Particles/UIAlphaBlend (SoftMaskable)
+    - key: CAT/Effects/UIShining
+      value: Hidden/CAT/Effects/UIShining (SoftMaskable)
+    - key: CAT/Effects/Windable
+      value: Hidden/CAT/Effects/Windable (SoftMaskable)
     m_Asset: {fileID: 5559688424857060880}
     m_ErrorOnUnregisteredVariant: 0
     m_UnregisteredVariants: []
@@ -30,4 +40,61 @@ ShaderVariantCollection:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ShaderVariants
-  m_Shaders: {}
+  m_Shaders:
+  - first: {fileID: 4800000, guid: 96246b1ead49a4c5a996fd477bc5a117, type: 3}
+    second:
+      variants:
+      - keywords: EDGE_SHINY SOFTMASKABLE TRANSITION_SHINY
+        passType: 0
+  - first: {fileID: 4800000, guid: 9839189d918374a318d397a86e90aa73, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
+      - keywords: SOFTMASKABLE
+        passType: 0
+  - first: {fileID: 4800000, guid: 2933b413a51fc4ff3a83c7ef4177ae84, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
+  - first: {fileID: 4800000, guid: e94e1f7424a0a43ac8b7ed672319bb4b, type: 3}
+    second:
+      variants:
+      - keywords: OUTLINE_ON SOFTMASKABLE UNDERLAY_ON
+        passType: 0
+      - keywords: SOFTMASKABLE
+        passType: 0
+      - keywords: SOFTMASKABLE UNDERLAY_ON
+        passType: 0
+  - first: {fileID: 4800000, guid: 28fb71e5a98334466b1525c4b90f75d6, type: 3}
+    second:
+      variants:
+      - keywords: EDGE_SHINY SOFTMASKABLE
+        passType: 0
+  - first: {fileID: 4800000, guid: 6eb8144a29d17410a9f281346c301651, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
+      - keywords: SOFTMASKABLE
+        passType: 0
+  - first: {fileID: 4800000, guid: bd947e278ff0546b2a7f319513fda7bb, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
+      - keywords: SOFTMASKABLE
+        passType: 0
+  - first: {fileID: 4800000, guid: 9dbffd92bb333471887f50f8ae1d620c, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
+      - keywords: SOFTMASKABLE
+        passType: 0
+  - first: {fileID: 4800000, guid: 58adf7c4dfcf24472927d6165beb5fec, type: 3}
+    second:
+      variants:
+      - keywords: 
+        passType: 0
