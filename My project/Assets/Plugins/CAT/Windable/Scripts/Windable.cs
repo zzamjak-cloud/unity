@@ -68,11 +68,8 @@ namespace CAT.Effects
             {
                 if (_windableType == WindableType.UI && _graphic != null)
                 {
-                    // 1) SoftMaskLight: _graphic.material을 직접 교체
-                    Material graphicMat = _graphic.material;
-                    if (graphicMat != null && graphicMat != _material)
-                        return graphicMat;
-                    // 2) Unity Mask / SoftMaskable: CanvasRenderer에 이미 설정된 최종 머티리얼 참조
+                    // Unity Mask / SoftMaskable / SoftMaskLight: CanvasRenderer의 최종 머티리얼 참조
+                    // (SoftMaskLight v2.1: IMaterialModifier 프록시로 graphic.m_Material 미수정)
                     var cr = _graphic.canvasRenderer;
                     if (cr != null)
                     {
@@ -242,15 +239,9 @@ namespace CAT.Effects
                 {
                     _graphic.material = _material;
 
-                    // 에디터 비재생 모드에서 SoftMaskLight가 이미 자식을 처리한 경우,
-                    // _graphic.material 교체로 마스킹이 해제되므로 재처리 요청
-#if UNITY_EDITOR
-                    if (!Application.isPlaying)
-                    {
-                        var sml = GetComponentInParent<SoftMaskLight.SoftMaskLight>();
-                        if (sml != null) sml.InvalidateChild(_graphic);
-                    }
-#endif
+                    // Material 교체 후 IMaterialModifier 체인 재구축 요청
+                    // (SoftMaskLight 프록시가 새 baseMaterial에 대한 프록시 Material을 자동 생성)
+                    _graphic.SetMaterialDirty();
                 }
             }
 

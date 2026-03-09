@@ -376,14 +376,11 @@ namespace CAT.Effects
             get
             {
                 if (_graphic == null) return _material;
-                // 1) SoftMaskLight: _graphic.material을 직접 교체
-                Material graphicMat = _graphic.material;
-                if (graphicMat != null && graphicMat != _material)
-                    return graphicMat;
-                // 2) Unity Mask / SoftMaskable: CanvasRenderer에 이미 설정된 최종 머티리얼 참조
-                //    materialForRendering 대신 canvasRenderer.GetMaterial을 사용하여
-                //    SoftMaskable.CopyPropertiesFromMaterial이 StencilMaterial 캐시에서
-                //    stale 값을 복사하는 문제를 방지
+                // Unity Mask / SoftMaskable / SoftMaskLight: CanvasRenderer의 최종 머티리얼 참조
+                // (SoftMaskLight v2.1: IMaterialModifier 프록시로 graphic.m_Material 미수정)
+                // materialForRendering 대신 canvasRenderer.GetMaterial을 사용하여
+                // SoftMaskable.CopyPropertiesFromMaterial이 StencilMaterial 캐시에서
+                // stale 값을 복사하는 문제를 방지
                 var cr = _graphic.canvasRenderer;
                 if (cr != null)
                 {
