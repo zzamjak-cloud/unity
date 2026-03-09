@@ -84,6 +84,7 @@ namespace CAT.Effects
         private bool _forward = true;
         private float _intervalRemaining;
         private bool _meshDirtyNeeded;
+        private bool _propertiesDirty = true;
         private Vector4 _lastSpriteUVRect;
 
         // 기존 직렬화 호환용 (사용하지 않음 — 에디터 테스트는 UIShiningEditor가 직접 구동)
@@ -109,6 +110,8 @@ namespace CAT.Effects
             if (ActiveMaterial == null || _graphic == null) return;
 
             SetSpriteUVRect();
+            // 에디터 테스트 중에는 항상 전체 프로퍼티 갱신 (인스펙터 변경 즉시 반영)
+            _propertiesDirty = true;
 
             if (_intervalRemaining > 0f)
             {
@@ -270,6 +273,8 @@ namespace CAT.Effects
             _graphic.SetVerticesDirty();
             // Material 설정 후 Image가 mesh를 다시 생성할 수 있으므로, Update에서 한 번 더 SetVerticesDirty 호출
             _meshDirtyNeeded = true;
+            // Material 재초기화 시 모든 프로퍼티 재전송 필요
+            _propertiesDirty = true;
         }
 
         private void OnDisable()
@@ -395,22 +400,38 @@ namespace CAT.Effects
             if (_material == null) return;
 
             float t = Mathf.Clamp01(_rawProgress);
-            float progress = _movementCurve != null && _movementCurve.keys.Length > 0
+            // .length는 GC 없이 키프레임 수를 반환 (.keys는 배열을 새로 복사하여 GC 발생)
+            float progress = _movementCurve != null && _movementCurve.length > 0
                 ? _movementCurve.Evaluate(t)
                 : t;
 
-            // 기본 머티리얼에 항상 설정 (IMaterialModifier 체인 재구축 시 소스)
-            WriteShineProperties(_material, progress);
-
-            // 렌더링 머티리얼이 다르면 (Mask/SoftMaskable/SoftMaskLight) 거기에도 설정
-            Material active = ActiveMaterial;
-            if (active != null && active != _material)
-                WriteShineProperties(active, progress);
-
-            SetSpriteUVRect();
+            // dirty flag: 정적 프로퍼티가 변경된 경우에만 전체 갱신, 아니면 _Progress만 전송
+            if (_propertiesDirty)
+            {
+                WriteAllProperties(_material, progress);
+                Material active = ActiveMaterial;
+                if (active != null && active != _material)
+                    WriteAllProperties(active, progress);
+                _propertiesDirty = false;
+            }
+            else
+            {
+                WriteProgressOnly(_material, progress);
+                Material active = ActiveMaterial;
+                if (active != null && active != _material)
+                    WriteProgressOnly(active, progress);
+            }
+            // SetSpriteUVRect()는 Update()에서 이미 호출되므로 여기서 중복 호출하지 않음
         }
 
-        private void WriteShineProperties(Material target, float progress)
+        /// <summary>_Progress만 전송 (매 프레임 변하는 값)</summary>
+        private void WriteProgressOnly(Material target, float progress)
+        {
+            target.SetFloat(PropProgress, progress);
+        }
+
+        /// <summary>모든 셰이더 프로퍼티를 전송 (정적 프로퍼티 포함)</summary>
+        private void WriteAllProperties(Material target, float progress)
         {
             target.SetFloat(PropProgress, progress);
             target.SetFloat(PropWidthStart, _widthStart);
@@ -480,6 +501,8 @@ namespace CAT.Effects
         #if UNITY_EDITOR
         private void OnValidate()
         {
+            // 에디터에서 값 변경 시 모든 프로퍼티 재전송 필요
+            _propertiesDirty = true;
             // 에디터에서 값 변경 시 메시 재구축 및 Material Property 갱신
             if (_graphic != null && !Application.isPlaying)
             {

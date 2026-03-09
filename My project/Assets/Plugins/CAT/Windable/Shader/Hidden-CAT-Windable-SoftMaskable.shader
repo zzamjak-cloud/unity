@@ -24,6 +24,7 @@ Shader "Hidden/CAT/Effects/Windable (SoftMaskable)"
 
         [HideInInspector] _SpriteUVRect ("Sprite UV Rect", Vector) = (0, 0, 1, 1)
         [HideInInspector] _SpritePivot ("Sprite Pivot", Vector) = (0.5, 0.5, 0, 0)
+        [HideInInspector] _NormalizedWindDir ("Normalized Wind Dir", Vector) = (1, 0, 0, 0)
 
         [HideInInspector] _StencilComp ("Stencil Comparison", Float) = 8
         [HideInInspector] _Stencil ("Stencil ID", Float) = 0
@@ -111,6 +112,7 @@ Shader "Hidden/CAT/Effects/Windable (SoftMaskable)"
             float4 _SpriteUVRect;
             float4 _SpritePivot;
             float _CustomTime;
+            float2 _NormalizedWindDir; // C#에서 사전 계산된 정규화 바람 방향
 
             v2f vert (appdata v)
             {
@@ -148,7 +150,7 @@ Shader "Hidden/CAT/Effects/Windable (SoftMaskable)"
                 float2 noiseSampleUV = (rotatedUV + _WindDirection * timeOffset) * _WindScale;
                 float noiseValue = tex2D(_NoiseTex, noiseSampleUV).r;
                 float windEffect = noiseValue * _WindStrength * 0.1;
-                float2 windOffset = normalize(_WindDirection) * windEffect;
+                float2 windOffset = _NormalizedWindDir * windEffect;
 
                 float2 pivot = _SpritePivot.xy;
                 float2 centeredUV = rotatedUV - pivot;

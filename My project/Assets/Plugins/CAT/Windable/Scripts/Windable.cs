@@ -16,6 +16,24 @@ namespace CAT.Effects
     {
         public static readonly string SHADER_NAME = "CAT/Effects/Windable";
 
+        // 셰이더 프로퍼티 ID 캐싱 (문자열 기반 호출 방지)
+        private static readonly int PropCustomTime = Shader.PropertyToID("_CustomTime");
+        private static readonly int PropRotateUV = Shader.PropertyToID("_RotateUV");
+        private static readonly int PropNoiseTex = Shader.PropertyToID("_NoiseTex");
+        private static readonly int PropWindSpeed = Shader.PropertyToID("_WindSpeed");
+        private static readonly int PropWindStrength = Shader.PropertyToID("_WindStrength");
+        private static readonly int PropWindFrequency = Shader.PropertyToID("_WindFrequency");
+        private static readonly int PropWindDirection = Shader.PropertyToID("_WindDirection");
+        private static readonly int PropClipRect = Shader.PropertyToID("_ClipRect");
+        private static readonly int PropWindScale = Shader.PropertyToID("_WindScale");
+        private static readonly int PropImageOffsetX = Shader.PropertyToID("_ImageOffsetX");
+        private static readonly int PropImageOffsetY = Shader.PropertyToID("_ImageOffsetY");
+        private static readonly int PropImageScale = Shader.PropertyToID("_ImageScale");
+        private static readonly int PropMainTex = Shader.PropertyToID("_MainTex");
+        private static readonly int PropSpriteUVRect = Shader.PropertyToID("_SpriteUVRect");
+        private static readonly int PropSpritePivot = Shader.PropertyToID("_SpritePivot");
+        private static readonly int PropNormalizedWindDir = Shader.PropertyToID("_NormalizedWindDir");
+
         [Header("컴포넌트 타입")]
         [SerializeField] private WindableType _windableType = WindableType.Sprite;
 
@@ -85,6 +103,11 @@ namespace CAT.Effects
             CleanupMaterial();
         }
 
+        private void OnDestroy()
+        {
+            CleanupMaterial();
+        }
+
         private void Update()
         {
             // 에디터 비플레이 모드: 애니메이션 없이 정적 프로퍼티만 동기화
@@ -98,7 +121,7 @@ namespace CAT.Effects
             float time = Time.time;
             // 기본 머티리얼에 항상 설정 (IMaterialModifier 체인 재구축 시 소스)
             if (_material != null)
-                _material.SetFloat("_CustomTime", time);
+                _material.SetFloat(PropCustomTime, time);
             // 렌더링 머티리얼이 다르면 (Mask/SoftMaskable/SoftMaskLight) 거기에도 설정
             Material active = ActiveMaterial;
             if (active != null && active != _material)
@@ -112,7 +135,7 @@ namespace CAT.Effects
                 }
                 else
                 {
-                    active.SetFloat("_CustomTime", time);
+                    active.SetFloat(PropCustomTime, time);
                 }
             }
         }
@@ -231,6 +254,9 @@ namespace CAT.Effects
                 }
             }
 
+            // 머티리얼이 새로 생성되었으므로 _lastActiveMaterial 초기화
+            _lastActiveMaterial = null;
+
             UpdateMaterialProperties();
         }
 
@@ -301,7 +327,7 @@ namespace CAT.Effects
             _MainTex = _spriteRenderer.sprite.texture;
             if (_MainTex == null) return;
 
-            target.SetTexture("_MainTex", _MainTex);
+            target.SetTexture(PropMainTex, _MainTex);
 
             Sprite sprite = _spriteRenderer.sprite;
             Rect r = sprite.textureRect;
@@ -314,13 +340,13 @@ namespace CAT.Effects
                 (r.x + r.width) / t.width,
                 (r.y + r.height) / t.height
             );
-            target.SetVector("_SpriteUVRect", uvRect);
+            target.SetVector(PropSpriteUVRect, uvRect);
 
             // 스프라이트의 피벗을 UV 공간 기준으로 계산
             float pivotX = (r.x + sprite.pivot.x) / t.width;
             float pivotY = (r.y + sprite.pivot.y) / t.height;
             Vector2 spritePivot = new Vector2(pivotX, pivotY);
-            target.SetVector("_SpritePivot", spritePivot);
+            target.SetVector(PropSpritePivot, spritePivot);
         }
 
         /// <summary>
@@ -333,7 +359,7 @@ namespace CAT.Effects
             _MainTex = _graphic.mainTexture;
             if (_MainTex == null) return;
 
-            target.SetTexture("_MainTex", _MainTex);
+            target.SetTexture(PropMainTex, _MainTex);
 
             Vector2 spritePivot = new Vector2(0.5f, 0.5f);
 
@@ -349,7 +375,7 @@ namespace CAT.Effects
                     (r.x + r.width) / t.width,
                     (r.y + r.height) / t.height
                 );
-                target.SetVector("_SpriteUVRect", uvRect);
+                target.SetVector(PropSpriteUVRect, uvRect);
 
                 float pivotX = (r.x + sprite.pivot.x) / t.width;
                 float pivotY = (r.y + sprite.pivot.y) / t.height;
@@ -357,10 +383,10 @@ namespace CAT.Effects
             }
             else
             {
-                target.SetVector("_SpriteUVRect", new Vector4(0, 0, 1, 1));
+                target.SetVector(PropSpriteUVRect, new Vector4(0, 0, 1, 1));
             }
 
-            target.SetVector("_SpritePivot", spritePivot);
+            target.SetVector(PropSpritePivot, spritePivot);
         }
 
         /// <summary>
@@ -368,18 +394,24 @@ namespace CAT.Effects
         /// </summary>
         private void SetCommonMaterialProperties(Material target, float customTime)
         {
-            target.SetFloat("_CustomTime", customTime);
-            target.SetFloat("_RotateUV", _RotateUV);
-            target.SetTexture("_NoiseTex", _NoiseTex);
-            target.SetFloat("_WindSpeed", _WindSpeed);
-            target.SetFloat("_WindStrength", _WindStrength);
-            target.SetFloat("_WindFrequency", _WindFrequency);
-            target.SetVector("_WindDirection", _WindDirection);
-            target.SetVector("_ClipRect", _ClipRect);
-            target.SetFloat("_WindScale", _WindScale);
-            target.SetFloat("_ImageOffsetX", _ImageOffsetX);
-            target.SetFloat("_ImageOffsetY", _ImageOffsetY);
-            target.SetFloat("_ImageScale", _ImageScale);
+            target.SetFloat(PropCustomTime, customTime);
+            target.SetFloat(PropRotateUV, _RotateUV);
+            target.SetTexture(PropNoiseTex, _NoiseTex);
+            target.SetFloat(PropWindSpeed, _WindSpeed);
+            target.SetFloat(PropWindStrength, _WindStrength);
+            target.SetFloat(PropWindFrequency, _WindFrequency);
+            target.SetVector(PropWindDirection, _WindDirection);
+            target.SetVector(PropClipRect, _ClipRect);
+            target.SetFloat(PropWindScale, _WindScale);
+            target.SetFloat(PropImageOffsetX, _ImageOffsetX);
+            target.SetFloat(PropImageOffsetY, _ImageOffsetY);
+            target.SetFloat(PropImageScale, _ImageScale);
+
+            // 바람 방향 정규화를 C#에서 사전 계산하여 셰이더 매 픽셀 normalize 연산 제거
+            Vector2 windDir = new Vector2(_WindDirection.x, _WindDirection.y);
+            float mag = windDir.magnitude;
+            Vector2 normalizedDir = mag > 0.0001f ? windDir / mag : Vector2.right;
+            target.SetVector(PropNormalizedWindDir, new Vector4(normalizedDir.x, normalizedDir.y, 0, 0));
         }
 
         /// <summary>

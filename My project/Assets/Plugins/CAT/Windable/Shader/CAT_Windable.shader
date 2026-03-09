@@ -22,6 +22,7 @@ Shader "CAT/Effects/Windable"
 
         [HideInInspector] _SpriteUVRect ("Sprite UV Rect", Vector) = (0, 0, 1, 1)
         [HideInInspector] _SpritePivot ("Sprite Pivot", Vector) = (0.5, 0.5, 0, 0)
+        [HideInInspector] _NormalizedWindDir ("Normalized Wind Dir", Vector) = (1, 0, 0, 0)
 
         [HideInInspector] _StencilComp ("Stencil Comparison", Float) = 8
         [HideInInspector] _Stencil ("Stencil ID", Float) = 0
@@ -103,7 +104,8 @@ Shader "CAT/Effects/Windable"
             float _ImageScale;
             float4 _SpriteUVRect;
             float4 _SpritePivot;
-            float _CustomTime; // _CustomTime 변수 선언
+            float _CustomTime;
+            float2 _NormalizedWindDir; // C#에서 사전 계산된 정규화 바람 방향
 
             // ** * 에러의 원인이었던 누락된 vert 함수를 여기에 다시 추가합니다. ** *
             v2f vert (appdata v)
@@ -142,7 +144,7 @@ Shader "CAT/Effects/Windable"
                 float2 noiseSampleUV = (rotatedUV + _WindDirection * timeOffset) * _WindScale;
                 float noiseValue = tex2D(_NoiseTex, noiseSampleUV).r;
                 float windEffect = noiseValue * _WindStrength * 0.1;
-                float2 windOffset = normalize(_WindDirection) * windEffect;
+                float2 windOffset = _NormalizedWindDir * windEffect;
 
                 float2 pivot = _SpritePivot.xy;
                 float2 centeredUV = rotatedUV - pivot;

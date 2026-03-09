@@ -176,7 +176,7 @@ Shader "Hidden/CAT/Effects/ColorReplace (SoftMaskLight)"
                 half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
                 half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-                half4 finalColor = half4(rgb, color.a + _HSVAAdjust.w);
+                half4 finalColor = half4(rgb, saturate(color.a + _HSVAAdjust.w));
 
                 // SoftMaskLight 적용 (항상 활성)
                 finalColor.a *= CAT_SOFTMASK_FRAG(IN);

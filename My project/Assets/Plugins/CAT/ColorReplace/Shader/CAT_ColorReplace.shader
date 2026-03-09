@@ -144,7 +144,7 @@ Shader "CAT/Effects/ColorReplace"
                 half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
                 half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-                return half4(rgb, color.a + _HSVAAdjust.w);
+                return half4(rgb, saturate(color.a + _HSVAAdjust.w));
             }
             ENDCG
         }
@@ -223,7 +223,7 @@ Shader "CAT/Effects/ColorReplace"
                 half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
                 half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-                return half4(rgb, color.a + _HSVAAdjust.w);
+                return half4(rgb, saturate(color.a + _HSVAAdjust.w));
             }
             ENDCG
         }

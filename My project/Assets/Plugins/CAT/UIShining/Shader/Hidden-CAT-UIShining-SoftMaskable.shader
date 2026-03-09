@@ -97,6 +97,7 @@ Shader "Hidden/CAT/Effects/UIShining (SoftMaskable)"
                 float4 worldPosition : TEXCOORD1;
                 float4 spriteUVRect  : TEXCOORD2;
                 float2 localPos      : TEXCOORD3;
+                half2 angleSinCos    : TEXCOORD4; // sin/cos를 버텍스에서 계산하여 전달
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -128,6 +129,9 @@ Shader "Hidden/CAT/Effects/UIShining (SoftMaskable)"
                 OUT.color = v.color;
                 OUT.spriteUVRect = float4(v.texcoord2.xy, v.texcoord3.xy);
                 OUT.localPos = v.tangent.xy;
+                // _Angle은 프레임 내 상수이므로 버텍스에서 sin/cos 계산 (픽셀당 반복 방지)
+                half rad = _Angle * 0.0174532925h;
+                OUT.angleSinCos = half2(sin(rad), cos(rad));
                 return OUT;
             }
 
@@ -146,20 +150,27 @@ Shader "Hidden/CAT/Effects/UIShining (SoftMaskable)"
                 // RectTransform 로컬 좌표 사용 (Sliced 이미지 대응)
                 half2 localPos = IN.localPos;
 
-                if (localPos.x <= 0.001h && localPos.y <= 0.001h)
-                {
-                    half4 spriteRect = IN.spriteUVRect;
-                    if (spriteRect.z <= spriteRect.x || spriteRect.w <= spriteRect.y)
-                        spriteRect = _SpriteUVRect;
-                    half2 spriteMin = spriteRect.xy;
-                    half2 spriteSize = spriteRect.zw - spriteRect.xy;
-                    spriteSize = max(spriteSize, half2(1e-5h, 1e-5h));
-                    localPos = (IN.texcoord - spriteMin) / spriteSize;
-                }
+                // Fallback: ModifyMesh가 호출되지 않았거나 tangent가 0인 경우 텍스처 UV 사용
+                // if 분기 대신 step/lerp로 GPU 분기 회피
+                half validLocal = step(0.001h, max(localPos.x, localPos.y));
 
-                half rad = _Angle * 0.0174532925h;
-                half cosA = cos(rad);
-                half sinA = sin(rad);
+                // 무효 시 텍스처 UV 기반 fallback 계산
+                half4 spriteRect = IN.spriteUVRect;
+                half2 uvSpriteMin = spriteRect.xy;
+                half2 uvSpriteSize = spriteRect.zw - spriteRect.xy;
+                // spriteRect가 무효할 경우 _SpriteUVRect 사용
+                half validRect = step(0.001h, uvSpriteSize.x) * step(0.001h, uvSpriteSize.y);
+                uvSpriteMin = lerp(_SpriteUVRect.xy, uvSpriteMin, validRect);
+                uvSpriteSize = lerp(_SpriteUVRect.zw - _SpriteUVRect.xy, uvSpriteSize, validRect);
+                uvSpriteSize = max(uvSpriteSize, half2(1e-5h, 1e-5h));
+                half2 fallbackPos = (IN.texcoord - uvSpriteMin) / uvSpriteSize;
+
+                // validLocal이면 localPos, 아니면 fallbackPos
+                localPos = lerp(fallbackPos, localPos, validLocal);
+
+                // sin/cos는 버텍스 셰이더에서 계산하여 전달 (픽셀당 반복 방지)
+                half sinA = IN.angleSinCos.x;
+                half cosA = IN.angleSinCos.y;
                 half ax = -localPos.x * sinA + localPos.y * cosA;
                 half ay = localPos.x * cosA + localPos.y * sinA;
 

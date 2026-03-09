@@ -19,6 +19,46 @@ Shader "Hidden/CAT/Effects/ColorReplace (SoftMaskable)"
         [Toggle(UNITY_UI_ALPHACLIP)] _UseUIAlphaClip ("Use Alpha Clip", Float) = 0
     }
 
+    // 공통 변수 선언과 HSV 함수를 CGINCLUDE로 분리
+    CGINCLUDE
+    #include "UnityCG.cginc"
+
+    sampler2D _MainTex;
+    float4 _MainTex_ST;
+    half _HSVRangeMin;
+    half _HSVRangeMax;
+    half4 _HSVAAdjust;
+
+    // RGB -> HSV 변환 (half precision)
+    inline half3 RGB2HSV(half3 c)
+    {
+        half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
+        half4 p = lerp(half4(c.bg, K.wz), half4(c.gb, K.xy), step(c.b, c.g));
+        half4 q = lerp(half4(p.xyw, c.r), half4(c.r, p.yzx), step(p.x, c.r));
+        half d = q.x - min(q.w, q.y);
+        half e = 1.0e-4h;
+        return half3(abs(q.z + (q.w - q.y) / (6.0h * d + e)), d / (q.x + e), q.x);
+    }
+
+    // HSV -> RGB 변환 (half precision)
+    inline half3 HSV2RGB(half3 c)
+    {
+        c = half3(c.x, saturate(c.yz));
+        half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
+        half3 p = abs(frac(c.xxx + K.xyz) * 6.0h - K.www);
+        return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
+    }
+
+    // HSV 범위 체크 (분기 없이 수학 연산)
+    inline half ComputeAffectMult(half hue, half rangeMin, half rangeMax)
+    {
+        half isWrapped = step(rangeMax + 0.001h, rangeMin);
+        half normalCase = step(rangeMin, hue) * step(hue, rangeMax);
+        half wrappedCase = saturate(step(rangeMin, hue) + step(hue, rangeMax));
+        return lerp(normalCase, wrappedCase, isWrapped);
+    }
+    ENDCG
+
     SubShader
     {
         Tags
@@ -63,44 +103,9 @@ Shader "Hidden/CAT/Effects/ColorReplace (SoftMaskable)"
             #pragma shader_feature_local _ SOFTMASKABLE // Add for soft mask
             #endif
 
-            #include "UnityCG.cginc"
             #include "UnityUI.cginc"
 
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
-            half _HSVRangeMin;
-            half _HSVRangeMax;
-            half4 _HSVAAdjust;
             float4 _ClipRect;
-
-            // RGB -> HSV 변환 (half precision)
-            inline half3 RGB2HSV(half3 c)
-            {
-                half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
-                half4 p = lerp(half4(c.bg, K.wz), half4(c.gb, K.xy), step(c.b, c.g));
-                half4 q = lerp(half4(p.xyw, c.r), half4(c.r, p.yzx), step(p.x, c.r));
-                half d = q.x - min(q.w, q.y);
-                half e = 1.0e-4h;
-                return half3(abs(q.z + (q.w - q.y) / (6.0h * d + e)), d / (q.x + e), q.x);
-            }
-
-            // HSV -> RGB 변환 (half precision)
-            inline half3 HSV2RGB(half3 c)
-            {
-                c = half3(c.x, saturate(c.yz));
-                half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
-                half3 p = abs(frac(c.xxx + K.xyz) * 6.0h - K.www);
-                return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
-            }
-
-            // HSV 범위 체크 (분기 없이 수학 연산)
-            inline half ComputeAffectMult(half hue, half rangeMin, half rangeMax)
-            {
-                half isWrapped = step(rangeMax + 0.001h, rangeMin);
-                half normalCase = step(rangeMin, hue) * step(hue, rangeMax);
-                half wrappedCase = saturate(step(rangeMin, hue) + step(hue, rangeMax));
-                return lerp(normalCase, wrappedCase, isWrapped);
-            }
 
             struct appdata_t
             {
@@ -147,7 +152,7 @@ Shader "Hidden/CAT/Effects/ColorReplace (SoftMaskable)"
                 half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
                 half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
-                half4 finalColor = half4(rgb, color.a + _HSVAAdjust.w);
+                half4 finalColor = half4(rgb, saturate(color.a + _HSVAAdjust.w));
 
                 // SoftMask 적용
                 #if SOFTMASKABLE

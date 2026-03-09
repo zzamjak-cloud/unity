@@ -65,11 +65,12 @@ namespace CAT.Effects
 
             // 현재 머티리얼 상태 표시
             Material currentMat = GetRendererMaterial(colorReplace);
-            bool isSavedAsset = IsColorReplaceAsset(currentMat);
+            Material displayMat = currentMat;
+            bool isSavedAsset = IsColorReplaceAsset(displayMat);
 
             if (isSavedAsset)
             {
-                string matPath = AssetDatabase.GetAssetPath(currentMat);
+                string matPath = AssetDatabase.GetAssetPath(displayMat);
                 EditorGUILayout.HelpBox($"저장된 머티리얼: {matPath}", MessageType.Info);
             }
 
@@ -230,16 +231,15 @@ namespace CAT.Effects
         /// </summary>
         private bool IsValidColorReplaceMaterial(Material material)
         {
-            if (material == null || material.shader == null) return false;
-            return material.shader.name == ColorReplace.SHADER_NAME ||
-                   material.shader.name.Contains("ColorReplace");
+            if (material == null) return false;
+            return ColorReplace.IsColorReplaceShader(material.shader);
         }
 
         /// <summary>
         /// 렌더러의 머티리얼에 현재 HSV 값을 적용 (머티리얼이 없으면 생성)
-        /// Unity Mask / mob-sakai SoftMask 환경에서는 StencilMaterial 캐시가
-        /// base material의 프로퍼티 변경을 반영하지 않으므로,
-        /// CanvasRenderer의 최종 렌더링 머티리얼에도 직접 프로퍼티를 적용한다.
+        /// Unity Mask / mob-sakai SoftMask / SoftMaskLight 환경에서는
+        /// CanvasRenderer의 최종 렌더링 머티리얼에도 직접 프로퍼티를 적용하고
+        /// SetMaterialDirty()로 IMaterialModifier 체인 재빌드를 트리거한다.
         /// </summary>
         private void ApplyToMaterial()
         {
@@ -250,31 +250,37 @@ namespace CAT.Effects
             Material mat = EnsureColorReplaceMaterial(colorReplace);
             if (mat == null) return;
 
-            mat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
-            mat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
-            mat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
+            ApplyHSVToMaterial(mat, colorReplace);
 
-            // Mask/SoftMask 환경: CanvasRenderer에 설정된 렌더링 머티리얼에도 프로퍼티 적용
-            // StencilMaterial 캐시가 base material 프로퍼티 변경을 반영하지 않으므로 직접 갱신
             var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
             if (graphic != null)
             {
+                // Mask/SoftMask/SoftMaskLight 환경: 렌더링 머티리얼에 프로퍼티 직접 적용
                 var cr = graphic.canvasRenderer;
                 if (cr != null)
                 {
                     Material canvasMat = cr.GetMaterial(0);
                     if (canvasMat != null && canvasMat != mat)
-                    {
-                        canvasMat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
-                        canvasMat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
-                        canvasMat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
-                    }
+                        ApplyHSVToMaterial(canvasMat, colorReplace);
                 }
+                // baseMaterial 변경을 프록시에 전파하기 위해 캔버스 재빌드 트리거
+                graphic.SetMaterialDirty();
             }
         }
 
         /// <summary>
-        /// 렌더러에 ColorReplace 셰이더 머티리얼이 있는지 확인하고, 없으면 생성하여 할당
+        /// HSV 프로퍼티를 머티리얼에 적용하는 공통 메서드
+        /// </summary>
+        private static void ApplyHSVToMaterial(Material mat, ColorReplace colorReplace)
+        {
+            mat.SetFloat(ColorReplace.PropHSVRangeMin, colorReplace.HSVRangeMin);
+            mat.SetFloat(ColorReplace.PropHSVRangeMax, colorReplace.HSVRangeMax);
+            mat.SetVector(ColorReplace.PropHSVAdjust, colorReplace.HSVAdjust);
+        }
+
+        /// <summary>
+        /// 렌더러에 ColorReplace 셰이더 머티리얼이 있는지 확인하고, 없으면 생성하여 할당.
+        /// IMaterialModifier가 자동으로 Hidden 변형을 처리하므로 SetMaterialDirty()만 호출.
         /// </summary>
         private Material EnsureColorReplaceMaterial(ColorReplace colorReplace)
         {
@@ -282,9 +288,7 @@ namespace CAT.Effects
 
             // 이미 ColorReplace 셰이더 머티리얼이 할당되어 있으면 그대로 사용
             // SoftMaskLight Hidden 변형 셰이더도 유효한 ColorReplace 머티리얼로 인식
-            if (current != null && current.shader != null &&
-                (current.shader.name == ColorReplace.SHADER_NAME ||
-                 current.shader.name.Contains("ColorReplace")))
+            if (current != null && ColorReplace.IsColorReplaceShader(current.shader))
                 return current;
 
             // 없으면 새로 생성하여 할당
@@ -302,6 +306,12 @@ namespace CAT.Effects
             };
 
             SetRendererMaterial(colorReplace, newMat);
+
+            // IMaterialModifier가 자동 처리하므로 캔버스 재빌드만 트리거
+            var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic != null)
+                graphic.SetMaterialDirty();
+
             return newMat;
         }
 
@@ -328,9 +338,12 @@ namespace CAT.Effects
             );
 
             // 현재 머티리얼 복사하여 에셋으로 저장
+            // SoftMaskLight 환경에서는 current가 Hidden 변형 셰이더일 수 있으므로
+            // 반드시 원본 ColorReplace 셰이더로 저장
             Material saved = new Material(current)
             {
                 name = sanitizedName,
+                shader = shader,
                 hideFlags = HideFlags.None
             };
 
@@ -341,6 +354,11 @@ namespace CAT.Effects
             Undo.RecordObject(GetRendererComponent(colorReplace), "Save ColorReplace Material");
             SetRendererMaterial(colorReplace, saved);
             EditorUtility.SetDirty(GetRendererComponent(colorReplace));
+
+            // IMaterialModifier가 자동 처리하므로 캔버스 재빌드만 트리거
+            var graphic = colorReplace.GetComponent<UnityEngine.UI.Graphic>();
+            if (graphic != null)
+                graphic.SetMaterialDirty();
 
             // 기존 임시 머티리얼 정리
             if (!AssetDatabase.Contains(current) && current != null)
@@ -393,9 +411,7 @@ namespace CAT.Effects
         {
             if (material == null) return false;
             if (!AssetDatabase.Contains(material)) return false;
-            if (material.shader == null) return false;
-            return material.shader.name == ColorReplace.SHADER_NAME ||
-                   material.shader.name.Contains("ColorReplace");
+            return ColorReplace.IsColorReplaceShader(material.shader);
         }
 
         private void EnsureFolderExists(string folderPath)

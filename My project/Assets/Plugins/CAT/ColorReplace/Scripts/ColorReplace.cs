@@ -17,6 +17,16 @@ namespace CAT.Effects
         public static readonly int PropHSVRangeMax = Shader.PropertyToID("_HSVRangeMax");
         public static readonly int PropHSVAdjust = Shader.PropertyToID("_HSVAAdjust");
 
+        /// <summary>
+        /// 주어진 셰이더가 ColorReplace 계열인지 확인
+        /// (원본, SoftMaskLight Hidden, SoftMaskable Hidden 변형 모두 포함)
+        /// </summary>
+        public static bool IsColorReplaceShader(Shader shader)
+        {
+            if (shader == null) return false;
+            return shader.name == SHADER_NAME || shader.name.Contains("ColorReplace");
+        }
+
         [Header("HSV Range")]
         [SerializeField, Range(0f, 1f)] private float _hsvRangeMin = 0f;
         public float HSVRangeMin

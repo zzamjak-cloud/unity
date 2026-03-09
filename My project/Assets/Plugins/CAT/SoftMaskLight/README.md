@@ -1,8 +1,8 @@
-# SoftMaskLight v2.0.0
+# SoftMaskLight v2.1.0
 
 알파 채널 기반 1-Pass 소프트 마스킹 컴포넌트 (모바일 최적화)
 
-> 이전 이름: CAT SoftMask. v2.0.0에서 SoftMaskLight로 리네임 + Optional Shader 패턴 도입.
+> 이전 이름: CAT SoftMask. v2.0.0에서 리네임 + Optional Shader 패턴 도입, v2.1.0에서 IMaterialModifier 프록시 패턴 적용.
 > `[MovedFrom]` 속성으로 기존 씬 직렬화 호환성 유지됨.
 
 ## 개요
@@ -14,6 +14,7 @@ SoftMaskLight는 **텍스처 알파 채널 기반 부드러운 마스킹**을 **
 Assets/Plugins/CAT/SoftMaskLight/
 ├── Scripts/
 │   ├── SoftMaskLight.cs                  # 메인 컴포넌트
+│   ├── SoftMaskLightChildProxy.cs        # 일반 자식 프록시 (IMaterialModifier)
 │   ├── SoftMaskLightSettings.cs          # Resources 빌드 포함 설정 (ScriptableObject)
 │   └── UIEffectSoftMaskLightProxy.cs     # UIEffect 프록시 (IMaterialModifier)
 ├── Shader/
@@ -43,11 +44,32 @@ SoftMaskLight는 자식 오브젝트의 타입에 따라 서로 다른 마스킹
 
 | 자식 타입 | 마스킹 방식 | Material 관리 |
 |-----------|------------|---------------|
-| **일반 UI (Image, RawImage)** | Optional Shader (Hidden 변형) | 공유 Material (배칭 유지) |
-| **커스텀 셰이더 UI (ColorReplace 등)** | Optional Shader (Hidden 변형) | 개별 복제 Material (프로퍼티 보존) |
+| **일반 UI (Image, RawImage)** | IMaterialModifier 프록시 + Optional Shader | 공유 프록시 Material (배칭 유지) |
+| **커스텀 셰이더 UI (ColorReplace 등)** | IMaterialModifier 프록시 + Optional Shader | 공유 프록시 Material (프로퍼티 복사) |
 | **TextMeshPro** | 전용 셰이더 (`SoftMaskLight/UI/TMP_SoftMask`) | 개별 Material (폰트 아틀라스별) |
-| **UIParticle** | Optional Shader (Hidden 변형) | 개별 복제 Material (블렌드 모드 보존) |
+| **UIParticle** | IMaterialModifier 프록시 + Optional Shader | 공유 프록시 Material (블렌드 모드 보존) |
 | **UIEffect** | 키워드 활성화 (`_CAT_SOFTMASK`) | IMaterialModifier 프록시 |
+
+### IMaterialModifier 프록시 패턴 (v2.1)
+
+SoftMaskLight v2.1부터 일반 자식 Graphic에 `SoftMaskLightChildProxy` 컴포넌트를 자동 추가하여
+`IMaterialModifier` 체인을 통해 마스킹을 적용합니다. **`graphic.m_Material`을 직접 교체하지 않습니다.**
+
+```
+동작 순서:
+1. SoftMaskLight.ApplyMaskToChildren() → 자식에 SoftMaskLightChildProxy 추가 + Initialize()
+2. Canvas 리빌드 → GetModifiedMaterial(baseMaterial) 호출
+3. baseMaterial의 셰이더에 대응하는 Hidden 변형 셰이더를 FindOptionalShader()로 탐색
+4. SoftMaskLight의 공유 캐시에서 프록시 Material 조회/생성 (GetOrCreateProxyMaterial)
+5. 마스크 프로퍼티 적용 후 프록시 Material 반환
+6. materialForRendering = 프록시 Material (baseMaterial 원본 유지)
+```
+
+**장점:**
+- `graphic.m_Material` 미수정 → 씬 저장 시 원본 Material 참조 보존
+- 에디터에서 자식 선택/수정 시 마스크 해제 문제 없음
+- 플레이모드 전환 시 Material 분기 없음
+- 동일 baseMaterial을 가진 자식끼리 프록시 Material 공유 (배칭 유지)
 
 ## v2.0.0 주요 변경: Optional Shader 패턴
 

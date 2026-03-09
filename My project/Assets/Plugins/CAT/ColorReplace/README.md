@@ -37,7 +37,8 @@ ColorReplace/
 ├── Editor/
 │   └── ColorReplaceEditor.cs    # 커스텀 인스펙터 (머티리얼 저장/갱신/프리뷰)
 ├── Shader/
-│   └── CAT_ColorReplace.shader  # HSV 색상 변환 셰이더
+│   ├── CAT_ColorReplace.shader                              # HSV 색상 변환 셰이더
+│   └── Hidden-CAT-ColorReplace-SoftMaskLight.shader         # SoftMaskLight Hidden 변형
 └── Materials/                   # 저장된 머티리얼 에셋 (자동 생성)
 ```
 
@@ -190,3 +191,11 @@ return lerp(normalCase, wrappedCase, isWrapped);
 - 프리뷰 기능은 임시 Material(`HideFlags.HideAndDontSave`)을 사용합니다
 - 프리뷰 해제 시 원본 머티리얼로 자동 복원됩니다
 - 인스펙터를 닫으면 프리뷰가 자동으로 해제됩니다
+
+### SoftMaskLight 호환
+
+- SoftMaskLight 자식에서 ColorReplace 머티리얼을 사용하면, `SoftMaskLightChildProxy`가 자동으로
+  `Hidden/CAT/Effects/ColorReplace (SoftMaskLight)` 변형 셰이더를 탐색하여 프록시 Material을 생성합니다
+- ColorReplace 에디터에서 머티리얼을 저장/갱신하면 `graphic.SetMaterialDirty()`가 호출되어
+  프록시가 자동으로 새 baseMaterial에 맞는 프록시 Material을 재생성합니다
+- ColorReplace 컴포넌트/에디터는 SoftMaskLight에 대한 특수 처리가 없습니다 (IMaterialModifier 체인에 위임)

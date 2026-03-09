@@ -205,6 +205,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 이 프로젝트는 두 가지 소프트 마스크 시스템이 공존합니다:
 - **SoftMaskLight** (자체 개발): `Assets/Plugins/CAT/SoftMaskLight/`
+  - v2.1: `IMaterialModifier` 프록시 패턴 — `graphic.m_Material` 미수정, `SoftMaskLightChildProxy`가 `materialForRendering`만 교체
 - **mob-sakai SoftMask** (패키지): `com.coffee.softmask-for-ugui`
 
 #### 핵심 원칙: 새 UI 셰이더 생성 시 체크리스트
@@ -233,6 +234,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - UIEffect는 `shader_feature_local_fragment` 기반이므로 Hidden 셰이더 교체가 아닌 **키워드 방식** 사용
    - `#pragma multi_compile_local _ _CAT_SOFTMASK` 추가
    - `UIEffectSoftMaskLightProxy`가 키워드를 활성화하여 마스킹 적용
+
+5. **C# 스크립트에서 SoftMaskLight 특수 처리 불필요** (v2.1 이후)
+   - SoftMaskLight는 `IMaterialModifier` 프록시 패턴으로 `graphic.m_Material`을 수정하지 않음
+   - 에디터에서 Material 변경 시 `graphic.SetMaterialDirty()`만 호출하면 프록시가 자동 갱신
+   - `SoftMaskLight.InvalidateChild(graphic)` 호출은 Material 에셋 자체를 교체한 경우에만 필요 (예: Windable 에디터)
 
 #### 변형 셰이더 이름 규칙
 
@@ -283,11 +289,8 @@ private Material ActiveMaterial
     get
     {
         if (_graphic == null) return _material;
-        // SoftMaskLight: graphic.material 직접 교체 방식
-        Material graphicMat = _graphic.material;
-        if (graphicMat != null && graphicMat != _material)
-            return graphicMat;
-        // Unity Mask / SoftMaskable: CanvasRenderer의 최종 머티리얼
+        // SoftMaskLight (v2.1): IMaterialModifier 프록시 패턴으로 graphic.m_Material 미수정
+        // Unity Mask / SoftMaskable / SoftMaskLight: CanvasRenderer의 최종 머티리얼
         var cr = _graphic.canvasRenderer;
         if (cr != null)
         {

@@ -164,10 +164,6 @@ namespace SoftMaskLight
         private Canvas _rootCanvas; // ComputeWorldToMaskUV()에서 프레임당 탐색 방지용 캐시
         private bool _initialized;
 
-        // Optional Shader별 공유 Material (같은 Optional Shader를 사용하는 자식끼리 공유)
-        private readonly Dictionary<Shader, Material> _sharedOptionalMaterials =
-            new Dictionary<Shader, Material>();
-
         // 자식 원본 Material 복원용
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _originalChildMaterials =
             new Dictionary<UnityEngine.UI.Graphic, Material>();
@@ -207,30 +203,23 @@ namespace SoftMaskLight
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _tmpAppliedMaskMats =
             new Dictionary<UnityEngine.UI.Graphic, Material>(2);
 
-        // Particle (UIParticle) 전용 Material 리스트
-        private readonly List<Material> _particleMaskMaterials = new List<Material>(2);
-
-        // Particle Graphic → 적용 중인 마스크 Material 매핑
-        private readonly Dictionary<UnityEngine.UI.Graphic, Material> _particleAppliedMaskMats =
-            new Dictionary<UnityEngine.UI.Graphic, Material>(2);
-
-        // 커스텀 셰이더(ColorReplace 등) 전용 Material 리스트 (파괴 관리용)
-        private readonly List<Material> _customMaskMaterials = new List<Material>(2);
-
-        // 커스텀 셰이더 Graphic → 적용 중인 마스크 Material 매핑
-        private readonly Dictionary<UnityEngine.UI.Graphic, Material> _customAppliedMaskMats =
-            new Dictionary<UnityEngine.UI.Graphic, Material>(2);
-
-        // 커스텀 셰이더 공유 캐시: 동일한 원본 Material을 사용하는 자식끼리 clone 공유
-        // (예: 같은 ColorReplace .mat 에셋을 참조하는 여러 자식이 하나의 마스크 clone을 공유)
-        private readonly Dictionary<Material, Material> _sharedCustomClones =
-            new Dictionary<Material, Material>(2);
-
-        // UIEffect 프록시 목록 (UIParticle의 _particleMaskMaterials와 유사한 구조)
+        // UIEffect 프록시 목록 (프로퍼티 전파 + 정리용)
         private readonly List<UIEffectSoftMaskLightProxy> _uiEffectProxies = new List<UIEffectSoftMaskLightProxy>(2);
+
+        // SoftMaskLightChildProxy 목록 (프로퍼티 전파 + 정리용)
+        private readonly List<SoftMaskLightChildProxy> _childProxies = new List<SoftMaskLightChildProxy>(8);
+
+        // 공유 프록시 Material 캐시: 원본 Material → 프록시 Material
+        // 동일한 원본 Material을 가진 자식끼리 프록시 Material을 공유 (배칭 유지)
+        private readonly Dictionary<Material, Material> _sharedProxyMaterials =
+            new Dictionary<Material, Material>(4);
+
+        // 프록시 Material 역방향 인덱스: O(1) ContainsValue 대체
+        private readonly HashSet<Material> _proxyMaterialSet = new HashSet<Material>();
 
         // GC 방지: 재사용 리스트
         private readonly List<UnityEngine.UI.Graphic> _toRemove = new List<UnityEngine.UI.Graphic>(4);
+        private readonly List<Material> _toRemoveMaterials = new List<Material>(4);
         private readonly List<UnityEngine.UI.Graphic> _childGraphicsBuffer = new List<UnityEngine.UI.Graphic>(16);
 
         // 모드 전환 후 Stencil Material 강제 갱신 카운터
@@ -335,9 +324,8 @@ namespace SoftMaskLight
         {
             if (!_initialized) return;
 
-            // TMP / Particle / UIEffect 외부 Material 변경 감지
+            // TMP / UIEffect 외부 Material 변경 감지
             DetectTMPMaterialChanges();
-            DetectParticleMaterialChanges();
             DetectUIEffectMaterialChanges();
 
             // UIEffect 동적 추가 감지: 상태 변화가 감지된 시점에만 체크 (이벤트 기반)
@@ -449,18 +437,6 @@ namespace SoftMaskLight
             _materialDirty = true;
             _stencilRefreshCountdown = 2;
 
-            // Optional Material들의 중첩 마스크 키워드 갱신
-            foreach (var mat in _sharedOptionalMaterials.Values)
-            {
-                if (mat == null) continue;
-                if (_hasParentMask)
-                    mat.EnableKeyword(KEYWORD_NESTED);
-                else
-                {
-                    mat.DisableKeyword(KEYWORD_NESTED);
-                    mat.DisableKeyword(KEYWORD_NESTED_SLICE);
-                }
-            }
             if (!_hasParentMask) _cachedParentIsSliced = false;
 
 #if UNITY_EDITOR
@@ -535,13 +511,19 @@ namespace SoftMaskLight
                 if (child.gameObject == gameObject) continue;
                 if (!BelongsToThisMask(child.transform)) continue;
 
-                // 기존 일반 Graphic → UIEffect 추가 감지: 프록시 없이 UIEffect가 있으면 증분 재적용
-                if (_originalChildMaterials.TryGetValue(child, out var origMat) && origMat != null && IsUIEffectGraphic(child))
+                // 기존 일반 Graphic → UIEffect 추가 감지: UIEffect 프록시 없이 UIEffect가 있으면 전환
+                if (_originalChildMaterials.TryGetValue(child, out var origMat) && IsUIEffectGraphic(child))
                 {
-                    var existingProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
-                    if (existingProxy == null || existingProxy.IsCleanedUp)
+                    var existingUIProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
+                    if (existingUIProxy == null || existingUIProxy.IsCleanedUp)
                     {
-                        RestoreSingleChild(child, origMat);
+                        // 일반 프록시 제거 후 UIEffect 프록시로 전환
+                        var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
+                        if (childProxy != null && !childProxy.IsCleanedUp)
+                        {
+                            _childProxies.Remove(childProxy);
+                            childProxy.Cleanup();
+                        }
                         _originalChildMaterials.Remove(child);
                         ApplyMaskToUIEffect(child);
                         continue;
@@ -880,101 +862,41 @@ namespace SoftMaskLight
         // ─────────────────────────────────────────────
 
         /// <summary>
-        /// Optional Shader에 대응하는 공유 Material 생성 또는 가져오기
-        /// 같은 Optional Shader를 사용하는 자식끼리 Material을 공유하여 배칭 최적화
+        /// SoftMaskLightChildProxy에서 호출하여 공유 프록시 Material을 조회/생성
+        /// 동일한 baseMaterial을 가진 자식끼리 같은 프록시 Material을 공유 (배칭 유지)
+        /// baseMaterial의 프로퍼티를 복사하고 셰이더를 Hidden 변형으로 교체 + 마스크 프로퍼티 적용
         /// </summary>
-        private Material GetOrCreateOptionalMaterial(Shader optionalShader)
+        internal Material GetOrCreateProxyMaterial(Material baseMaterial, Shader optShader)
         {
-            if (optionalShader == null) return null;
+            if (baseMaterial == null || optShader == null) return null;
 
-            if (_sharedOptionalMaterials.TryGetValue(optionalShader, out var existing) && existing != null)
-                return existing;
-
-            var mat = new Material(optionalShader)
+            // 동일한 baseMaterial에 대해 이미 프록시 Material이 있으면 공유
+            if (_sharedProxyMaterials.TryGetValue(baseMaterial, out var existing) && existing != null)
             {
-                name = $"{optionalShader.name} (SoftMaskLight: {gameObject.name})",
-                hideFlags = HideFlags.DontSave
+                // 셰이더 불일치 감지 (baseMaterial 셰이더가 런타임에 변경된 경우)
+                if (existing.shader == optShader)
+                    return existing;
+
+                // 기존 프록시 파괴 후 재생성
+                _proxyMaterialSet.Remove(existing);
+                if (Application.isPlaying) Destroy(existing);
+                else DestroyImmediate(existing);
+            }
+
+            Material proxy = new Material(optShader)
+            {
+                name = $"{optShader.name} (SoftMaskLight: {gameObject.name})",
+                hideFlags = HideFlags.HideAndDontSave
             };
+            proxy.CopyPropertiesFromMaterial(baseMaterial);
+            proxy.shader = optShader;
 
-            // 자신의 마스크 설정
-            Texture maskTex = GetMaskTexture();
-            _cachedMaskTexId = maskTex != null ? maskTex.GetInstanceID() : 0;
-            if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
+            // 마스크 프로퍼티 적용
+            ApplyMaskPropertiesToMaterial(proxy);
 
-            Matrix4x4 worldToUV = ComputeWorldToMaskUV();
-            mat.SetMatrix(PropMaskWorldToUV, worldToUV);
-            mat.SetFloat(PropSoftness, _softness);
-            mat.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
-            mat.SetVector(PropMaskUVRect, GetMaskUVRect());
-            _cachedWorldToUV = worldToUV;
-            _cachedSoftness = _softness;
-            _cachedInvertMask = _invertMask;
-
-            // 슬라이스 마스크 초기 설정
-            bool isSliced = IsSlicedMask();
-            _cachedIsSliced = isSliced;
-            if (isSliced)
-            {
-                mat.EnableKeyword(KEYWORD_SLICE);
-                _cachedSliceBorder = GetMaskSliceBorder();
-                _cachedSliceInnerUV = GetMaskSliceInnerUV();
-                mat.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
-                mat.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
-            }
-            else
-            {
-                mat.DisableKeyword(KEYWORD_SLICE);
-                _cachedSliceBorder = new Vector4(0f, 0f, 1f, 1f);
-                _cachedSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
-            }
-
-            // 중첩 마스크 설정
-            if (_hasParentMask && _parentSoftMask != null)
-            {
-                mat.EnableKeyword(KEYWORD_NESTED);
-
-                Texture parentTex = _parentSoftMask.GetMaskTexture();
-                _cachedParentMaskTexId = parentTex != null ? parentTex.GetInstanceID() : 0;
-                if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
-
-                Matrix4x4 parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
-                mat.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
-                mat.SetFloat(PropSoftness2, _parentSoftMask._softness);
-                mat.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
-                mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
-                _cachedParentWorldToUV = parentWorldToUV;
-                _cachedParentSoftness = _parentSoftMask._softness;
-                _cachedParentInvertMask = _parentSoftMask._invertMask;
-
-                // 중첩 슬라이스 초기 설정
-                bool parentIsSliced = _parentSoftMask.IsSlicedMask();
-                _cachedParentIsSliced = parentIsSliced;
-                if (parentIsSliced)
-                {
-                    mat.EnableKeyword(KEYWORD_NESTED_SLICE);
-                    _cachedParentSliceBorder = _parentSoftMask.GetMaskSliceBorder();
-                    _cachedParentSliceInnerUV = _parentSoftMask.GetMaskSliceInnerUV();
-                    mat.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
-                    mat.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
-                }
-                else
-                {
-                    _cachedParentSliceBorder = new Vector4(0f, 0f, 1f, 1f);
-                    _cachedParentSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
-                }
-            }
-            else
-            {
-                mat.DisableKeyword(KEYWORD_NESTED);
-                mat.DisableKeyword(KEYWORD_NESTED_SLICE);
-                _cachedParentIsSliced = false;
-                _cachedParentSliceBorder = new Vector4(0f, 0f, 1f, 1f);
-                _cachedParentSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
-            }
-
-            _sharedOptionalMaterials[optionalShader] = mat;
-            _materialDirty = false;
-            return mat;
+            _sharedProxyMaterials[baseMaterial] = proxy;
+            _proxyMaterialSet.Add(proxy);
+            return proxy;
         }
 
         /// <summary>
@@ -985,7 +907,7 @@ namespace SoftMaskLight
         private void UpdateSharedMaterial()
         {
             if (_originalChildMaterials.Count == 0) return;
-            if (_sharedOptionalMaterials.Count == 0 && _tmpMaskMaterials.Count == 0 && _particleMaskMaterials.Count == 0 && _customMaskMaterials.Count == 0 && _uiEffectProxies.Count == 0) return;
+            if (_sharedProxyMaterials.Count == 0 && _tmpMaskMaterials.Count == 0 && _childProxies.Count == 0 && _uiEffectProxies.Count == 0) return;
 
             bool anyChange = false;
 
@@ -993,7 +915,7 @@ namespace SoftMaskLight
             Matrix4x4 currentWorldToUV = ComputeWorldToMaskUV();
             if (_materialDirty || currentWorldToUV != _cachedWorldToUV)
             {
-                foreach (var m in _sharedOptionalMaterials.Values)
+                foreach (var m in _sharedProxyMaterials.Values)
                     if (m != null) m.SetMatrix(PropMaskWorldToUV, currentWorldToUV);
                 _cachedWorldToUV = currentWorldToUV;
                 anyChange = true;
@@ -1005,7 +927,7 @@ namespace SoftMaskLight
             if (texId != _cachedMaskTexId)
             {
                 _cachedMaskTexId = texId;
-                foreach (var m in _sharedOptionalMaterials.Values)
+                foreach (var m in _sharedProxyMaterials.Values)
                 {
                     if (m == null) continue;
                     if (maskTex != null) m.SetTexture(PropMaskTex, maskTex);
@@ -1017,7 +939,7 @@ namespace SoftMaskLight
             // Softness / InvertMask 변경 체크
             if (_materialDirty || _softness != _cachedSoftness || _invertMask != _cachedInvertMask)
             {
-                foreach (var m in _sharedOptionalMaterials.Values)
+                foreach (var m in _sharedProxyMaterials.Values)
                 {
                     if (m == null) continue;
                     m.SetFloat(PropSoftness, _softness);
@@ -1037,7 +959,7 @@ namespace SoftMaskLight
                 _cachedIsSliced = isSliced;
                 _cachedSliceBorder = sliceBorder;
                 _cachedSliceInnerUV = sliceInnerUV;
-                foreach (var m in _sharedOptionalMaterials.Values)
+                foreach (var m in _sharedProxyMaterials.Values)
                 {
                     if (m == null) continue;
                     if (isSliced)
@@ -1060,7 +982,7 @@ namespace SoftMaskLight
                 Matrix4x4 parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
                 if (_materialDirty || parentWorldToUV != _cachedParentWorldToUV)
                 {
-                    foreach (var m in _sharedOptionalMaterials.Values)
+                    foreach (var m in _sharedProxyMaterials.Values)
                         if (m != null) m.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
                     _cachedParentWorldToUV = parentWorldToUV;
                     anyChange = true;
@@ -1071,7 +993,7 @@ namespace SoftMaskLight
                 if (parentTexId != _cachedParentMaskTexId)
                 {
                     _cachedParentMaskTexId = parentTexId;
-                    foreach (var m in _sharedOptionalMaterials.Values)
+                    foreach (var m in _sharedProxyMaterials.Values)
                     {
                         if (m == null) continue;
                         if (parentTex != null) m.SetTexture(PropMaskTex2, parentTex);
@@ -1083,7 +1005,7 @@ namespace SoftMaskLight
                 if (_parentSoftMask._softness != _cachedParentSoftness ||
                     _parentSoftMask._invertMask != _cachedParentInvertMask)
                 {
-                    foreach (var m in _sharedOptionalMaterials.Values)
+                    foreach (var m in _sharedProxyMaterials.Values)
                     {
                         if (m == null) continue;
                         m.SetFloat(PropSoftness2, _parentSoftMask._softness);
@@ -1103,7 +1025,7 @@ namespace SoftMaskLight
                     _cachedParentIsSliced = parentIsSliced;
                     _cachedParentSliceBorder = parentSliceBorder;
                     _cachedParentSliceInnerUV = parentSliceInnerUV;
-                    foreach (var m in _sharedOptionalMaterials.Values)
+                    foreach (var m in _sharedProxyMaterials.Values)
                     {
                         if (m == null) continue;
                         if (parentIsSliced)
@@ -1121,12 +1043,12 @@ namespace SoftMaskLight
                 }
             }
 
-            // TMP, Particle, Custom, UIEffect, Stencil Material에 마스크 프로퍼티 전파
+            // TMP, ChildProxy, UIEffect, Stencil Material에 마스크 프로퍼티 전파
             if (anyChange || _materialDirty)
             {
                 UpdateTMPMaterials();
-                UpdateParticleMaterials();
-                UpdateCustomMaterials();
+                // 주의: ChildProxy의 ProxyMaterial은 _sharedProxyMaterials.Values와 동일 인스턴스이므로
+                // 위 루프에서 이미 업데이트됨 → UpdateChildProxyMaterials() 중복 호출 불필요
                 UpdateUIEffectMaterials();
                 PropagateToStencilMaterials();
             }
@@ -1155,10 +1077,8 @@ namespace SoftMaskLight
                 if (rendered == null) continue;
 
                 // 기본 Material 자체는 이미 업데이트됨 → 스킵
-                if (IsSharedOptionalMaterial(rendered)) continue;
+                if (IsChildProxyMaterial(rendered)) continue;
                 if (_tmpMaskMaterials.Contains(rendered)) continue;
-                if (_particleMaskMaterials.Contains(rendered)) continue;
-                if (_customMaskMaterials.Contains(rendered)) continue;
                 if (IsUIEffectProxyMaterial(rendered)) continue;
 
                 // Shader 인스턴스 비교로 TMP 또는 표준 프로퍼티 ID 결정 (문자열 비교 회피)
@@ -1246,13 +1166,35 @@ namespace SoftMaskLight
         }
 
         /// <summary>
-        /// 해당 Material이 공유 Optional Material인지 확인
+        /// 해당 머티리얼이 자식 프록시 머티리얼인지 확인 (PropagateToStencilMaterials 스킵용)
         /// </summary>
-        private bool IsSharedOptionalMaterial(Material mat)
+        private bool IsChildProxyMaterial(Material mat)
         {
-            foreach (var m in _sharedOptionalMaterials.Values)
-                if (m == mat) return true;
-            return false;
+            return _proxyMaterialSet.Contains(mat);
+        }
+
+        /// <summary>
+        /// 자식 프록시 머티리얼에 현재 마스크 프로퍼티 일괄 전파
+        /// (캔버스 리빌드 없이 마스크 프로퍼티만 변경된 경우 대응)
+        /// </summary>
+        private void UpdateChildProxyMaterials()
+        {
+            if (_childProxies.Count == 0) return;
+
+            for (int i = _childProxies.Count - 1; i >= 0; i--)
+            {
+                var proxy = _childProxies[i];
+                if (proxy == null)
+                {
+                    _childProxies.RemoveAt(i);
+                    continue;
+                }
+
+                Material mat = proxy.ProxyMaterial;
+                if (mat == null) continue;
+
+                ApplyMaskPropertiesToMaterial(mat);
+            }
         }
 
         /// <summary>
@@ -1270,16 +1212,57 @@ namespace SoftMaskLight
             {
                 _originalChildMaterials.Remove(_toRemove[i]);
                 _tmpAppliedMaskMats.Remove(_toRemove[i]);
-                _particleAppliedMaskMats.Remove(_toRemove[i]);
-                _customAppliedMaskMats.Remove(_toRemove[i]);
             }
 
-            // 파괴된 UIEffect 프록시 정리
+            // 파괴된 프록시 정리
+            for (int i = _childProxies.Count - 1; i >= 0; i--)
+            {
+                if (_childProxies[i] == null)
+                    _childProxies.RemoveAt(i);
+            }
             for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
             {
                 if (_uiEffectProxies[i] == null)
                     _uiEffectProxies.RemoveAt(i);
             }
+
+            // 사용되지 않는 프록시 Material 정리
+            CleanupStaleProxyMaterials();
+        }
+
+        /// <summary>
+        /// _sharedProxyMaterials에서 키(baseMaterial)가 파괴되었거나
+        /// 더 이상 사용되지 않는 프록시 Material 정리
+        /// </summary>
+        private void CleanupStaleProxyMaterials()
+        {
+            if (_sharedProxyMaterials.Count == 0) return;
+
+            _toRemoveMaterials.Clear();
+            foreach (var kvp in _sharedProxyMaterials)
+            {
+                // 키(baseMaterial)가 파괴됨 → 프록시도 함께 파괴
+                if (kvp.Key == null)
+                {
+                    if (kvp.Value != null)
+                    {
+                        _proxyMaterialSet.Remove(kvp.Value);
+                        if (Application.isPlaying) Destroy(kvp.Value);
+                        else DestroyImmediate(kvp.Value);
+                    }
+                    _toRemoveMaterials.Add(kvp.Key);
+                    continue;
+                }
+                // 값(proxyMaterial)이 외부에서 파괴됨 → 엔트리만 제거
+                if (kvp.Value == null)
+                {
+                    _proxyMaterialSet.Remove(kvp.Value);
+                    _toRemoveMaterials.Add(kvp.Key);
+                }
+            }
+
+            for (int i = 0; i < _toRemoveMaterials.Count; i++)
+                _sharedProxyMaterials.Remove(_toRemoveMaterials[i]);
         }
 
         // ─────────────────────────────────────────────
@@ -1294,19 +1277,15 @@ namespace SoftMaskLight
         public void InvalidateChild(UnityEngine.UI.Graphic child)
         {
             if (child == null) return;
-            // 기존 커스텀 마스크 머티리얼 정리
-            if (_customAppliedMaskMats.TryGetValue(child, out Material customMat))
+
+            // 일반 프록시 컴포넌트 제거
+            var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
+            if (childProxy != null && !childProxy.IsCleanedUp)
             {
-                _customAppliedMaskMats.Remove(child);
-                // 공유 clone인 경우 다른 자식이 아직 사용 중이면 파괴하지 않음
-                if (customMat != null && !IsCustomCloneInUse(customMat))
-                {
-                    _customMaskMaterials.Remove(customMat);
-                    RemoveFromSharedCustomClones(customMat);
-                    if (Application.isPlaying) Destroy(customMat);
-                    else DestroyImmediate(customMat);
-                }
+                _childProxies.Remove(childProxy);
+                childProxy.Cleanup();
             }
+
             _originalChildMaterials.Remove(child);
             ApplyMaskToChildren();
         }
@@ -1370,88 +1349,62 @@ namespace SoftMaskLight
                     continue;
                 }
 
-                // 일반 Graphic (TMP_SubMeshUI 포함)
-                Material originalMat = child.material;
-
-                // 복제된 오브젝트 감지: graphic.material이 이미 마스크 관리 Material인 경우
-                // (Ctrl+D 등으로 복제하면 마스크 Material 참조가 그대로 복사됨)
-                if (IsSharedOptionalMaterial(originalMat))
-                {
-                    // 공유 Optional Material (UI/Default 등) → 그대로 재사용
-                    _originalChildMaterials[child] = child.defaultMaterial;
-                    child.SetAllDirty();
-                    continue;
-                }
-                Material realOriginal = FindOriginalForCustomClone(originalMat);
-                if (realOriginal != null)
-                {
-                    // 커스텀 clone → 원본 Material을 역추적
-                    originalMat = realOriginal;
-                }
-
-                // TMP_SubMeshUI도 동일한 DontSave Material 유실 문제 대응
+                // TMP_SubMeshUI — fontSharedMaterial 방식 유지
+                Material subOriginal = child.material;
                 Material subBackup = FindTMPOriginalBackup(child);
-                if (subBackup != null && originalMat != subBackup)
+                if (subBackup != null && subOriginal != subBackup)
                 {
-                    originalMat = subBackup;
+                    subOriginal = subBackup;
                     child.material = subBackup;
                 }
-
-                _originalChildMaterials[child] = originalMat;
-
-                // TMP_SubMeshUI는 material 세터가 m_sharedMaterial도 설정함
-                if (IsTMPMaterial(originalMat))
+                if (IsTMPMaterial(subOriginal))
                 {
-                    SaveTMPOriginalBackup(child, originalMat);
-                    Material tmpMat = CreateTMPMaskMaterial(originalMat);
+                    _originalChildMaterials[child] = subOriginal;
+                    SaveTMPOriginalBackup(child, subOriginal);
+                    Material tmpMat = CreateTMPMaskMaterial(subOriginal);
                     if (tmpMat != null)
                     {
                         child.material = tmpMat;
                         _tmpAppliedMaskMats[child] = tmpMat;
                         child.SetAllDirty();
-                        continue;
                     }
+                    continue;
                 }
 
-                // Particle (UIParticle) — Optional Shader로 교체
-                if (IsParticleMaterial(originalMat))
+                // ─────────────────────────────────────────
+                // 일반 Graphic + 커스텀 셰이더 + 파티클 → SoftMaskLightChildProxy
+                // graphic.m_Material을 건드리지 않고 IMaterialModifier 체인으로 마스킹
+                // ─────────────────────────────────────────
+
+                // 이미 유효한 프록시가 있으면 재사용
+                var existingProxy = child.GetComponent<SoftMaskLightChildProxy>();
+                if (existingProxy != null && !existingProxy.IsCleanedUp && existingProxy.SoftMask == this)
                 {
-                    Material particleMat = CreateParticleMaskMaterial(originalMat);
-                    if (particleMat != null)
-                    {
-                        child.material = particleMat;
-                        _particleAppliedMaskMats[child] = particleMat;
-                        child.SetAllDirty();
-                        continue;
-                    }
+                    _originalChildMaterials[child] = null; // 프록시 관리 표시
+                    if (!_childProxies.Contains(existingProxy))
+                        _childProxies.Add(existingProxy);
+                    child.SetMaterialDirty();
+                    continue;
                 }
 
-                // 일반 Graphic — Optional Shader 기반 Material 할당
-                Shader optShader = FindOptionalShader(originalMat.shader);
+                // Optional Shader 존재 확인 (없으면 마스킹 불가 → 스킵)
+                Shader optShader = FindOptionalShader(child.material != null ? child.material.shader : null);
                 if (optShader == null) continue;
 
-                // UI/Default 등 기본 셰이더는 공유 Material (배칭 유지)
-                // 커스텀 셰이더(ColorReplace 등)는 원본 Material이 같으면 clone 공유 (배칭 유지)
-                bool isDefaultUI = originalMat.shader.name == "UI/Default";
-                if (isDefaultUI)
-                {
-                    Material optMat = GetOrCreateOptionalMaterial(optShader);
-                    if (optMat != null)
-                    {
-                        child.material = optMat;
-                        child.SetAllDirty();
-                    }
-                }
-                else
-                {
-                    Material cloneMat = GetOrCreateSharedCustomMaterial(originalMat, optShader);
-                    if (cloneMat != null)
-                    {
-                        child.material = cloneMat;
-                        _customAppliedMaskMats[child] = cloneMat;
-                        child.SetAllDirty();
-                    }
-                }
+                // 프록시 컴포넌트 생성 및 초기화
+                if (existingProxy == null || existingProxy.IsCleanedUp)
+                    existingProxy = child.gameObject.AddComponent<SoftMaskLightChildProxy>();
+
+                existingProxy.Initialize(this);
+
+                if (!_childProxies.Contains(existingProxy))
+                    _childProxies.Add(existingProxy);
+
+                // 프록시 관리 자식으로 등록 (원본 Material = null: 프록시가 관리)
+                _originalChildMaterials[child] = null;
+
+                // Canvas 재빌드 트리거 → GetModifiedMaterial() 호출 → 프록시 Material 생성
+                child.SetMaterialDirty();
             }
 
             // 마스크 적용 완료 후 다음 프레임에서 UIEffect 동적 추가 감지 예약
@@ -1465,14 +1418,25 @@ namespace SoftMaskLight
         {
             if (child == null) return;
 
-            // UIEffect 자식 (originalMat == null) → 프록시 제거만
+            // 프록시 관리 자식 (originalMat == null): UIEffect 또는 일반 프록시
             if (originalMat == null)
             {
-                var proxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
-                if (proxy != null && !proxy.IsCleanedUp)
-                    proxy.Cleanup();
+                // UIEffect 프록시 제거
+                var uiProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
+                if (uiProxy != null && !uiProxy.IsCleanedUp)
+                    uiProxy.Cleanup();
+
+                // 일반 프록시 제거
+                var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
+                if (childProxy != null && !childProxy.IsCleanedUp)
+                {
+                    _childProxies.Remove(childProxy);
+                    childProxy.Cleanup();
+                }
                 else
+                {
                     child.SetMaterialDirty();
+                }
                 return;
             }
 
@@ -1482,29 +1446,12 @@ namespace SoftMaskLight
             else
                 child.material = originalMat;
 
-            // 해당 자식에 할당된 마스크 Material 정리
+            // TMP 마스크 Material 정리
             if (_tmpAppliedMaskMats.TryGetValue(child, out var tmpMat))
             {
                 if (tmpMat != null) { if (Application.isPlaying) Destroy(tmpMat); else DestroyImmediate(tmpMat); }
                 _tmpMaskMaterials.Remove(tmpMat);
                 _tmpAppliedMaskMats.Remove(child);
-            }
-            if (_particleAppliedMaskMats.TryGetValue(child, out var particleMat))
-            {
-                if (particleMat != null) { if (Application.isPlaying) Destroy(particleMat); else DestroyImmediate(particleMat); }
-                _particleMaskMaterials.Remove(particleMat);
-                _particleAppliedMaskMats.Remove(child);
-            }
-            if (_customAppliedMaskMats.TryGetValue(child, out var customMat))
-            {
-                _customAppliedMaskMats.Remove(child);
-                // 공유 clone인 경우 다른 자식이 아직 사용 중이면 파괴하지 않음
-                if (customMat != null && !IsCustomCloneInUse(customMat))
-                {
-                    _customMaskMaterials.Remove(customMat);
-                    RemoveFromSharedCustomClones(customMat);
-                    if (Application.isPlaying) Destroy(customMat); else DestroyImmediate(customMat);
-                }
             }
         }
 
@@ -1517,10 +1464,8 @@ namespace SoftMaskLight
             {
                 if (kvp.Key == null) continue;
 
-                // UIEffect 자식은 _originalChildMaterials 값이 null로 저장됨
-                // → 원본 머티리얼 복원 불필요 (프록시 컴포넌트 제거만 처리)
-                // → 다만 materialForRendering이 파괴될 프록시 머티리얼을 참조하므로
-                //   canvas 재빌드를 트리거하여 IMaterialModifier 체인 갱신
+                // 프록시 관리 자식 (값 == null): UIEffect 또는 일반 프록시
+                // materialForRendering이 프록시 머티리얼을 참조하므로 canvas 재빌드 트리거
                 if (kvp.Value == null)
                 {
                     kvp.Key.SetMaterialDirty();
@@ -1536,19 +1481,6 @@ namespace SoftMaskLight
 
             _originalChildMaterials.Clear();
 
-            // 공유 Optional Material 파괴
-            foreach (var mat in _sharedOptionalMaterials.Values)
-            {
-                if (mat != null)
-                {
-                    if (Application.isPlaying)
-                        Destroy(mat);
-                    else
-                        DestroyImmediate(mat);
-                }
-            }
-            _sharedOptionalMaterials.Clear();
-
             // TMP Material 파괴
             for (int i = 0; i < _tmpMaskMaterials.Count; i++)
             {
@@ -1563,34 +1495,25 @@ namespace SoftMaskLight
             _tmpMaskMaterials.Clear();
             _tmpAppliedMaskMats.Clear();
 
-            // Particle Material 파괴
-            for (int i = 0; i < _particleMaskMaterials.Count; i++)
+            // 공유 프록시 Material 파괴
+            foreach (var mat in _sharedProxyMaterials.Values)
             {
-                if (_particleMaskMaterials[i] != null)
+                if (mat != null)
                 {
-                    if (Application.isPlaying)
-                        Destroy(_particleMaskMaterials[i]);
-                    else
-                        DestroyImmediate(_particleMaskMaterials[i]);
+                    if (Application.isPlaying) Destroy(mat);
+                    else DestroyImmediate(mat);
                 }
             }
-            _particleMaskMaterials.Clear();
-            _particleAppliedMaskMats.Clear();
+            _sharedProxyMaterials.Clear();
+            _proxyMaterialSet.Clear();
 
-            // 커스텀 셰이더 Material 파괴
-            for (int i = 0; i < _customMaskMaterials.Count; i++)
+            // SoftMaskLightChildProxy 컴포넌트 정리
+            for (int i = 0; i < _childProxies.Count; i++)
             {
-                if (_customMaskMaterials[i] != null)
-                {
-                    if (Application.isPlaying)
-                        Destroy(_customMaskMaterials[i]);
-                    else
-                        DestroyImmediate(_customMaskMaterials[i]);
-                }
+                if (_childProxies[i] != null)
+                    _childProxies[i].Cleanup();
             }
-            _customMaskMaterials.Clear();
-            _customAppliedMaskMats.Clear();
-            _sharedCustomClones.Clear();
+            _childProxies.Clear();
 
             // UIEffect 프록시 컴포넌트 정리
             for (int i = 0; i < _uiEffectProxies.Count; i++)
@@ -1837,256 +1760,6 @@ namespace SoftMaskLight
             {
                 if (mat.IsKeywordEnabled(KEYWORD_NESTED))
                     mat.DisableKeyword(KEYWORD_NESTED);
-            }
-        }
-
-        // ─────────────────────────────────────────────
-        // Particle (UIParticle) 지원
-        // ─────────────────────────────────────────────
-
-        /// <summary>
-        /// Material이 CAT 파티클 셰이더를 사용하는지 판별
-        /// </summary>
-        private static bool IsParticleMaterial(Material mat)
-        {
-            return mat != null && mat.shader != null &&
-                   mat.shader.name.StartsWith(PARTICLE_SHADER_PREFIX);
-        }
-
-        /// <summary>
-        /// 파티클 전용 SoftMaskLight Material 생성
-        /// Optional Shader로 교체하여 마스크 샘플링 추가
-        /// 원본 프로퍼티를 복사하여 블렌드 모드 보존
-        /// </summary>
-        private Material CreateParticleMaskMaterial(Material originalMat)
-        {
-            Shader optShader = FindOptionalShader(originalMat.shader);
-            if (optShader == null) return null;
-
-            Material mat = new Material(optShader)
-            {
-                name = $"{optShader.name} (SoftMaskLight: {gameObject.name})",
-                hideFlags = HideFlags.DontSave
-            };
-            mat.CopyPropertiesFromMaterial(originalMat);
-            mat.shader = optShader;
-
-            // 마스크 프로퍼티 설정 (슬라이스, 중첩 포함)
-            ApplyMaskPropertiesToMaterial(mat);
-
-            _particleMaskMaterials.Add(mat);
-            return mat;
-        }
-
-        /// <summary>
-        /// 동일한 원본 Material을 사용하는 자식끼리 마스크 clone을 공유하여 배칭 유지.
-        /// (예: 같은 ColorReplace .mat 에셋을 참조하는 10개의 자식 → 1개의 마스크 clone 공유)
-        /// UIShining/Windable처럼 인스턴스별 고유 Material을 사용하는 경우는
-        /// 원본 Material 인스턴스 자체가 다르므로 자연스럽게 개별 clone이 생성됨.
-        /// </summary>
-        private Material GetOrCreateSharedCustomMaterial(Material originalMat, Shader optShader)
-        {
-            if (optShader == null) return null;
-
-            // 동일한 원본 Material에 대해 이미 clone이 있으면 공유
-            if (_sharedCustomClones.TryGetValue(originalMat, out Material existing) && existing != null)
-                return existing;
-
-            Material mat = new Material(optShader)
-            {
-                name = $"{optShader.name} (SoftMaskLight: {gameObject.name})",
-                hideFlags = HideFlags.DontSave
-            };
-            mat.CopyPropertiesFromMaterial(originalMat);
-            mat.shader = optShader;
-
-            ApplyMaskPropertiesToMaterial(mat);
-
-            _customMaskMaterials.Add(mat);
-            _sharedCustomClones[originalMat] = mat;
-            return mat;
-        }
-
-        /// <summary>
-        /// 공유 clone이 다른 자식에 의해 아직 사용 중인지 확인
-        /// </summary>
-        private bool IsCustomCloneInUse(Material clone)
-        {
-            foreach (var kvp in _customAppliedMaskMats)
-            {
-                if (kvp.Value == clone) return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Material이 이미 마스크 clone인 경우 원본 Material을 역추적.
-        /// 오브젝트 복제 시 clone 참조가 그대로 복사되는 경우에 사용.
-        /// 공유 clone 캐시와 공유 Optional Material 모두 확인.
-        /// </summary>
-        private Material FindOriginalForCustomClone(Material mat)
-        {
-            if (mat == null) return null;
-            // 커스텀 셰이더 공유 clone에서 역추적
-            foreach (var kvp in _sharedCustomClones)
-            {
-                if (kvp.Value == mat) return kvp.Key;
-            }
-            // 공유 Optional Material (UI/Default 등)인지도 확인
-            if (_customMaskMaterials.Contains(mat))
-            {
-                // _customMaskMaterials에는 있지만 _sharedCustomClones에는 없는 경우
-                // (InvalidateChild 등으로 캐시만 제거된 상태) → null 반환하여 새로 처리
-                return null;
-            }
-            foreach (var kvp in _sharedOptionalMaterials)
-            {
-                if (kvp.Value == mat) return null; // Optional Material은 원본 추적 불필요
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// _sharedCustomClones에서 해당 clone을 역방향으로 찾아 제거
-        /// </summary>
-        private void RemoveFromSharedCustomClones(Material clone)
-        {
-            Material keyToRemove = null;
-            foreach (var kvp in _sharedCustomClones)
-            {
-                if (kvp.Value == clone) { keyToRemove = kvp.Key; break; }
-            }
-            if (keyToRemove != null)
-                _sharedCustomClones.Remove(keyToRemove);
-        }
-
-        private Material CreateCustomMaskMaterial(Material originalMat, Shader optShader)
-        {
-            if (optShader == null) return null;
-
-            Material mat = new Material(optShader)
-            {
-                name = $"{optShader.name} (SoftMaskLight: {gameObject.name})",
-                hideFlags = HideFlags.DontSave
-            };
-            mat.CopyPropertiesFromMaterial(originalMat);
-            mat.shader = optShader;
-
-            ApplyMaskPropertiesToMaterial(mat);
-
-            _customMaskMaterials.Add(mat);
-            return mat;
-        }
-
-        /// <summary>
-        /// 커스텀 셰이더 Material에 마스크 프로퍼티 갱신
-        /// </summary>
-        private void UpdateCustomMaterials()
-        {
-            for (int i = 0; i < _customMaskMaterials.Count; i++)
-            {
-                if (_customMaskMaterials[i] != null)
-                    ApplyMaskPropertiesToMaterial(_customMaskMaterials[i]);
-            }
-        }
-
-        /// <summary>
-        /// 파티클 외부 Material 변경 감지 및 마스크 자동 재적용
-        /// UIParticleRenderer가 내부적으로 Material을 재할당한 경우
-        /// (비활성→활성 전환, RefreshParticles 등)
-        /// </summary>
-        private void DetectParticleMaterialChanges()
-        {
-            if (_particleAppliedMaskMats.Count == 0) return;
-
-            _toRemove.Clear();
-
-            foreach (var kvp in _particleAppliedMaskMats)
-            {
-                if (kvp.Key == null) { _toRemove.Add(kvp.Key); continue; }
-
-                Material currentMat = kvp.Key.material;
-
-                // 적용한 마스크 Material과 동일 → 변경 없음
-                if (currentMat == kvp.Value || currentMat == null) continue;
-
-                // Material이 외부에서 교체됨
-                _toRemove.Add(kvp.Key);
-            }
-
-            if (_toRemove.Count == 0) return;
-
-            for (int i = 0; i < _toRemove.Count; i++)
-            {
-                var child = _toRemove[i];
-
-                // null 오브젝트 정리
-                if (child == null)
-                {
-                    _particleAppliedMaskMats.Remove(child);
-                    _originalChildMaterials.Remove(child);
-                    continue;
-                }
-
-                // 기존 마스크 Material 정리
-                if (_particleAppliedMaskMats.TryGetValue(child, out Material oldMaskMat) && oldMaskMat != null)
-                {
-                    _particleMaskMaterials.Remove(oldMaskMat);
-                    if (Application.isPlaying) Destroy(oldMaskMat);
-                    else DestroyImmediate(oldMaskMat);
-                }
-
-                // 새 Material 가져오기
-                Material userMat = child.material;
-
-                if (userMat == null)
-                {
-                    _particleAppliedMaskMats.Remove(child);
-                    _originalChildMaterials.Remove(child);
-                    continue;
-                }
-
-                // 원본 Material 갱신
-                _originalChildMaterials[child] = userMat;
-
-                // 여전히 파티클 Material이면 새 마스크 Material 생성
-                if (IsParticleMaterial(userMat))
-                {
-                    Material newMaskMat = CreateParticleMaskMaterial(userMat);
-                    if (newMaskMat != null)
-                    {
-                        child.material = newMaskMat;
-                        _particleAppliedMaskMats[child] = newMaskMat;
-                        child.SetAllDirty();
-                    }
-                    else
-                    {
-                        _particleAppliedMaskMats.Remove(child);
-                    }
-                }
-                else
-                {
-                    _particleAppliedMaskMats.Remove(child);
-                }
-            }
-
-            _materialDirty = true;
-        }
-
-        /// <summary>
-        /// Particle Material에 현재 마스크 프로퍼티 일괄 전파
-        /// </summary>
-        private void UpdateParticleMaterials()
-        {
-            for (int i = _particleMaskMaterials.Count - 1; i >= 0; i--)
-            {
-                Material mat = _particleMaskMaterials[i];
-                if (mat == null)
-                {
-                    _particleMaskMaterials.RemoveAt(i);
-                    continue;
-                }
-                ApplyMaskPropertiesToMaterial(mat);
             }
         }
 
