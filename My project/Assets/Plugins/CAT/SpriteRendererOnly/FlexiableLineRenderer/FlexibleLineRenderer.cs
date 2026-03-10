@@ -24,6 +24,7 @@ namespace CAT.Effects
         [SerializeField] private bool autoCalculateSegmentLength = true;
         
         [Header("시뮬레이션 설정")]
+        [SerializeField] private bool _simulateInEditor = true;
         [SerializeField] private int constraintIterations = 10;
         [SerializeField] private float gravityResistance = 1.5f;
         [SerializeField] private float damping = 0.95f;
@@ -127,7 +128,7 @@ namespace CAT.Effects
             
             #if UNITY_EDITOR
             // 에디터 모드 초기화
-            if (!Application.isPlaying && showInEditor)
+            if (!Application.isPlaying && showInEditor && _simulateInEditor)
             {
                 EditorInitialize();
             }
@@ -154,19 +155,29 @@ namespace CAT.Effects
         // Inspector에서 값이 변경될 때 호출됨
         private void OnValidate()
         {
-            if (!Application.isPlaying && showInEditor)
+            if (!Application.isPlaying)
             {
-                // segmentCount가 변경되었는지 확인
-                if (segmentCount != lastSegmentCount)
+                bool canSimulate = showInEditor
+                    && lineRenderer != null && startAnchor != null && endAnchor != null;
+
+                if (canSimulate)
                 {
-                    lastSegmentCount = segmentCount;
-                    editorInitialized = false; // 재초기화 필요
-                    
-                    // 즉시 재초기화
-                    if (ValidateComponents())
+                    EditorApplication.update -= EditorUpdate;
+                    EditorApplication.update += EditorUpdate;
+
+                    // segmentCount 변경 감지
+                    if (segmentCount != lastSegmentCount)
                     {
-                        EditorInitialize();
+                        lastSegmentCount = segmentCount;
+                        editorInitialized = false;
                     }
+
+                    if (!editorInitialized)
+                        EditorInitialize();
+                }
+                else
+                {
+                    EditorApplication.update -= EditorUpdate;
                 }
             }
         }
@@ -199,42 +210,54 @@ namespace CAT.Effects
         
         private void EditorUpdate()
         {
-            if (!updateInEditor || !showInEditor || !ValidateComponents())
+            // 컴포넌트 미할당 시 콜백 해제하여 에러 반복 방지
+            if (lineRenderer == null || startAnchor == null || endAnchor == null)
+            {
+                EditorApplication.update -= EditorUpdate;
                 return;
-            
+            }
+
+            if (!updateInEditor || !showInEditor)
+                return;
+
             // segmentCount 변경 감지
             if (segmentCount != lastSegmentCount)
             {
                 lastSegmentCount = segmentCount;
-                editorInitialized = false; // 재초기화 필요
+                editorInitialized = false;
             }
-            
+
             // 에디터에서도 초기화되지 않았다면 초기화
             if (!editorInitialized)
             {
                 EditorInitialize();
                 return;
             }
-            
-            // 에디터에서는 고정된 델타타임 사용 (60fps 기준)
-            float editorDeltaTime = 0.016f;
-            
+
             // 앵커 위치 업데이트
             CacheAnchorPositions();
-            
+
             // 앵커 위치가 변경되었는지 확인
-            bool anchorChanged = (cachedStartPosition != lastCachedStartPos) || 
+            bool anchorChanged = (cachedStartPosition != lastCachedStartPos) ||
                                 (cachedEndPosition != lastCachedEndPos);
-            
+
             if (anchorChanged)
             {
                 lastCachedStartPos = cachedStartPosition;
                 lastCachedEndPos = cachedEndPosition;
             }
-            
-            // 시뮬레이션 업데이트
-            UpdateSimulation(editorDeltaTime);
-            
+
+            if (_simulateInEditor)
+            {
+                // 물리 시뮬레이션 업데이트
+                UpdateSimulation(0.016f);
+            }
+            else if (anchorChanged)
+            {
+                // 시뮬레이션 OFF: 앵커 이동 시 직선으로 재배치
+                ResetPositions();
+            }
+
             // 라인 그리기
             DrawLine();
             
