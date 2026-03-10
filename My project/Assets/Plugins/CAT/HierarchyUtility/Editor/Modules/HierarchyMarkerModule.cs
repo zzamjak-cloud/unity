@@ -1,8 +1,5 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -106,6 +103,13 @@ namespace CAT.HierarchyUtility
                         GameObject primaryObj = EditorUtility.InstanceIDToObject(primary.parentId) as GameObject;
                         if (primaryObj != null)
                             EditorGUIUtility.PingObject(primaryObj);
+
+                        // 인스펙터에서 해당 필드 하이라이트
+                        Highlighter.Stop();
+                        EditorApplication.delayCall += () =>
+                        {
+                            Highlighter.Highlight("Inspector", primary.fieldName, HighlightSearchMode.Auto);
+                        };
                     }
                 }
             }
@@ -164,61 +168,35 @@ namespace CAT.HierarchyUtility
                     ? parentObject.transform.parent == currentPrefabStage.prefabContentsRoot.transform
                     : PrefabUtility.IsPartOfPrefabInstance(parentObject) && PrefabUtility.GetNearestPrefabInstanceRoot(parentObject) == parentObject;
 
-                FieldInfo[] fields = script.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var field in fields)
+                // SerializedProperty로 모든 오브젝트 참조 탐색 (중첩 직렬화 클래스, 배열, 리스트 모두 포함)
+                var so = new SerializedObject(script);
+                var prop = so.GetIterator();
+                bool enterChildren = true;
+                while (prop.NextVisible(enterChildren))
                 {
-                    bool isSerializable = field.IsPublic || field.IsDefined(typeof(SerializeField), false);
-                    if (!isSerializable) continue;
+                    enterChildren = true;
 
-                    if (field.IsDefined(typeof(HideInInspector), false) || field.IsDefined(typeof(System.NonSerializedAttribute), false)) continue;
+                    if (prop.propertyType != SerializedPropertyType.ObjectReference)
+                        continue;
 
-                    // 단일 타입 필드 (GameObject, Component 계열)
-                    if (typeof(GameObject).IsAssignableFrom(field.FieldType) || typeof(Component).IsAssignableFrom(field.FieldType))
-                    {
-                        object value = field.GetValue(script);
-                        if (value == null) continue;
-                        GameObject referencedObject = null;
-                        if (value is GameObject go && go != null) referencedObject = go;
-                        else if (value is Component component && component != null) referencedObject = component.gameObject;
+                    // m_Script 등 Unity 내부 필드 제외
+                    if (prop.propertyPath == "m_Script") continue;
 
-                        RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
-                    }
-                    // 배열 타입 필드 (GameObject[], Component[] 계열)
-                    else if (field.FieldType.IsArray)
-                    {
-                        Type elementType = field.FieldType.GetElementType();
-                        if (elementType == null) continue;
-                        if (!typeof(GameObject).IsAssignableFrom(elementType) && !typeof(Component).IsAssignableFrom(elementType)) continue;
+                    UnityEngine.Object refObj = prop.objectReferenceValue;
+                    if (refObj == null) continue;
 
-                        if (!(field.GetValue(script) is Array array)) continue;
-                        foreach (var item in array)
-                        {
-                            if (item == null) continue;
-                            GameObject referencedObject = null;
-                            if (item is GameObject go && go != null) referencedObject = go;
-                            else if (item is Component component && component != null) referencedObject = component.gameObject;
+                    GameObject referencedObject = null;
+                    if (refObj is GameObject go) referencedObject = go;
+                    else if (refObj is Component comp) referencedObject = comp.gameObject;
 
-                            RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
-                        }
-                    }
-                    // 제네릭 리스트 타입 필드 (List<GameObject>, List<Component> 계열)
-                    else if (field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(List<>))
-                    {
-                        Type elementType = field.FieldType.GetGenericArguments()[0];
-                        if (!typeof(GameObject).IsAssignableFrom(elementType) && !typeof(Component).IsAssignableFrom(elementType)) continue;
+                    // 루트 필드 이름 추출 (예: "targets.Array.data[2].transform" → "targets")
+                    string fieldName = prop.propertyPath;
+                    int dotIndex = fieldName.IndexOf('.');
+                    if (dotIndex >= 0) fieldName = fieldName.Substring(0, dotIndex);
 
-                        if (!(field.GetValue(script) is IList list)) continue;
-                        foreach (var item in list)
-                        {
-                            if (item == null) continue;
-                            GameObject referencedObject = null;
-                            if (item is GameObject go && go != null) referencedObject = go;
-                            else if (item is Component component && component != null) referencedObject = component.gameObject;
-
-                            RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, field.Name);
-                        }
-                    }
+                    RegisterReference(referencedObject, parentID, isParentPrefabRoot, script, fieldName);
                 }
+                so.Dispose();
             }
 
             EditorApplication.RepaintHierarchyWindow();
