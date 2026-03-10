@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,14 +8,16 @@ namespace CAT.UI
     /// 튜토리얼 포커스 Dimmer — 메시 + 전용 셰이더로 구멍난 마스킹.
     /// 스프라이트 없이 전체 영역을 한 쿼드로 그리고, 셰이더에서 포커스 영역(버튼+padding)을 둥근 사각 구멍으로 뚫음.
     /// - 외곽: expansionMargin 만큼 확장된 영역에 Color Tint로 딤.
-    /// - 구멍: focusTarget + padding, holeCornerRadius로 라운드 처리.
+    /// - 구멍: focusTargets[currentIndex] + padding, holeCornerRadius로 라운드 처리.
     /// - 구멍 영역 Raycast 통과 (ICanvasRaycastFilter).
     /// </summary>
+    [ExecuteAlways]
     [RequireComponent(typeof(CanvasRenderer))]
-    public class FocusDimmerImage : MaskableGraphic, ICanvasRaycastFilter
+    public class TutorialFocusDimmer : MaskableGraphic, ICanvasRaycastFilter
     {
         [Header("Focus Settings")]
-        public RectTransform focusTarget;
+        [Tooltip("튜토리얼 순서에 따라 포커싱할 대상 목록")]
+        [SerializeField] private List<RectTransform> _focusTargets = new List<RectTransform>();
         public Vector2 padding;
 
         [Header("Hole")]
@@ -40,10 +43,59 @@ namespace CAT.UI
 
         private Rect     _cachedFocusRect;
         private Material _material;
+        private int      _currentIndex = -1;
 
         private static readonly int FocusRectID    = Shader.PropertyToID("_FocusRect");
         private static readonly int CornerRadiusID = Shader.PropertyToID("_CornerRadius");
         private static readonly int HoleSoftnessID = Shader.PropertyToID("_HoleSoftness");
+
+        // ── 외부 API ──────────────────────────────────────────
+
+        /// <summary>등록된 포커스 타겟 수</summary>
+        public int FocusCount => _focusTargets.Count;
+
+        /// <summary>현재 활성 포커스 인덱스 (-1 = 포커싱 없음)</summary>
+        public int CurrentIndex => _currentIndex;
+
+        /// <summary>현재 활성 포커스 타겟 (없으면 null)</summary>
+        public RectTransform CurrentTarget =>
+            _currentIndex >= 0 && _currentIndex < _focusTargets.Count
+                ? _focusTargets[_currentIndex]
+                : null;
+
+        /// <summary>포커스 타겟 리스트 (읽기 전용 접근)</summary>
+        public IReadOnlyList<RectTransform> FocusTargets => _focusTargets;
+
+        /// <summary>
+        /// 지정한 인덱스의 타겟으로 포커싱. SetVerticesDirty 자동 호출.
+        /// </summary>
+        public void SetFocusIndex(int index)
+        {
+            if (index < 0 || index >= _focusTargets.Count)
+            {
+                Debug.LogWarning($"TutorialFocusDimmer: 유효하지 않은 인덱스 {index} (등록된 타겟 수: {_focusTargets.Count})");
+                return;
+            }
+
+            _currentIndex = index;
+            SetVerticesDirty();
+        }
+
+        /// <summary>포커싱 해제 — 구멍 없이 전체 딤 처리</summary>
+        public void ClearFocus()
+        {
+            _currentIndex = -1;
+            SetVerticesDirty();
+        }
+
+        /// <summary>런타임에서 타겟을 추가하고 해당 인덱스를 반환</summary>
+        public int AddTarget(RectTransform target)
+        {
+            _focusTargets.Add(target);
+            return _focusTargets.Count - 1;
+        }
+
+        // ── Properties ────────────────────────────────────────
 
         public float holeCornerRadius
         {
@@ -72,10 +124,16 @@ namespace CAT.UI
 
         public override Texture mainTexture => s_WhiteTexture;
 
+        // ── Lifecycle ─────────────────────────────────────────
+
         protected override void OnEnable()
         {
             base.OnEnable();
             EnsureMaterial();
+
+            // 활성화 시 첫 번째 타겟이 있으면 자동으로 포커싱
+            if (_currentIndex < 0 && _focusTargets.Count > 0)
+                _currentIndex = 0;
         }
 
         private void EnsureMaterial()
@@ -88,13 +146,15 @@ namespace CAT.UI
 
             if (shader == null)
             {
-                Debug.LogError("FocusDimmerImage: CAT/UI/FocusDimmer 셰이더를 찾을 수 없습니다. 인스펙터 Shader 필드에 할당하세요.");
+                Debug.LogError("TutorialFocusDimmer: CAT/UI/FocusDimmer 셰이더를 찾을 수 없습니다. 인스펙터 Shader 필드에 할당하세요.");
                 return;
             }
 
             _material = new Material(shader) { hideFlags = HideFlags.DontSave };
             material = _material;
         }
+
+        // ── Mesh ──────────────────────────────────────────────
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {
@@ -165,9 +225,10 @@ namespace CAT.UI
 
         private Rect GetFocusRect()
         {
-            if (focusTarget == null) return Rect.zero;
+            RectTransform target = CurrentTarget;
+            if (target == null) return Rect.zero;
 
-            focusTarget.GetWorldCorners(_worldCorners);  // 캐싱된 배열 재사용
+            target.GetWorldCorners(_worldCorners);  // 캐싱된 배열 재사용
 
             Vector2 min = rectTransform.InverseTransformPoint(_worldCorners[0]);
             Vector2 max = rectTransform.InverseTransformPoint(_worldCorners[2]);
@@ -192,6 +253,8 @@ namespace CAT.UI
             vh.AddTriangle(i + 2, i + 3, i);
         }
 
+        // ── Raycast ───────────────────────────────────────────
+
         public bool IsRaycastLocationValid(Vector2 screenPoint, Camera eventCamera)
         {
             if (!rectTransform) return true;
@@ -200,14 +263,19 @@ namespace CAT.UI
             return !_cachedFocusRect.Contains(localPoint);
         }
 
+        // ── Update ────────────────────────────────────────────
+
         private void Update()
         {
-            if (focusTarget == null || !focusTarget.hasChanged) return;
+            RectTransform target = CurrentTarget;
+            if (target == null || !target.hasChanged) return;
 
             // hasChanged 리셋: 리셋하지 않으면 한 번 이동 후 매 프레임 재빌드 발생
-            focusTarget.hasChanged = false;
+            target.hasChanged = false;
             SetVerticesDirty();
         }
+
+        // ── Cleanup ───────────────────────────────────────────
 
         protected override void OnDestroy()
         {
