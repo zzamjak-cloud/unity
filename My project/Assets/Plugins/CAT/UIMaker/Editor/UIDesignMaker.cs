@@ -19,6 +19,21 @@ namespace CAT.Utility
         static string _jsonBasePath;
 
         /// <summary>
+        /// 씬 내 오브젝트 참조 지연 바인딩 데이터.
+        /// 계층 구조 생성 완료 후 이름으로 찾아 연결한다.
+        /// </summary>
+        struct DeferredSceneRef
+        {
+            public Component component;
+            public string propertyPath;
+            public string targetName;
+            public string targetTypeName;
+        }
+
+        // 생성 중 수집되는 지연 참조 목록 (CreateFromJsonAbsolute 호출 당 1회 사용)
+        static List<DeferredSceneRef> _deferredRefs;
+
+        /// <summary>
         /// JSON 기본 폴더 경로를 반환한다.
         /// </summary>
         public static string JsonBasePath
@@ -63,8 +78,15 @@ namespace CAT.Utility
             // Canvas 찾기/생성
             Transform parent = GetOrCreateCanvasParent();
 
+            // 지연 참조 수집 시작
+            _deferredRefs = new List<DeferredSceneRef>();
+
             // 재귀적 오브젝트 생성
             GameObject created = CreateGameObjectFromNode(root.root, parent);
+
+            // 씬 내 오브젝트 참조 지연 바인딩 (ScrollRect.content, viewport 등)
+            ResolveDeferredSceneRefs(created.transform);
+            _deferredRefs = null;
 
             // 선택
             Selection.activeGameObject = created;
@@ -72,7 +94,6 @@ namespace CAT.Utility
 
             Undo.CollapseUndoOperations(undoGroup);
 
-            Debug.Log($"[UIDesignMaker] '{root.prefabName}' 생성 완료");
         }
 
         /// <summary>
@@ -169,7 +190,87 @@ namespace CAT.Utility
         }
 
         /// <summary>
+        /// 계층 구조 생성 완료 후, 씬 내 오브젝트 참조를 이름으로 찾아 연결한다.
+        /// ScrollRect.m_Content, m_Viewport 등 같은 프리팹 계층 내 참조를 복원한다.
+        /// </summary>
+        static void ResolveDeferredSceneRefs(Transform root)
+        {
+            if (_deferredRefs == null || _deferredRefs.Count == 0) return;
+
+            foreach (var deferred in _deferredRefs)
+            {
+                if (deferred.component == null) continue;
+
+                // 해당 컴포넌트가 속한 Transform 기준으로 자식 계층에서 이름으로 검색
+                Transform found = FindInChildren(deferred.component.transform, deferred.targetName);
+                if (found == null)
+                {
+                    // 루트부터 검색 (형제 오브젝트 참조 등)
+                    found = FindInChildren(root, deferred.targetName);
+                }
+
+                if (found == null) continue;
+
+                // 타입에 따라 적절한 오브젝트를 참조
+                UnityEngine.Object targetObj = ResolveTargetObject(found, deferred.targetTypeName);
+                if (targetObj == null) continue;
+
+                var so = new SerializedObject(deferred.component);
+                var prop = so.FindProperty(deferred.propertyPath);
+                if (prop != null && prop.propertyType == SerializedPropertyType.ObjectReference)
+                {
+                    prop.objectReferenceValue = targetObj;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Transform 계층에서 이름으로 자식을 재귀 검색한다.
+        /// </summary>
+        static Transform FindInChildren(Transform parent, string name)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                var child = parent.GetChild(i);
+                if (child.name == name)
+                    return child;
+
+                var found = FindInChildren(child, name);
+                if (found != null)
+                    return found;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 타입명에 따라 Transform에서 적절한 오브젝트를 반환한다.
+        /// RectTransform/Transform이면 Transform을, 컴포넌트면 GetComponent, 아니면 GameObject.
+        /// </summary>
+        static UnityEngine.Object ResolveTargetObject(Transform found, string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+                return found.gameObject;
+
+            // Transform/RectTransform 타입
+            if (typeName.Contains("RectTransform") || typeName.Contains("Transform"))
+                return found;
+
+            // 컴포넌트 타입 검색
+            Type type = FindType(typeName);
+            if (type != null)
+            {
+                var comp = found.GetComponent(type);
+                if (comp != null) return comp;
+            }
+
+            // 폴백: GameObject
+            return found.gameObject;
+        }
+
+        /// <summary>
         /// 중첩 프리팹을 인스턴스화한다. 프리팹 연결을 유지한다.
+        /// modifications 데이터가 있으면 SetPropertyModifications()로 원자적 적용.
         /// </summary>
         static GameObject CreatePrefabInstance(GameObjectNode node, Transform parent)
         {
@@ -177,7 +278,6 @@ namespace CAT.Utility
             if (string.IsNullOrEmpty(assetPath))
             {
                 Debug.LogWarning($"[UIDesignMaker] 프리팹을 찾을 수 없습니다 (GUID: {node.prefabGuid}, 이름: {node.name})");
-                // 폴백: 빈 오브젝트 생성
                 var fallback = new GameObject(node.name);
                 Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
                 if (parent != null)
@@ -204,42 +304,110 @@ namespace CAT.Utility
             if (parent != null)
                 GameObjectUtility.SetParentAndAlign(instance, parent.gameObject);
 
-            // Transform 복원 (프리팹 내부와 다를 수 있는 위치/크기)
+            // 루트 Transform은 직접 적용 (씬 레벨 배치)
             ApplyTransform(instance.transform, node.transform);
             instance.SetActive(node.active);
 
-            // 컴포넌트 프로퍼티 적용 (기존 컴포넌트 오버라이드 + 추가 컴포넌트)
-            foreach (var compData in node.components)
+            // modifications 데이터가 있으면 PropertyModification 기반 복원
+            if (node.modifications != null && node.modifications.Count > 0)
             {
-                Type compType = FindType(compData.typeName);
-                if (compType == null)
-                {
-                    Debug.LogWarning($"[UIDesignMaker] 타입을 찾을 수 없습니다: {compData.typeName}");
-                    continue;
-                }
-                if (typeof(Transform).IsAssignableFrom(compType)) continue;
-
-                // 기존 컴포넌트가 있으면 오버라이드, 없으면 추가
-                Component comp = instance.GetComponent(compType);
-                if (comp == null)
-                    comp = instance.AddComponent(compType);
-                if (comp == null) continue;
-
-                if (comp is Behaviour behaviour)
-                    behaviour.enabled = compData.enabled;
-
-                var so = new SerializedObject(comp);
-                foreach (var propData in compData.properties)
-                {
-                    RestoreProperty(so, propData);
-                }
-                so.ApplyModifiedProperties();
-
-                // 프리팹 인스턴스의 프로퍼티 변경을 override로 명시 기록
-                PrefabUtility.RecordPrefabInstancePropertyModifications(comp);
+                ApplyModifications(instance, assetPath, node.modifications);
             }
 
             return instance;
+        }
+
+        /// <summary>
+        /// PrefabModData 리스트를 PropertyModification으로 변환하여 프리팹 인스턴스에 적용한다.
+        /// fileId → Object 매핑을 통해 소스 프리팹의 대상 오브젝트를 정확히 참조한다.
+        /// </summary>
+        static void ApplyModifications(GameObject instance, string prefabAssetPath,
+            List<PrefabModData> modDataList)
+        {
+            // 소스 프리팹 에셋의 모든 오브젝트를 로드하여 fileId → Object 매핑 생성
+            var fileIdMap = new Dictionary<long, UnityEngine.Object>();
+            var allAssets = AssetDatabase.LoadAllAssetsAtPath(prefabAssetPath);
+            foreach (var asset in allAssets)
+            {
+                if (asset == null) continue;
+                string guid;
+                long localId;
+                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out guid, out localId))
+                {
+                    fileIdMap[localId] = asset;
+                }
+            }
+
+
+            // 기존 modifications 보존
+            var mods = new List<PropertyModification>();
+            var existingMods = PrefabUtility.GetPropertyModifications(instance);
+            if (existingMods != null)
+                mods.AddRange(existingMods);
+
+            int applied = 0;
+            int skipped = 0;
+
+            foreach (var modData in modDataList)
+            {
+                // fileId로 소스 프리팹 내 대상 오브젝트 찾기
+                UnityEngine.Object target;
+                if (!fileIdMap.TryGetValue(modData.targetFileId, out target) || target == null)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var mod = new PropertyModification
+                {
+                    target = target,
+                    propertyPath = modData.propertyPath,
+                    value = modData.value ?? ""
+                };
+
+                // ObjectReference 복원
+                if (!string.IsNullOrEmpty(modData.objectRefGuid))
+                {
+                    string refPath = AssetDatabase.GUIDToAssetPath(modData.objectRefGuid);
+                    if (!string.IsNullOrEmpty(refPath))
+                    {
+                        // Sprite 등 서브 에셋을 우선 탐색 (LoadMainAssetAtPath는 Texture2D를 반환하여 Type mismatch 발생)
+                        mod.objectReference = LoadAssetByPropertyType(refPath, modData.propertyPath);
+                    }
+                }
+
+                mods.Add(mod);
+                applied++;
+            }
+
+
+            // 한번에 적용
+            PrefabUtility.SetPropertyModifications(instance, mods.ToArray());
+        }
+
+        /// <summary>
+        /// propertyPath에 따라 적절한 타입의 에셋을 로드한다.
+        /// Sprite 프로퍼티(m_Sprite 등)는 서브 에셋에서 Sprite를 찾고,
+        /// 그 외에는 메인 에셋을 반환한다.
+        /// </summary>
+        static UnityEngine.Object LoadAssetByPropertyType(string assetPath, string propertyPath)
+        {
+            var mainAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
+            if (mainAsset == null) return null;
+
+            // 메인 에셋이 Texture2D인 경우, 서브 에셋에서 Sprite를 찾아 반환
+            // (Image.m_Sprite 등 Sprite 프로퍼티에 Texture2D를 넣으면 Type mismatch 발생)
+            if (mainAsset is Texture2D)
+            {
+                var allAssets = AssetDatabase.LoadAllAssetsAtPath(assetPath);
+                foreach (var asset in allAssets)
+                {
+                    if (asset is Sprite)
+                        return asset;
+                }
+            }
+
+            return mainAsset;
         }
 
         /// <summary>
@@ -305,6 +473,23 @@ namespace CAT.Utility
             var so = new SerializedObject(comp);
             foreach (var propData in compData.properties)
             {
+                // 씬 내 오브젝트 참조는 지연 바인딩 (GUID 없고 이름만 있는 경우)
+                if (propData.type == "ObjectReference" &&
+                    string.IsNullOrEmpty(propData.objectRefGuid) &&
+                    !string.IsNullOrEmpty(propData.value) &&
+                    propData.value != "null" &&
+                    _deferredRefs != null)
+                {
+                    _deferredRefs.Add(new DeferredSceneRef
+                    {
+                        component = comp,
+                        propertyPath = propData.name,
+                        targetName = propData.value,
+                        targetTypeName = propData.objectRefType
+                    });
+                    continue;
+                }
+
                 RestoreProperty(so, propData);
             }
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -738,9 +923,32 @@ namespace CAT.Utility
                 }
             }
 
-            // 중첩 프리팹이면 자식은 프리팹에서 오므로 생략
+            // 중첩 프리팹이면 modifications + childOverrides(레거시) 파싱 후 반환
             if (node.IsPrefabReference)
+            {
+                // PropertyModification 기반 오버라이드 (신규)
+                var modList = GetList(dict, "modifications");
+                if (modList != null)
+                {
+                    foreach (var item in modList)
+                    {
+                        if (item is Dictionary<string, object> modDict)
+                            node.modifications.Add(ParsePrefabModData(modDict));
+                    }
+                }
+
+                // 레거시 childOverrides (하위 호환)
+                var ovrList = GetList(dict, "childOverrides");
+                if (ovrList != null)
+                {
+                    foreach (var item in ovrList)
+                    {
+                        if (item is Dictionary<string, object> ovrDict)
+                            node.childOverrides.Add(ParseChildOverrideData(ovrDict));
+                    }
+                }
                 return node;
+            }
 
             // 자식 노드
             var childList = GetList(dict, "children");
@@ -809,6 +1017,39 @@ namespace CAT.Utility
             }
 
             return comp;
+        }
+
+        static PrefabModData ParsePrefabModData(Dictionary<string, object> dict)
+        {
+            return new PrefabModData
+            {
+                targetFileId = GetLong(dict, "targetFileId"),
+                propertyPath = GetString(dict, "propertyPath"),
+                value = GetString(dict, "value"),
+                objectRefGuid = GetString(dict, "objectRefGuid")
+            };
+        }
+
+        static ChildOverrideData ParseChildOverrideData(Dictionary<string, object> dict)
+        {
+            var data = new ChildOverrideData
+            {
+                childPath = GetString(dict, "childPath"),
+                active = GetBool(dict, "active"),
+                transform = ParseTransformData(GetDict(dict, "transform"))
+            };
+
+            var compList = GetList(dict, "components");
+            if (compList != null)
+            {
+                foreach (var item in compList)
+                {
+                    if (item is Dictionary<string, object> compDict)
+                        data.components.Add(ParseComponentData(compDict));
+                }
+            }
+
+            return data;
         }
 
         static void CopyFloatArray(Dictionary<string, object> dict, string key, float[] target, int count)
@@ -1021,6 +1262,16 @@ namespace CAT.Utility
             {
                 if (val is long l) return (int)l;
                 if (val is double d) return (int)d;
+            }
+            return 0;
+        }
+
+        static long GetLong(Dictionary<string, object> dict, string key)
+        {
+            if (dict != null && dict.TryGetValue(key, out object val))
+            {
+                if (val is long l) return l;
+                if (val is double d) return (long)d;
             }
             return 0;
         }

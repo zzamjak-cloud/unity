@@ -311,7 +311,6 @@ namespace CAT.Utility
                     long localId;
                     if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(prefabSource, out guid, out localId))
                     {
-                        // 프리팹 참조 + 컴포넌트(추가/오버라이드 포함) 저장, 자식은 생략
                         var prefabNode = new GameObjectNode
                         {
                             name = go.name,
@@ -320,21 +319,8 @@ namespace CAT.Utility
                             transform = ExtractTransform(go.transform)
                         };
 
-                        // 모든 컴포넌트 추출 (추가 컴포넌트 + 기존 컴포넌트의 오버라이드 값)
-                        var comps = go.GetComponents<Component>();
-                        for (int i = 0; i < comps.Length; i++)
-                        {
-                            var comp = comps[i];
-                            if (comp == null) continue;
-                            if (comp is Transform) continue;
-
-                            prefabNode.components.Add(new ComponentData
-                            {
-                                typeName = comp.GetType().FullName,
-                                enabled = IsComponentEnabled(comp),
-                                properties = ExtractProperties(comp)
-                            });
-                        }
+                        // PropertyModification 기반 오버라이드 추출 (텍스트, 이미지, 컬러, active 등 모두 포함)
+                        ExtractPropertyModifications(go, prefabNode.modifications);
 
                         return prefabNode;
                     }
@@ -408,6 +394,121 @@ namespace CAT.Utility
                     System.Globalization.CultureInfo.InvariantCulture));
             }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// GameObject의 컴포넌트를 추출하여 리스트에 추가한다.
+        /// </summary>
+        static void ExtractComponentsTo(GameObject go, List<ComponentData> list)
+        {
+            var comps = go.GetComponents<Component>();
+            for (int i = 0; i < comps.Length; i++)
+            {
+                var comp = comps[i];
+                if (comp == null) continue;
+                if (comp is Transform) continue;
+
+                list.Add(new ComponentData
+                {
+                    typeName = comp.GetType().FullName,
+                    enabled = IsComponentEnabled(comp),
+                    properties = ExtractProperties(comp)
+                });
+            }
+        }
+
+        /// <summary>
+        /// 중첩 프리팹의 자식 오브젝트를 재귀 순회하여 오버라이드 데이터를 추출한다.
+        /// </summary>
+        /// <param name="current">현재 순회 중인 Transform</param>
+        /// <param name="prefabRoot">중첩 프리팹의 루트 Transform</param>
+        /// <param name="overrides">결과를 저장할 리스트</param>
+        static void ExtractChildOverrides(Transform current, Transform prefabRoot,
+            List<ChildOverrideData> overrides)
+        {
+            for (int i = 0; i < current.childCount; i++)
+            {
+                var child = current.GetChild(i);
+
+                // 프리팹 루트 기준 상대 경로 계산
+                string path = GetRelativePath(child, prefabRoot);
+
+                var data = new ChildOverrideData
+                {
+                    childPath = path,
+                    active = child.gameObject.activeSelf,
+                    transform = ExtractTransform(child)
+                };
+
+                ExtractComponentsTo(child.gameObject, data.components);
+                overrides.Add(data);
+
+                // 손자 오브젝트도 재귀 추출
+                ExtractChildOverrides(child, prefabRoot, overrides);
+            }
+        }
+
+        /// <summary>
+        /// 프리팹 루트 기준 상대 경로를 구한다. (예: "Text", "Background/Icon")
+        /// </summary>
+        static string GetRelativePath(Transform child, Transform root)
+        {
+            var path = new System.Text.StringBuilder();
+            var current = child;
+
+            while (current != null && current != root)
+            {
+                if (path.Length > 0)
+                    path.Insert(0, "/");
+                path.Insert(0, current.name);
+                current = current.parent;
+            }
+
+            return path.ToString();
+        }
+
+        /// <summary>
+        /// PrefabUtility.GetPropertyModifications()로 중첩 프리팹의 모든 오버라이드를 추출한다.
+        /// Unity 네이티브 오버라이드 시스템을 직접 사용하므로 모든 프로퍼티 타입 + 다중 중첩을 지원한다.
+        /// </summary>
+        static void ExtractPropertyModifications(GameObject prefabInstance, List<PrefabModData> result)
+        {
+            var mods = PrefabUtility.GetPropertyModifications(prefabInstance);
+            if (mods == null || mods.Length == 0)
+            {
+                return;
+            }
+
+            foreach (var mod in mods)
+            {
+                if (mod.target == null) continue;
+
+                string guid;
+                long fileId;
+                if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(mod.target, out guid, out fileId))
+                    continue;
+
+                var data = new PrefabModData
+                {
+                    targetFileId = fileId,
+                    propertyPath = mod.propertyPath,
+                    value = mod.value
+                };
+
+                // ObjectReference인 경우 GUID 저장
+                if (mod.objectReference != null)
+                {
+                    string refGuid;
+                    long refLocalId;
+                    if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(
+                            mod.objectReference, out refGuid, out refLocalId))
+                    {
+                        data.objectRefGuid = refGuid;
+                    }
+                }
+
+                result.Add(data);
+            }
         }
     }
 }

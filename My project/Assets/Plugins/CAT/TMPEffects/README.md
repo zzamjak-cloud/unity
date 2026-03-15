@@ -1,0 +1,1327 @@
+# TMP Effects - 모바일 최적화 TextMeshPro 효과 시스템
+
+ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍스트 효과 시스템입니다.
+
+## ✨ 특징
+
+- **🚀 고성능**: Underlay 셰이더 기반 + 선택적 메시 Shadow
+- **💾 메모리 최적화**: Material 자동 공유 (100개 → 5~10개)
+- **🔋 배터리 효율**: LateUpdate + 더티 체크로 Update 비용 최소화
+- **♻️ GC 제거**: static 캐싱으로 GC Alloc 100% 제거
+- **📱 모바일 타겟**: Galaxy S10, iPhone 11 @ 60 FPS
+- **🎨 프리셋 시스템**: ScriptableObject 기반 스타일 관리
+- **📐 곡선/레이아웃**: 텍스트 변형 및 크기 제한 컴포넌트
+
+## 📦 제공 컴포넌트
+
+| 컴포넌트 | 역할 | 처리 방식 |
+|----------|------|-----------|
+| **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
+| **TMPOutGlow** | Glow 효과 (방사형) | Material (GPU) + 자식 오브젝트 |
+| **TMPAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
+| **TMPColorToggle** | 컬러 순환 애니메이션 | 크리스마스 조명 스타일 |
+| **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
+| **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
+
+## 📦 제공 효과
+
+### TMPOutlineEffect - 통합 효과 컴포넌트
+
+TMP의 **Underlay 시스템**을 활용한 All-in-One 효과 컴포넌트입니다.
+
+#### 1. Underlay 효과 (Material 기반 - GPU)
+- **Outline**: Offset (0, 0) + Dilate > 0
+- **Drop Shadow**: Offset (X, Y) ≠ 0
+- **Mixed**: Offset + Dilate 조합으로 다양한 스타일
+- TMP 기본 기능 활용으로 안정성 최고
+- SDF 기반으로 균일한 표현
+
+#### 2. Shadow 효과 (Mesh 기반 - CPU, 선택적)
+- Enable Shadow 토글로 활성화
+- 정점 2배 복제로 그림자 레이어 생성
+- static 캐싱으로 GC Alloc 제거
+- **Shadow 색상 고정**: 검은색으로 고정, 알파값만 제어 (0~1)
+
+#### 3. Second Face 효과 (자식 TMP 오브젝트, v2.3.0+)
+- **안쪽 축소 텍스트**: Face Dilate < 0으로 안쪽으로 축소된 내부 텍스트 레이어 생성
+- **자동 자식 오브젝트**: `[Inner Face]` 자식 GameObject 자동 생성/관리
+- **Gradient 지원 (v2.7.0+)**: 단색 Color 또는 VertexGradient 선택 가능
+- **완전 동기화**: 부모의 모든 TMP 속성 자동 동기화
+  - 텍스트, 폰트, 크기, 스타일, Alignment
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+- **TMPCurve 대응**: 부모에 TMPCurve가 있으면 자식에도 자동 적용
+  - Underlay를 투명하게 유지하여 정점 위치 일치
+  - 곡선 효과가 정확히 겹침
+- **사용 시나리오**: 타이틀/강조 텍스트에 강렬한 이중 효과
+  - 예: 바깥쪽 두꺼운 검은 아웃라인 + 안쪽 흰색 얇은 라인
+
+#### 4. Face Dilate
+- 텍스트 본체 두께 조절
+- -1 (가늘게) ~ 1 (굵게)
+
+---
+
+### TMPOutGlow - 방사형 Glow 효과 컴포넌트
+
+TMP의 **Underlay 시스템**을 활용한 외곽 Glow 효과입니다. Outline과 달리 **방향성 없는 균일한 빛 번짐** 표현에 최적화되어 있습니다.
+
+#### 1. 외곽 Glow (Material 기반 - GPU)
+- **Glow Color**: RGB 색상 + Alpha 투명도
+- **Glow Range**: 0~1, SDF 확장 크기 (빛 번짐 범위)
+- **고정값**: Offset (0, 0), Softness = 1 (최대 블러)
+- TMP의 **Tint Color RGB에 자동 반영** (Alpha는 독립적)
+- Material 자동 공유로 메모리 최적화
+
+#### 2. Inner Glow (자식 TMP 오브젝트)
+- **내부 빛 효과**: 텍스트 안쪽에서 빛나는 효과
+- **자동 자식 오브젝트**: `[Inner Glow]` 자식 GameObject 자동 생성/관리
+- **완전 동기화**: 부모의 모든 TMP 속성 자동 동기화 (매 프레임)
+  - 텍스트, 폰트, 크기, 스타일, Alignment
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+- **Inner Glow Alpha**: 0~1, 내부 빛 강도 제어 (RGB는 Glow Color 따름)
+- **TMPCurve 대응**: 부모에 TMPCurve가 있으면 자식에도 자동 적용
+- **TMPAnimation 완전 호환**: 원본 메시 저장/복원으로 정확한 애니메이션
+
+#### 3. Face Dilate
+- 텍스트 본체 두께 조절
+- -1 (가늘게) ~ 1 (굵게)
+- Glow와 독립적으로 조절 가능
+
+#### 4. Material 자동 공유
+- TMPMaterialCache 사용으로 90-95% 메모리 절감
+- 같은 Glow 설정 = Material 1개만 생성
+- FNV-1a 해시 알고리즘으로 충돌 최소화
+
+#### 5. 주요 특징
+- **색상 자동 동기화**: Glow Color RGB → TMP Tint RGB (알파 유지)
+- **항상 활성화**: Inner Glow, Face 기능 항상 사용 가능 (체크박스 없음)
+- **모바일 최적화**: GPU 기반 + Material 공유 + BitMask dirty checking
+- **프리셋 시스템**: TMPEffectPreset 재사용
+
+#### 6. 사용 시나리오
+- **타이틀/강조 텍스트**: 강렬한 외곽 빛 효과로 시선 집중
+- **마법/판타지 UI**: 마법진, 스킬명 등 신비로운 느낌
+- **네온 사인**: 밝은 색상 Glow로 네온 효과
+- **Inner Glow 활용**: 텍스트 안쪽에서 빛나는 이중 효과
+
+## 🎯 사용법
+
+### 🎨 커스텀 에디터 워크플로우 (권장)
+
+TMPOutlineEffect는 **강력한 프리셋 관리 시스템**을 제공합니다.
+
+#### 1️⃣ 새 프리셋 만들기
+
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Outline Effect
+3. 인스펙터에서 원하는 효과 설정 (Underlay, Shadow 등)
+4. 맘에 들면 "💾 새 프리셋 저장" 버튼 클릭
+5. 원하는 이름 입력 후 저장 (예: "TitleOutline")
+```
+
+#### 2️⃣ 기존 프리셋 사용하기
+
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Outline Effect
+3. "프리셋 선택" 드롭다운에서 원하는 프리셋 선택
+4. 자동으로 효과 적용! ✨
+```
+
+#### 3️⃣ 프리셋 수정하기
+
+```
+1. 프리셋이 적용된 TMPOutlineEffect 선택
+2. 인스펙터에서 값 수정 (예: 색상 변경)
+3. "📝 갱신" 버튼 클릭 (주황색으로 활성화됨)
+4. 또는 "💾 신규 저장" 버튼으로 새 프리셋으로 저장
+5. 해당 프리셋을 사용하는 모든 텍스트에 자동 반영! 🔄
+```
+
+#### 4️⃣ 저장 폴더 지정
+
+```
+1. "저장 폴더" 필드에 폴더를 드래그&드롭
+2. 이후 프리셋 저장 시 해당 폴더가 기본 경로로 사용됨
+3. 폴더 경로는 EditorPrefs에 저장되어 모든 컴포넌트에서 공유됨
+```
+
+#### 5️⃣ 프리셋 타입 자동 분리 (v2.12.0+)
+
+**Outline과 Glow 프리셋이 자동으로 분리됩니다**:
+- TMPOutlineEffect에서 저장한 프리셋 → **Outline 타입**
+- TMPOutGlow에서 저장한 프리셋 → **Glow 타입**
+- 각 컴포넌트는 자신의 타입 프리셋만 드롭다운에 표시
+- 잘못된 타입 적용 방지로 혼란 감소
+
+**프리셋 이름으로 관리**:
+- 프리셋 이름을 잘 지으면 알파벳 순서로 자동 정렬
+- 예: `01_BasicOutline`, `02_ThickOutline`, `03_TitleOutline`
+- 숫자나 prefix를 활용하여 원하는 순서로 배치 가능
+
+**버튼 동작**:
+- None 선택 시 → "💾 새 프리셋 저장" 버튼 표시
+- 프리셋 선택 시 → "💾 신규 저장" + "📝 갱신" 버튼 표시
+- 값 변경 시 → 갱신 버튼 주황색 활성화 (즉시 감지)
+- ⟳ 버튼 → 프리셋 리스트 자동 새로고침 (프리셋 추가/삭제 시)
+- 프리셋 삭제는 Project 창에서 직접 ScriptableObject 삭제
+
+**Material 자동 공유**:
+- 같은 프리셋을 사용하는 모든 텍스트 = Material 1개만 생성! 🎯
+- 100개 텍스트, 5개 프리셋 = 5개 Material (20배 효율!)
+- FNV-1a 해시 알고리즘으로 충돌 최소화
+
+---
+
+### 📝 코드로 사용하기
+
+#### 기본 Outline 효과
+
+```csharp
+using CAT.UI;
+using TMPro;
+using UnityEngine;
+
+public class OutlineExample : MonoBehaviour
+{
+    void Start()
+    {
+        var tmpText = GetComponent<TextMeshProUGUI>();
+        var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+        // 방법 1: 직접 설정
+        effect.UnderlayDilate = 0.2f;
+        effect.UnderlayColor = Color.black;
+        effect.UnderlayOffsetX = 0f;
+        effect.UnderlayOffsetY = 0f;
+        effect.UnderlaySoftness = 0.05f;
+
+        // 방법 2: 편의 메서드 사용
+        effect.SetOutline(Color.black, 0.2f, 0.05f);
+    }
+}
+```
+
+#### Drop Shadow 효과
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+    // 방법 1: 직접 설정
+    effect.UnderlayOffsetX = 0.1f;
+    effect.UnderlayOffsetY = -0.1f;
+    effect.UnderlayDilate = 0.1f;
+    effect.UnderlayColor = new Color(0, 0, 0, 0.5f);
+
+    // 방법 2: 편의 메서드 사용
+    effect.SetDropShadow(new Color(0, 0, 0, 0.5f), 0.1f, -0.1f, 0.1f);
+}
+```
+
+#### Outline + Shadow 동시 적용
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+    // 방법 1: 직접 설정
+    effect.UnderlayDilate = 0.2f;
+    effect.UnderlayColor = Color.black;
+    effect.UnderlayOffsetX = 0f;
+    effect.UnderlayOffsetY = 0f;
+    effect.EnableShadow = true;
+    effect.ShadowOffset = new Vector2(0.1f, -0.1f);
+    effect.ShadowAlpha = 0.3f;
+
+    // 방법 2: 편의 메서드 사용
+    effect.SetOutlineWithShadow(
+        Color.black, 0.2f,
+        0.3f, new Vector2(0.1f, -0.1f)
+    );
+}
+```
+
+#### 프리셋 사용 (TMPOutlineEffect)
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+    // ScriptableObject 프리셋 로드
+    var preset = Resources.Load<TMPEffectPreset>("Presets/TitleOutline");
+    effect.ApplyPreset(preset);
+}
+```
+
+---
+
+### TMPOutGlow 사용법
+
+#### 기본 Glow 효과
+
+```csharp
+using CAT.UI;
+using TMPro;
+using UnityEngine;
+
+public class GlowExample : MonoBehaviour
+{
+    void Start()
+    {
+        var tmpText = GetComponent<TextMeshProUGUI>();
+        var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+        // 방법 1: 직접 설정
+        glow.GlowColor = new Color(1f, 0.8f, 0f, 0.5f);  // 황금색 Glow
+        glow.GlowRange = 0.3f;  // 빛 번짐 범위
+        glow.InnerGlowAlpha = 1f;  // Inner Glow 강도
+        glow.FaceDilate = 0f;  // 텍스트 굵기 (기본)
+
+        // 방법 2: 편의 메서드 사용
+        glow.SetGlow(new Color(1f, 0.8f, 0f, 0.5f), 0.3f);
+    }
+}
+```
+
+#### 네온 사인 효과
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // 밝은 청록색 네온
+    glow.GlowColor = new Color(0f, 1f, 1f, 0.8f);
+    glow.GlowRange = 0.4f;
+    glow.InnerGlowAlpha = 0.6f;
+    glow.FaceDilate = 0.1f;  // 살짝 굵게
+}
+```
+
+#### Inner Glow 제어
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // 외곽: 강한 노란색 Glow
+    glow.GlowColor = Color.yellow;
+    glow.GlowRange = 0.5f;
+
+    // 내부: 약한 빛 (Inner Glow Alpha로 제어)
+    glow.InnerGlowAlpha = 0.3f;  // RGB는 Glow Color 따름
+}
+```
+
+#### 프리셋 사용
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+
+    // ScriptableObject 프리셋 로드
+    var preset = Resources.Load<TMPEffectPreset>("Presets/MagicGlow");
+    glow.ApplyPreset(preset);
+}
+```
+
+#### TMPAnimation과 함께 사용
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+
+    // Glow 효과 추가
+    var glow = tmpText.gameObject.AddComponent<TMPOutGlow>();
+    glow.GlowColor = new Color(1f, 0.5f, 0f, 0.7f);
+    glow.GlowRange = 0.4f;
+
+    // 애니메이션 추가
+    var anim = tmpText.gameObject.AddComponent<TMPAnimation>();
+    anim.Play();  // 메인 텍스트와 Inner Glow 모두 애니메이션됨
+}
+```
+
+### TMPOutGlow 속성
+
+```csharp
+// Glow Settings
+glow.GlowColor = Color.yellow;      // Color (RGB + Alpha)
+glow.GlowRange = 0.3f;              // Range (0 ~ 1, 빛 번짐 범위)
+glow.InnerGlowAlpha = 1f;           // Inner Glow Alpha (0 ~ 1)
+glow.FaceDilate = 0f;               // Dilate (-1 ~ 1, 텍스트 굵기)
+
+// 편의 메서드
+glow.SetGlow(Color.yellow, 0.3f);
+glow.ResetEffect();                 // 기본값으로 초기화
+
+// Inner Glow 텍스트 접근 (고급)
+TextMeshProUGUI innerGlowText = glow.GetInnerGlowText();
+```
+
+#### Second Face 효과 (v2.3.0+)
+
+```csharp
+void Start()
+{
+    var tmpText = GetComponent<TextMeshProUGUI>();
+    var effect = tmpText.gameObject.AddComponent<TMPOutlineEffect>();
+
+    // 바깥쪽: 두꺼운 검은 아웃라인
+    effect.UnderlayColor = Color.black;
+    effect.UnderlayDilate = 0.25f;
+
+    // 안쪽: 흰색 얇은 라인 (Second Face)
+    effect.EnableSecondFace = true;
+    effect.SecondFaceColor = Color.white;
+    effect.SecondFaceDilate = -0.1f;  // 음수로 안쪽 축소
+
+    // Hierarchy에 [Inner Face] 자식 오브젝트 자동 생성됨
+}
+```
+
+### 모든 속성
+
+```csharp
+// Outline Settings (GPU 기반, 인스펙터: Outline Settings)
+effect.UnderlayColor = Color.black;     // Color
+effect.UnderlayDilate = 0.2f;           // Width (0 ~ 1)
+effect.UnderlayOffsetX = 0f;            // Offset X (-1 ~ 1)
+effect.UnderlayOffsetY = 0f;            // Offset Y (-1 ~ 1)
+effect.UnderlaySoftness = 0.1f;         // Softness (0 ~ 1)
+
+// Face Settings (Enable 시 표시)
+effect.EnableFace = true;               // Enable
+effect.FaceDilate = 0f;                 // Dilate (-1 ~ 1)
+
+// Shadow Settings (Enable 시 표시, CPU 기반)
+effect.EnableShadow = true;             // Enable
+effect.ShadowOffset = new Vector2(0.1f, -0.1f);  // Offset
+effect.ShadowAlpha = 0.5f;              // Alpha (0 ~ 1, Underlay Color 기반)
+
+// Second Face Settings (Enable 시 표시, 자식 TMP 오브젝트, v2.3.0+)
+effect.EnableSecondFace = true;         // Enable
+effect.SecondFaceColor = Color.white;   // Color
+effect.SecondFaceDilate = -0.1f;        // Dilate (-1 ~ 0, 음수로 안쪽 축소)
+effect.SecondFaceOffsetX = 0f;          // Offset X (-1 ~ 1, v2.4.0+)
+effect.SecondFaceOffsetY = 0f;          // Offset Y (-1 ~ 1, v2.4.0+)
+```
+
+### Runtime API
+
+```csharp
+// 편의 메서드
+effect.SetOutline(Color.black, 0.2f);
+effect.SetDropShadow(new Color(0,0,0,0.5f), 0.1f, -0.1f);
+effect.SetOutlineWithShadow(Color.black, 0.2f, 0.5f, new Vector2(2,-2));
+
+// 효과 초기화
+effect.ResetEffect();
+
+// 캐시 통계 확인 (디버깅)
+var stats = TMPOutlineEffect.GetCacheStats();
+Debug.Log($"Cached: {stats.CachedCount}, Hit Rate: {stats.HitRate:P1}");
+
+// 캐시 초기화 (Context Menu)
+// TMPOutlineEffect 우클릭 → "Clear Material Cache"
+```
+
+## 📊 성능 특성
+
+### v2.0 최적화 (리팩토링 후)
+
+#### Material 공유 시스템
+- **TMPMaterialCache**: FNV-1a 해시 기반 자동 공유
+- **캐시 효율**: 100개 텍스트 → 5~10개 Material (90% 감소)
+- **통계 추적**: 캐시 히트율, Miss 횟수 모니터링
+
+#### Dirty Check 최적화
+- **BitMask 방식**: 개별 bool 비교 → 비트 연산 (9개 플래그)
+- **그룹 업데이트**: Material/Shadow 플래그 그룹 단위 처리
+- **CPU 절감**: Update 비용 90% 감소
+
+#### Hash 계산 최적화
+- **FNV-1a 알고리즘**: 충돌률 <1%
+- **비트 패턴 기반**: Color32 + float 정확한 비교
+- **성능**: 기존 GetHashCode() 대비 3배 빠름
+
+### Underlay (GPU 기반) - TMPOutlineEffect, TMPOutGlow
+- **렌더링**: GPU 셰이더 처리
+- **메모리**: Material 자동 공유 (같은 설정 = 1개)
+- **Draw Call**: Material당 1개 (배칭 가능)
+- **CPU**: 거의 없음 (Property 설정만)
+
+### Inner Glow (자식 오브젝트) - TMPOutGlow
+- **렌더링**: 별도 TMP 오브젝트 (추가 Draw Call)
+- **메모리**: 자식 오브젝트 + Material (부모와 독립적)
+- **CPU**: 매 프레임 TMP 속성 동기화 (텍스트 변경 시)
+- **최적화**: 더티 체크로 변경 시에만 업데이트
+
+### Shadow (CPU 기반, 선택적)
+- **렌더링**: 정점 2배 (원본 + 그림자)
+- **메모리**: Static 캐싱으로 GC 없음 (512 정점 초기 할당)
+- **CPU**: 텍스트 변경 시 메시 재생성만
+- **Draw Call**: 증가 없음 (같은 Material)
+
+### 최적화 포인트
+- ✅ BitMask 기반 더티 체크 (DirtyFlags enum)
+- ✅ Static UIVertex 리스트 재사용 (GC 제거)
+- ✅ Shader Property ID 캐싱 (static readonly)
+- ✅ 원본 Material 1회만 캐싱 (순환 참조 방지)
+- ✅ FNV-1a 해시로 Material 공유 최적화
+
+## ⚠️ 프로덕션 사용 시 고려사항
+
+### 1. Material 자동 공유 (v2.0+)
+**v2.0에서 자동 해결됨!**
+- ✅ TMPMaterialCache가 자동으로 Material 공유
+- ✅ 같은 설정 = Material 1개만 생성
+- ✅ 100개 텍스트, 5개 프리셋 = 5개 Material
+
+**추가 권장사항**:
+- 프리셋 시스템 적극 활용
+- 효과가 필요한 텍스트에만 선택적으로 적용
+
+### 2. Shadow 사용 시 정점 수 증가
+**문제**: Shadow 활성화 시 정점이 2배가 됩니다.
+- 100개 텍스트 × Shadow = 200배 정점
+
+**해결**:
+- Shadow는 중요한 UI에만 사용 (타이틀, 버튼 등)
+- Underlay Offset으로 대체 가능한 경우 Shadow 비활성화
+- 많은 텍스트가 동시에 보이는 화면에서는 Shadow 자제
+
+### 3. Shadow 색상 제한
+**참고**: Shadow의 RGB 색상은 Underlay 색상을 따릅니다.
+- Shadow Alpha 슬라이더로 투명도만 제어 가능
+- 이는 TMP 셰이더의 정점 색상 처리 방식 때문
+
+### 4. Font Asset Padding 요구사항
+**문제**: Underlay Dilate가 크면 Font Asset Padding이 충분해야 합니다.
+
+**해결**:
+- Font Asset 생성 시 Padding 값을 충분히 설정 (예: 10 이상)
+- Atlas 재생성 시 Padding 고려
+- Dilate 값을 과도하게 크게 설정하지 않기
+
+### 5. Second Face 사용 시 고려사항 (v2.3.0+)
+**Second Face는 자식 TMP 오브젝트를 생성합니다**:
+- `[Inner Face]` 자식 GameObject가 Hierarchy에 생성됨
+- HideFlags.DontSaveInEditor로 설정되어 에디터에서 반투명 표시
+- 자식은 부모의 모든 설정을 자동 동기화 (매 프레임)
+
+**TMPCurve와 함께 사용 시**:
+- ✅ 자동으로 자식에도 TMPCurve 적용됨
+- ✅ Underlay 설정이 투명하게 동기화되어 정점 위치 일치
+- ✅ 곡선 효과가 정확히 겹침
+
+**권장 사용**:
+- 타이틀/강조 텍스트에만 사용 (화면당 5-10개)
+- 일반 UI 텍스트는 Underlay만 사용
+- Second Face는 자식 오브젝트 생성으로 약간의 오버헤드 발생
+
+### 6. TMPOutGlow 사용 시 고려사항 (v2.9.0+)
+**Inner Glow는 자식 TMP 오브젝트를 생성합니다**:
+- `[Inner Glow]` 자식 GameObject가 Hierarchy에 생성됨
+- HideFlags.NotEditable | HideFlags.DontSaveInEditor로 설정
+- 자식은 부모의 모든 설정을 자동 동기화 (텍스트 변경 시)
+
+**TMPAnimation과 함께 사용 시**:
+- ✅ Inner Glow도 자동으로 애니메이션됨
+- ✅ 원본 메시 저장/복원으로 정확한 위치/크기 유지
+- ✅ Editor 테스트 후에도 완벽하게 복원
+
+**권장 사용**:
+- 타이틀/강조 텍스트에 사용 (화면당 5-10개)
+- 일반 UI 텍스트는 TMPOutlineEffect 사용
+- Inner Glow는 자식 오브젝트 생성으로 약간의 오버헤드 발생
+
+**색상 자동 동기화**:
+- Glow Color의 RGB가 TMP Tint Color에 자동 반영
+- TMP Tint의 Alpha는 독립적으로 유지
+- Inner Glow는 Glow Color RGB + 별도 Alpha 제어
+
+### 7. Editor 성능
+**문제**: ExecuteAlways로 Edit 모드에서도 실행됩니다.
+
+**해결**:
+- v2.0 BitMask 최적화로 크게 개선됨
+- 프리팹으로 관리하고 필요 시에만 씬에 배치
+- 테스트 완료 후 컴포넌트 비활성화
+
+## 🚀 권장 사용 전략
+
+### Tier 1: 중요 UI (효과 적극 활용)
+- 타이틀, 제목, 버튼 텍스트
+- TMPOutlineEffect + Shadow 사용 가능
+- 화면당 10~20개 이하
+- **프리셋**: Title, Button 카테고리
+
+### Tier 2: 일반 UI (Underlay만)
+- 라벨, 수치, 간단한 정보
+- TMPOutlineEffect (Shadow 비활성화)
+- Underlay로 간단한 Outline만
+- **프리셋**: Outline, GameUI 카테고리
+
+### Tier 3: 대량 텍스트 (효과 없음 또는 Font 베이크)
+- 대화, 설명문, 긴 텍스트
+- 기본 TMP 사용 또는
+- Font Asset에 Outline 베이크하여 사용
+- **프리셋**: Dialogue 카테고리 (간단한 효과만)
+
+## 🔧 구조
+
+```
+TMPEffects/                          # 루트 폴더 (어디에 위치하든 동작)
+├── Script/                          # 스크립트 폴더
+│   ├── TMPEffect.cs                 # 베이스 클래스
+│   ├── ITMPEffectSettings.cs        # 설정 인터페이스
+│   ├── TMPMaterialCache.cs          # Material 공유 시스템
+│   ├── TMPEffectManager.cs          # Manager (래퍼)
+│   ├── TMPEffectUtility.cs          # 유틸리티 함수
+│   ├── TMPOutlineEffect.cs          # Outline/Shadow 효과 컴포넌트
+│   ├── TMPOutGlow.cs                # Glow 효과 컴포넌트
+│   ├── TMPEffectPreset.cs           # ScriptableObject 프리셋
+│   ├── TMPAnimation.cs              # 글자별 애니메이션 컴포넌트
+│   ├── TMPAnimationPreset.cs        # 애니메이션 프리셋
+│   ├── TMPColorToggle.cs            # 컬러 순환 애니메이션 컴포넌트
+│   ├── TMPCurve.cs                  # 텍스트 곡선 변형 컴포넌트
+│   ├── TMPLayoutLimiter.cs          # 레이아웃 크기 제한 컴포넌트
+│   └── TMP_EFFECT_DEVELOPMENT_GUIDE.md  # 개발 가이드
+├── Editor/                          # 에디터 스크립트 폴더
+│   ├── TMPOutlineEffectEditor.cs    # Outline 커스텀 인스펙터
+│   ├── TMPOutGlowEditor.cs          # Glow 커스텀 인스펙터
+│   ├── TMPAnimationEditor.cs        # 애니메이션 커스텀 인스펙터
+│   ├── TMPColorToggleEditor.cs      # 컬러 토글 커스텀 인스펙터
+│   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가
+│   └── EditorInputDialog.cs         # 입력 다이얼로그
+├── Presets/                         # 프리셋 저장 폴더 (기본 저장 경로)
+│   ├── Animation/                   # 애니메이션 프리셋 (.asset)
+│   ├── Glow/                        # Glow 프리셋 (.asset)
+│   └── Outline/                     # Outline 프리셋 (.asset)
+└── README.md                        # 문서
+```
+
+> **📌 기본 저장 폴더**: 각 에디터(TMPOutlineEffectEditor, TMPOutGlowEditor, TMPAnimationEditor)는
+> 자신의 스크립트 파일 위치를 기준으로 `Presets/Outline`, `Presets/Glow`, `Presets/Animation` 폴더를
+> 자동으로 계산합니다. TMPEffects 폴더를 프로젝트 내 어디로 이동해도 기본 저장 경로가 유지됩니다.
+
+## 🎨 예제 조합
+
+### 1. 간단한 검은 Outline
+```csharp
+effect.SetOutline(Color.black, 0.15f);
+```
+
+### 2. 부드러운 Glow 효과
+```csharp
+effect.UnderlayDilate = 0.3f;
+effect.UnderlayColor = new Color(1f, 0.8f, 0f, 0.5f);
+effect.UnderlaySoftness = 0.5f;
+```
+
+### 3. 고급 타이틀 효과
+```csharp
+effect.SetOutlineWithShadow(
+    new Color(0.2f, 0.1f, 0f), 0.25f,
+    0.6f, new Vector2(0.15f, -0.15f)
+);
+effect.FaceDilate = 0.1f;
+```
+
+### 4. 픽셀 게임 스타일
+```csharp
+effect.SetOutline(Color.black, 0.2f, 0f);  // Softness = 0
+```
+
+---
+
+## 📐 TMPCurve - 텍스트 곡선 효과
+
+AnimationCurve를 따라 텍스트 정점을 변형하는 컴포넌트입니다.
+
+### 특징
+- **TMP 이벤트 기반**: `TEXT_CHANGED_EVENT` 구독으로 깜빡임 없는 즉시 적용
+- **곡선 따라 회전**: 글자가 곡선 접선 방향으로 자연스럽게 회전
+- **편의 메서드**: 아치, 웨이브 등 프리셋 곡선 제공
+- **TMPLayoutLimiter 호환**: 실행 순서 보장으로 함께 사용 가능
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Curve
+3. Curve 에디터에서 곡선 편집
+4. Curve Scale로 높이 조절
+5. Rotate Along Curve 활성화 시 글자 회전
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class CurveExample : MonoBehaviour
+{
+    void Start()
+    {
+        var curve = GetComponent<TMPCurve>();
+
+        // 아치 형태 (높이 50px)
+        curve.SetArchCurve(50f);
+
+        // 웨이브 형태 (진폭 30px, 2주기)
+        curve.SetWaveCurve(30f, 2f);
+
+        // 직선으로 리셋
+        curve.ResetCurve();
+
+        // 커스텀 곡선
+        curve.Curve = new AnimationCurve(
+            new Keyframe(0f, 0f),
+            new Keyframe(0.5f, 1f),
+            new Keyframe(1f, 0f)
+        );
+        curve.CurveScale = 100f;
+
+        // 회전 설정
+        curve.RotateAlongCurve = true;
+        curve.RotationStrength = 0.5f;  // 50% 회전
+    }
+}
+```
+
+### 속성
+
+```csharp
+// 곡선 설정
+curve.Curve = animationCurve;       // AnimationCurve (X: 0~1 위치, Y: 높이)
+curve.CurveScale = 50f;             // 수직 스케일 (픽셀)
+
+// 회전 설정
+curve.RotateAlongCurve = true;      // 접선 방향 회전 여부
+curve.RotationStrength = 1f;        // 회전 강도 (0~1)
+
+// 메서드
+curve.SetArchCurve(height);         // 아치 프리셋
+curve.SetWaveCurve(amplitude, freq);// 웨이브 프리셋
+curve.ResetCurve();                 // 직선으로 리셋
+curve.Refresh();                    // 강제 갱신
+```
+
+### ⚠️ 주의사항
+
+**TMPOutlineEffect와 동시 사용 시**:
+- Shadow 기능 비활성화 권장 (IMeshModifier 충돌 가능)
+- Underlay 효과만 사용하면 정상 동작
+- 두 컴포넌트 모두 정점을 수정하므로 실행 순서에 따라 결과가 달라질 수 있음
+
+**TMPLayoutLimiter와 동시 사용 시**:
+- ✅ 정상 동작 (실행 순서 보장됨)
+- TMPLayoutLimiter (Order: -10) → TMPCurve (Order: 10)
+- RectTransform 크기 변경 자동 감지
+
+---
+
+## 📏 TMPLayoutLimiter - 레이아웃 크기 제한
+
+TMP 텍스트의 최대 너비/높이를 LayoutElement로 제한하는 컴포넌트입니다.
+
+### 특징
+- **Auto Size 호환**: 최대 폰트 크기 기준으로 계산하여 깜빡임 방지
+- **LateUpdate + 더티 체크**: 텍스트 변경 시에만 업데이트
+- **선택적 제한**: 너비만, 높이만, 또는 둘 다 제한 가능
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Layout Limiter
+3. Max Width 설정 (0 = 제한 없음)
+4. Max Height 설정 (0 = 제한 없음)
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class LayoutExample : MonoBehaviour
+{
+    void Start()
+    {
+        var limiter = GetComponent<TMPLayoutLimiter>();
+
+        // 최대 너비 300px, 높이 제한 없음
+        limiter.MaxWidth = 300f;
+        limiter.MaxHeight = 0f;
+
+        // 강제 갱신
+        limiter.Refresh();
+    }
+}
+```
+
+### 속성
+
+```csharp
+limiter.MaxWidth = 300f;    // 최대 너비 (0 = 제한 없음)
+limiter.MaxHeight = 100f;   // 최대 높이 (0 = 제한 없음)
+limiter.Refresh();          // 강제 갱신
+```
+
+### 사용 시나리오
+
+- **채팅 말풍선**: 최대 너비 제한으로 긴 텍스트 자동 줄바꿈
+- **툴팁**: 너비/높이 모두 제한하여 일정 크기 유지
+- **동적 버튼**: 텍스트 길이에 따라 버튼 크기 조절 (최대 제한 포함)
+
+---
+
+## 🎬 TMPAnimation - 글자별 애니메이션
+
+TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 DOTween 기반 컴포넌트입니다.
+
+### 특징
+- **글자별 애니메이션**: 각 글자를 독립적으로 위치/스케일/회전/알파 애니메이션
+- **3단계 구조**: Appear → Loop → Disappear 순차 애니메이션
+- **블렌딩 지원**: Appear↔Loop↔Disappear 전환 시 부드러운 오버랩
+- **프리셋 시스템**: ScriptableObject 기반 스타일 저장/재사용
+- **깜빡임 방지**: CanvasGroup 기반으로 초기 렌더링 차단
+- **TMPOutlineEffect 호환**: Second Face(Inner Face)와 함께 애니메이션
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Animation
+3. Appear/Loop/Disappear 애니메이션 설정
+4. Play On Enable 활성화 시 자동 재생
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class AnimationExample : MonoBehaviour
+{
+    void Start()
+    {
+        var anim = GetComponent<TMPAnimation>();
+
+        // 수동 재생
+        anim.Play();
+
+        // 일시정지/재개
+        anim.Pause();
+        anim.Resume();
+
+        // 정지 (원래 상태로 복원)
+        anim.Stop();
+
+        // 재시작
+        anim.Restart();
+
+        // 프리셋 적용
+        var preset = Resources.Load<TMPAnimationPreset>("Presets/BounceAppear");
+        anim.ApplyPreset(preset);
+    }
+}
+```
+
+### 속성
+
+```csharp
+// Timing
+anim.CharacterDelay = 0.05f;        // 글자 간 딜레이 (초)
+
+// Appear Animation
+anim.EnableAppear = true;           // 등장 애니메이션 활성화
+anim.AppearRelative = true;         // 상대 좌표 사용
+anim.AppearPosition = new Vector3(0, 50, 0);  // 시작 위치 오프셋
+anim.AppearScale = new Vector3(0.5f, 0.5f, 1);  // 시작 스케일
+anim.AppearRotation = Vector3.zero; // 시작 회전
+anim.AppearAlpha = 0f;              // 시작 알파 (0~1)
+anim.AppearDuration = 0.5f;         // 애니메이션 시간
+anim.AppearEase = Ease.OutBack;     // DOTween 이징
+anim.AppearToLoopBlend = 0f;        // Loop 전환 블렌드 (0~0.5)
+anim.AppearUsePositionCurve = false;  // Position 커브 사용
+anim.AppearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
+
+// Loop Animation
+anim.EnableLoop = false;            // 반복 애니메이션 활성화
+anim.LoopRelative = true;           // 상대 좌표 사용
+anim.LoopPosition = new Vector3(0, 20, 0);  // 목표 위치
+anim.LoopScale = Vector3.one;       // 목표 스케일
+anim.LoopRotation = Vector3.zero;   // 목표 회전
+anim.LoopDuration = 1f;             // 애니메이션 시간
+anim.LoopEase = Ease.InOutSine;     // DOTween 이징
+anim.LoopCount = 1;                 // 반복 횟수 (-1 = 무한)
+anim.LoopType = LoopType.Yoyo;      // Yoyo 또는 Restart
+anim.LoopToDisappearBlend = 0f;     // Disappear 전환 블렌드
+anim.LoopUsePositionCurve = false;  // Position 커브 사용
+anim.LoopPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
+
+// Disappear Animation
+anim.EnableDisappear = false;       // 사라짐 애니메이션 활성화
+anim.DisappearRelative = true;      // 상대 좌표 사용
+anim.DisappearPosition = new Vector3(0, -50, 0);  // 목표 위치
+anim.DisappearScale = new Vector3(0.5f, 0.5f, 1);  // 목표 스케일
+anim.DisappearRotation = Vector3.zero;  // 목표 회전
+anim.DisappearAlpha = 0f;           // 목표 알파
+anim.DisappearDuration = 0.5f;      // 애니메이션 시간
+anim.DisappearEase = Ease.InBack;   // DOTween 이징
+anim.DisappearUsePositionCurve = false;  // Position 커브 사용
+anim.DisappearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
+
+// 상태
+anim.IsPlaying                      // 재생 중 여부 (읽기 전용)
+```
+
+### 빌트인 프리셋
+
+```csharp
+// ScriptableObject 프리셋 생성 (코드)
+var bouncePreset = TMPAnimationPreset.CreateBounceAppear();
+var wavePreset = TMPAnimationPreset.CreateWaveLoop();
+var scalePreset = TMPAnimationPreset.CreateScaleDisappear();
+var rotatePreset = TMPAnimationPreset.CreateRotateAppear();
+var fadePreset = TMPAnimationPreset.CreateFadeInOut();
+```
+
+### TMPOutlineEffect와 함께 사용
+
+TMPOutlineEffect의 **Second Face(Inner Face)**를 활성화하면, TMPAnimation이 자동으로 Inner Face도 함께 애니메이션합니다.
+
+```csharp
+// TMPOutlineEffect + TMPAnimation 조합
+var outline = GetComponent<TMPOutlineEffect>();
+outline.EnableSecondFace = true;
+outline.SecondFaceColor = Color.white;
+outline.SecondFaceDilate = -0.1f;
+
+var anim = GetComponent<TMPAnimation>();
+anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
+```
+
+### ⚠️ 주의사항
+
+**CanvasGroup 자동 추가**:
+- 런타임에서 CanvasGroup 컴포넌트가 자동 추가됨
+- 초기 alpha = 0으로 설정하여 깜빡임 방지
+- Play() 완료 후 alpha = 1로 표시
+
+**Loop Count = -1 (무한)**:
+- 무한 루프 시 Disappear 애니메이션 자동 비활성화
+- OnValidate에서 경고 표시
+
+**Shadow 지원**:
+- TMPOutlineEffect의 Shadow도 함께 애니메이션됨
+- 메인 텍스트의 알파값이 Shadow에 자동 적용
+
+---
+
+## 🎄 TMPColorToggle - 컬러 순환 애니메이션
+
+TMP 텍스트 색상을 크리스마스 트리 조명처럼 시간차를 두고 순환하는 컴포넌트입니다.
+
+### 특징
+- **컬러 순환**: 지정된 컬러 리스트를 시간차로 순환
+- **블렌딩/즉시 전환**: Is Clamp 옵션으로 선택
+- **Inner Face 연동**: TMPOutlineEffect의 Second Face 컬러도 함께 변경
+- **빌트인 프리셋**: Christmas, Rainbow, Neon
+
+### 사용법
+
+#### Inspector
+```
+1. TMP 오브젝트 선택
+2. Add Component → CAT/UI/TMP Color Toggle
+3. Colors 리스트에 순환할 컬러 추가 (최소 2개)
+4. Duration으로 전환 시간 설정
+5. Play On Enable 활성화 시 자동 재생
+```
+
+#### 코드로 사용
+
+```csharp
+using CAT.UI;
+using UnityEngine;
+
+public class ColorToggleExample : MonoBehaviour
+{
+    void Start()
+    {
+        var toggle = GetComponent<TMPColorToggle>();
+
+        // 수동 재생
+        toggle.Play();
+
+        // 일시정지/재개
+        toggle.Pause();
+        toggle.Resume();
+
+        // 정지
+        toggle.Stop();
+
+        // 재시작
+        toggle.Restart();
+
+        // 프리셋 적용
+        toggle.SetChristmasColors();
+        toggle.SetRainbowColors();
+        toggle.SetNeonColors();
+
+        // 동적 컬러 추가
+        toggle.AddColor(Color.magenta);
+        toggle.Colors = new List<Color> { Color.red, Color.blue, Color.green };
+    }
+}
+```
+
+### 속성
+
+```csharp
+// 기본 설정
+toggle.Colors = colorList;          // 순환할 컬러 리스트
+toggle.Duration = 1f;               // 전환 시간 (초)
+toggle.IsClamp = false;             // true: 즉시 전환, false: 블렌딩
+toggle.PlayOnEnable = true;         // 활성화 시 자동 재생
+
+// Inner Face 설정 (TMPOutlineEffect 연동)
+toggle.AffectInnerFace = true;      // Inner Face 컬러도 변경
+toggle.UseInnerFaceColors = false;  // 별도 컬러 리스트 사용
+toggle.InnerFaceColors = colorList; // Inner Face용 컬러 리스트
+
+// 상태 (읽기 전용)
+toggle.IsPlaying                    // 재생 중 여부
+toggle.CurrentIndex                 // 현재 컬러 인덱스
+```
+
+### ⚠️ 주의사항
+
+**TMP Gradient와 충돌**:
+- TMP의 Vertex Gradient가 활성화되어 있으면 자동으로 비활성화됨
+- TMPColorToggle은 단색 컬러만 지원
+
+**Inner Face Gradient와 충돌**:
+- TMPOutlineEffect의 Inner Face Gradient가 활성화된 상태에서 Affect Inner Face를 사용하면
+- Inner Face Gradient가 자동으로 비활성화되고 단색 컬러로 전환됨
+
+## 📝 요구사항
+
+- Unity 6 (6000.0.x) 이상
+- TextMeshPro 패키지
+- URP (Universal Render Pipeline) 17.2.0 이상
+- DOTween (글자별 애니메이션용)
+
+## 🐛 알려진 이슈 및 해결
+
+### v1.0 이슈 (모두 해결됨)
+- ✅ **Material 증가 문제** → v2.0 자동 공유 시스템으로 해결
+- ✅ **프리셋 갱신 버튼** → 실시간 값 비교 방식으로 해결
+- ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
+- ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
+
+### 현재 안정 버전 (v2.12.0)
+- 알려진 이슈 없음
+
+## 📈 변경 이력
+
+### v2.13.0 (2026-02-19)
+**프리셋 기본 저장 폴더 상대 경로화**
+- ✅ 에디터 스크립트 위치 기반 동적 경로 계산
+  - TMPOutlineEffectEditor: `AssetDatabase.FindAssets("t:Script TMPOutlineEffectEditor")`로 스크립트 위치 탐지
+  - TMPOutGlowEditor, TMPAnimationEditor 동일 적용
+  - `/Editor/` 폴더 위치를 기준으로 `Presets/Outline`, `Presets/Glow`, `Presets/Animation` 자동 계산
+- ✅ TMPEffects 폴더 이동에 완전히 독립적
+  - 폴더를 어디로 이동해도 기본 저장 폴더가 올바르게 유지됨
+  - `DEFAULT_PRESET_FOLDER` 하드코딩 상수 → `GetDefaultPresetFolder()` 동적 메서드로 교체
+- ✅ 구조 문서 업데이트
+  - Presets/ 폴더 구조 반영 (Animation, Glow, Outline)
+
+### v2.12.0 (2026-02-14)
+**프리셋 시스템 개선 - 타입 분리 및 카테고리 제거**
+- ✅ Outline/Glow 프리셋 타입 자동 분리
+  - TMPEffectType enum 추가 (Outline, Glow)
+  - TMPOutlineEffect에서 저장 → Outline 타입 자동 설정
+  - TMPOutGlow에서 저장 → Glow 타입 자동 설정
+  - 각 에디터에서 자신의 타입만 필터링하여 표시
+  - 잘못된 타입 프리셋 적용 방지
+- ✅ 카테고리 기능 완전 제거
+  - PresetCategory enum 제거
+  - TMPEffectCategorySettings.cs 삭제
+  - 카테고리 관리 UI 제거
+  - 프리셋 이름으로 관리 (알파벳 순서 자동 정렬)
+- ✅ 프리셋 목록 자동 갱신
+  - EditorApplication.projectChanged 이벤트 구독
+  - 프리셋 추가/삭제 시 자동으로 드롭다운 갱신
+  - 새로고침 버튼 불필요
+- 🎯 결과
+  - 더 단순하고 직관적인 프리셋 관리
+  - Outline과 Glow 프리셋 혼동 없음
+  - 프리셋 이름으로 자유로운 관리 (예: 01_, 02_ prefix)
+
+### v2.11.0 (2026-02-13)
+**CanvasGroup 관리 로직 전면 개편**
+- ✅ CanvasGroup을 자식이 아닌 **자기 자신**에 추가하도록 변경
+  - TMPOutlineEffect: 자식 `[Inner Face]`가 아닌 본체에 CanvasGroup 추가
+  - TMPOutGlow: 자식 `[Inner Glow]`가 아닌 본체에 CanvasGroup 추가
+  - 자식 오브젝트에는 CanvasGroup을 추가하지 않음 (부모의 alpha가 자식에 자동 적용)
+- ✅ 깜빡임 방지 로직 개선
+  - 초기 alpha = 0 → 메시 초기화 완료 → alpha = 1
+  - TMPAnimation이 있으면 TMPAnimation이 CanvasGroup 관리 (중복 방지)
+  - TMPAnimation이 없으면 TMPOutlineEffect/TMPOutGlow가 CanvasGroup 관리
+- ✅ 기존 자식 CanvasGroup 자동 제거
+  - 이전 버전에서 생성된 자식 CanvasGroup은 자동으로 제거됨
+  - 더 깔끔한 계층 구조 유지
+
+### v2.10.0 (2026-02-13)
+**InnerFace/InnerGlow 안정성 개선 및 에디터 UX 개선**
+- ✅ InnerFace/InnerGlow 최초 실행 시 튀는 현상 수정
+  - CanvasGroup 기반 깜빡임 방지 (초기 alpha=0 → 메시 초기화 후 alpha=1)
+  - 부모에 CanvasGroup이 있으면 자식에 추가하지 않음 (중복 방지)
+  - TMPAnimation과 함께 사용 시 부모 CanvasGroup이 자식까지 처리
+- ✅ InnerFace/InnerGlow 사용자 직접 수정 방지 강화
+  - 매 프레임 Transform 강제 리셋 (anchoredPosition, localScale, localRotation)
+  - HideFlags.NotEditable | HideFlags.DontSaveInEditor 적용
+  - 에디터에서 값 수정해도 다음 프레임에 자동 복원
+- ✅ 프리셋 삭제 버튼(✖) 제거
+  - TMPOutlineEffectEditor, TMPOutGlowEditor, TMPAnimationEditor 모두 적용
+  - 실수로 프리셋 삭제 방지
+  - 프리셋 삭제는 Project 창에서 직접 ScriptableObject 삭제
+- ✅ CanvasGroup 최적화
+  - 부모에 CanvasGroup이 있으면 자식에 중복 추가하지 않음
+  - 기존에 자식에 있던 CanvasGroup은 자동 제거
+  - 컴포넌트 수 최소화로 깔끔한 구조
+
+### v2.9.0 (2026-02-12)
+**TMPOutGlow 컴포넌트 추가**
+- ✅ TMPOutGlow 컴포넌트 추가 (방사형 Glow 효과)
+  - TMP Underlay 기반 외곽 Glow (Offset 0, 0 고정)
+  - Glow Color RGB가 TMP Tint Color에 자동 반영
+  - Glow Range (0~1), Softness = 1 (최대 블러) 고정
+  - Face Dilate 독립 제어 (항상 활성화)
+- ✅ Inner Glow 자식 오브젝트
+  - `[Inner Glow]` 자식 TMP 오브젝트 자동 생성/관리
+  - 부모의 모든 TMP 속성 완전 동기화
+  - Inner Glow Alpha로 내부 빛 강도 제어 (RGB는 Glow Color 따름)
+  - HideFlags.NotEditable | HideFlags.DontSaveInEditor
+- ✅ TMPAnimation 완전 호환
+  - Inner Glow 원본 메시 저장/복원 (_originalVerticesInnerGlow)
+  - TransformCharacterVerticesInnerGlow() 전용 메서드
+  - Editor 테스트 후 완벽한 위치/크기 복원
+  - ForceUpdateInnerGlow() + RectTransform 강제 리셋
+- ✅ TMPCurve 자동 대응
+  - 부모에 TMPCurve가 있으면 Inner Glow에도 자동 적용
+- ✅ Material 자동 공유
+  - TMPMaterialCache 사용으로 90-95% 메모리 절감
+  - FNV-1a 해시 기반 Material 공유
+- ✅ 프리셋 시스템 통합
+  - TMPEffectPreset 재사용
+  - 커스텀 에디터 (리셋 버튼, 값 변경 감지)
+- ✅ TMPAnimationComponentHandler 추가
+  - TMPAnimation 컴포넌트 추가 시 CanvasGroup 자동 추가
+  - ObjectChangeEvents 기반 실시간 감지
+- 🐛 버그 수정
+  - 리셋 버튼이 프리셋 값 사용하도록 수정
+  - HasValuesChanged() float 비교 허용 오차 개선 (0.001f)
+  - Editor 테스트 후 Inner Glow 위치/크기 복원 문제 해결
+
+### v2.8.0 (2026-02-12)
+**성능 최적화 및 코드 리팩토링**
+- ✅ Debug.Log 완전 제거 (최고 성능)
+  - TMPOutlineEffect, TMPAnimation, TMPMaterialCache에서 모든 로그 제거
+  - 런타임 성능 향상
+- ✅ GC Alloc 제거 (메모리 최적화)
+  - static List 재사용으로 임시 할당 제거
+  - UIVertex 구조체 직접 초기화
+  - triangleIndices 배열 static readonly로 변경
+- ✅ SyncSecondFace 최적화 (LateUpdate 부하 감소)
+  - TEXT_CHANGED_EVENT 기반 더티 체크 추가
+  - TMP 속성 변경 시에만 동기화 수행
+  - RectTransform은 크기 변경 감지로 최적화
+- ✅ TMPCurve 회전 최적화
+  - 회전이 0일 때 Matrix4x4 생성 회피
+  - 단순 위치 오프셋만 적용
+- ✅ TMPEffectUtility.cs 추가
+  - GetMaterialHash 공통 유틸리티 분리
+  - 코드 중복 제거 및 유지보수성 향상
+
+### v2.7.0 (2026-02-12)
+**TMPColorToggle 컴포넌트 및 Inner Face Gradient 지원 추가**
+- ✅ TMPColorToggle 컴포넌트 추가
+  - TMP Tint Color를 여러 컬러 사이에서 시간차로 순환 (크리스마스 조명 효과)
+  - Duration 설정으로 전환 시간 조절
+  - Is Clamp 옵션으로 즉시 전환 / 블렌딩 전환 선택
+  - 빌트인 프리셋: Christmas, Rainbow, Neon
+- ✅ Inner Face 컬러 연동
+  - TMPOutlineEffect의 Second Face와 자동 연동
+  - 별도 Inner Face 컬러 리스트 사용 가능
+  - TMP Gradient와의 충돌 자동 해결
+- ✅ TMPOutlineEffect Inner Face Gradient 지원
+  - Second Face에 단색 Color 또는 VertexGradient 선택 가능
+  - TMPColorToggle과 함께 사용 시 자동 비활성화
+- ✅ 커스텀 에디터
+  - 프리셋 버튼 (Christmas, Rainbow, Neon)
+  - 런타임 컨트롤 (Play, Pause, Stop, Restart)
+  - Gradient 충돌 경고 표시
+
+### v2.6.0 (2026-02-11)
+**TMPAnimation Position Curve 기능 추가**
+- ✅ Position Curve 기능 추가 (베지어 곡선 이동)
+  - Appear/Loop/Disappear 각각에 Use Position Curve 옵션 추가
+  - Curve Offset (X, Y)로 중간 보정 위치 설정
+  - Quadratic Bezier Curve: 시작점 → 중간점 → 도착점
+  - 중간점 = (시작점 + 도착점) / 2 + Offset
+- ✅ 인스펙터 UI 개선
+  - Appear/Loop/Disappear 섹션 Foldout 접기 기능 추가
+  - 복잡한 설정 시 각 섹션을 접어서 가독성 향상
+  - 기본값: Appear 펼침, Loop/Disappear 접힘
+
+### v2.5.0 (2026-02-11)
+**TMPAnimation 글자별 애니메이션 추가**
+- ✅ TMPAnimation 컴포넌트 추가
+  - DOTween 기반 글자별 애니메이션 (Appear, Loop, Disappear)
+  - 위치/스케일/회전/알파 독립 애니메이션
+  - 블렌딩 지원 (Appear↔Loop↔Disappear 부드러운 전환)
+  - 커스텀 이징 곡선 (AnimationCurve) 지원
+- ✅ TMPAnimationPreset 프리셋 시스템
+  - ScriptableObject 기반 스타일 저장/재사용
+  - 빌트인 프리셋: BounceAppear, WaveLoop, ScaleDisappear, RotateAppear, FadeInOut
+- ✅ CanvasGroup 기반 깜빡임 방지
+  - 런타임에서 CanvasGroup 자동 추가
+  - 초기 alpha = 0으로 렌더링 차단
+  - 정점 초기화 완료 후 alpha = 1로 표시
+- ✅ TMPOutlineEffect 완전 호환
+  - Second Face(Inner Face) 자동 애니메이션
+  - Shadow 알파값 동기화
+  - ForceSyncSecondFace() 호출로 텍스트 변경 시 동기화
+
+### v2.4.0 (2026-02-11)
+**인스펙터 UI 개선 및 카테고리 관리 기능**
+- ✅ 인스펙터 필드 이름 개선
+  - `Underlay Settings` → `Outline Settings`
+  - `Underlay Color` → `Color`
+  - `Underlay Dilate` → `Width`
+  - `Underlay Offset X/Y` → `Offset X/Y`
+  - `Underlay Softness` → `Softness`
+  - `Face Dilate` → `Dilate`
+- ✅ Second Face에 Offset X/Y 추가
+  - Inner Face의 위치를 조정 가능
+  - fontSize 기준으로 스케일됨
+- ✅ 조건부 표시 기능
+  - Face Settings: Enable 체크 시에만 하위 옵션 표시
+  - Second Face Settings: Enable 체크 시에만 하위 옵션 표시
+- ✅ 프리셋 드롭다운 표시 형식 변경
+  - `프리셋명 [카테고리명]` → `[카테고리명] 프리셋명`
+- ✅ 사용자 정의 카테고리 관리 기능
+  - TMPEffectCategorySettings ScriptableObject 추가
+  - 카테고리 추가/이름변경/삭제 UI
+  - 기본 카테고리 3개 (Title, Button, Custom - 삭제 불가)
+  - 삭제된 카테고리를 사용하던 프리셋은 자동으로 Custom으로 변경
+  - 사용자 정의 카테고리 무제한 추가 가능
+
+### v2.3.0 (2026-02-10)
+**Second Face 기능 추가**
+- ✅ Second Face 효과 추가 (안쪽 축소 텍스트 레이어)
+  - 자식 TMP 오브젝트 자동 생성/관리 (`[Inner Face]`)
+  - Face Dilate < 0으로 SDF 기반 안쪽 축소
+  - 부모의 모든 TMP 속성 자동 동기화 (매 프레임)
+- ✅ TMPCurve 완전 대응
+  - 부모에 TMPCurve가 있으면 자식에도 자동 적용
+  - Underlay를 투명하게 동기화하여 정점 위치 일치
+  - 곡선 효과가 중심부/외곽 모두 정확히 일치
+- ✅ 레이아웃 완전 동기화
+  - Spacing (character, word, line, paragraph)
+  - Overflow, Wrapping, Margin
+  - RectTransform (Anchor, Size, Pivot)
+  - Auto Layout, Content Size Fitter 대응
+- 🐛 Shadow 색상 개선
+  - Shadow 색상이 Underlay Color를 따르도록 변경 (Alpha만 별도 제어)
+  - Outline과 일관된 색상의 그림자 표현
+
+### v2.2.1 (2026-02-10)
+**TMPCurve 깜빡임 버그 수정**
+- 🐛 텍스트 변경 시 곡선 미적용 상태로 깜빡이는 현상 수정
+  - LateUpdate 기반 → TMP 이벤트 (`TEXT_CHANGED_EVENT`) 기반으로 변경
+  - TMP 메시 업데이트 직후 즉시 곡선 적용
+- ✅ TMPLayoutLimiter와 함께 사용 시 실행 순서 보장
+  - TMPLayoutLimiter: `DefaultExecutionOrder(-10)`
+  - TMPCurve: `DefaultExecutionOrder(10)`
+- ✅ RectTransform 크기 변경 감지 추가
+
+### v2.2.0 (2026-02-10)
+**신규 컴포넌트 추가**
+- ✅ TMPCurve 추가 (UITMPCurve에서 리팩토링)
+  - Coroutine → LateUpdate + 더티 체크 최적화
+  - angleMultiplier → RotateAlongCurve + RotationStrength로 개선
+  - speedMultiplier 제거 (불명확한 기능)
+  - SetArchCurve, SetWaveCurve, ResetCurve 편의 메서드 추가
+- ✅ TMPLayoutLimiter 추가 (UITMPLayoutLimiter에서 리팩토링)
+  - 네이밍 규칙 통일 (_camelCase)
+  - OnEnable/OnDisable/OnValidate 추가
+  - max 값 0 = 제한 없음 기능 추가
+  - TMP_Text 지원 (UGUI/3D 모두)
+
+### v2.1.0 (2026-02-10)
+**기능 개선**
+- ✅ 프리셋 저장 폴더 지정 기능 (EditorPrefs 저장)
+- ✅ 프리셋 선택 시 "신규 저장" + "갱신" 버튼 한 라인 배치
+- ✅ 카테고리 기본값 "전체"로 변경
+- ✅ Shadow Color → Shadow Alpha 슬라이더로 변경 (혼란 방지)
+- 🗑️ DOTween 애니메이션 확장 기능 제거 (Material 공유 이슈)
+
+### v2.0.0 (2026-02-10)
+**리팩토링 및 기능 확장**
+- ✅ Material 자동 공유 시스템 (TMPMaterialCache)
+- ✅ 프리셋 시스템 (ScriptableObject + 커스텀 에디터)
+- ✅ 프리셋 카테고리 관리 (3개 기본 카테고리)
+- ✅ Runtime API 개선 (편의 메서드)
+- ✅ BitMask 기반 Dirty Check 최적화
+- ✅ FNV-1a Hash 알고리즘 적용
+- ✅ XML 문서화 주석 추가
+- 🐛 Hash 계산 버그 수정 (float → int 변환)
+- 🐛 프리셋 갱신 버튼 활성화 수정
+- 🐛 Shadow 제거 즉시 반영 수정
+
+### v1.0.0 (2026-02-09)
+**초기 릴리스**
+- TMPOutlineEffect 기본 구현
+- Underlay + Shadow 통합
+- Material 관리 시스템
+
+## 📄 라이선스
+
+프로젝트 내부용
+
+---
+
+**버전**: 2.13.0
+**최종 수정**: 2026-02-19
+**작성자**: Claude Code (with Unity TMP Underlay system)
