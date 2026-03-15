@@ -16,7 +16,7 @@ namespace CAT.Utility
         // Preset 버튼(120px + 4px 여백) 왼쪽에 배치
         const float PresetButtonWidth = 120f;
         const float PresetButtonMargin = 4f;
-        const float ButtonWidth = 24f;
+        const float ButtonWidth = 40f;
         const float ButtonGap = 2f;
 
         public string ModuleName => "HierarchyJsonPrefab";
@@ -26,7 +26,7 @@ namespace CAT.Utility
 
         public void Initialize(HierarchyWindowAccessor accessor)
         {
-            _buttonContent = new GUIContent("\u25BC", "JSON 프리팹 생성 (검색 및 스크롤 가능)");
+            _buttonContent = new GUIContent("UI", "JSON 프리팹 생성 (검색 및 스크롤 가능)");
         }
 
         public void InitUI(VisualElement container) { }
