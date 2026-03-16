@@ -304,15 +304,17 @@ namespace CAT.Utility
             if (parent != null)
                 GameObjectUtility.SetParentAndAlign(instance, parent.gameObject);
 
-            // 루트 Transform은 직접 적용 (씬 레벨 배치)
-            ApplyTransform(instance.transform, node.transform);
-            instance.SetActive(node.active);
-
-            // modifications 데이터가 있으면 PropertyModification 기반 복원
+            // modifications 데이터가 있으면 PropertyModification 기반 복원 (Transform 적용 전에 실행)
+            // SetPropertyModifications()는 인스턴스를 "프리팹 기본값 + modifications"로 재설정하므로,
+            // ApplyTransform보다 먼저 호출해야 앵커 등 RectTransform 값이 유실되지 않는다.
             if (node.modifications != null && node.modifications.Count > 0)
             {
                 ApplyModifications(instance, assetPath, node.modifications);
             }
+
+            // 루트 Transform은 직접 적용 — modifications 이후에 적용하여 앵커/포지션 값을 확정한다.
+            ApplyTransform(instance.transform, node.transform);
+            instance.SetActive(node.active);
 
             return instance;
         }
