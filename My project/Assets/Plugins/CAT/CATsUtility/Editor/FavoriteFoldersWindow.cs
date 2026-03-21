@@ -5,30 +5,65 @@ using System.Linq;
 
 namespace CAT.Utility
 {
+    // JSON 저장용 폴더 엔트리 (GUID + 컬러)
+    [System.Serializable]
+    public class FavoriteFolderEntry
+    {
+        public string guid;
+        public float r, g, b, a;
+
+        public Color GetColor()
+        {
+            return new Color(r, g, b, a);
+        }
+
+        public void SetColor(Color color)
+        {
+            r = color.r;
+            g = color.g;
+            b = color.b;
+            a = color.a;
+        }
+
+        public bool HasColor()
+        {
+            return a > 0f;
+        }
+    }
+
     // JSON 저장용 데이터 클래스
     [System.Serializable]
     public class FavoriteFoldersJsonData
     {
-        public List<string> folderGUIDs = new List<string>();
+        // 하위 호환: 기존 folderGUIDs도 로드 가능
+        public List<string> folderGUIDs;
+        public List<FavoriteFolderEntry> entries = new List<FavoriteFolderEntry>();
     }
 
     // 즐겨찾기 폴더를 관리하는 에디터 창
     public class FavoriteFoldersWindow : EditorWindow
     {
-        private const string PREFS_KEY = "CAT_FavoriteFoldersData"; 
-        private Color handleColor = new Color(0.6f, 0.6f, 0.6f, 1f);
+        private const string PREFS_KEY = "CAT_FavoriteFoldersData";
+        private const float HIGHLIGHT_ALPHA = 0.28f;
+        private static readonly Color DEFAULT_COLOR = new Color(0.3f, 0.7f, 1f); // 파랑
 
-        private List<DefaultAsset> favoriteFolders = new List<DefaultAsset>();
-        private Vector2 scrollPosition;
-        private bool isDragging = false;
-        private int dragSourceIndex = -1;
-        private Rect dragRect;
-        private bool showUIElements = false;
+        private Color _handleColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 
-        private GUIStyle handleStyle;
-        private GUIStyle editModeToggleStyle;
-        
-        private bool stylesInitialized = false;
+        private List<DefaultAsset> _favoriteFolders = new List<DefaultAsset>();
+        private List<Color> _folderColors = new List<Color>();
+        private Vector2 _scrollPosition;
+        private bool _isDragging;
+        private int _dragSourceIndex = -1;
+        private Rect _dragRect;
+        private bool _showUIElements;
+
+        private GUIStyle _handleStyle;
+        private GUIStyle _editModeToggleStyle;
+        private bool _stylesInitialized;
+
+        // Project View 하이라이트용 캐시
+        private static Dictionary<string, Color> _guidColorCache = new Dictionary<string, Color>();
+        private static bool _callbackRegistered;
 
         [MenuItem("CAT/Utility/Favorite")]
         public static void ShowWindow()
@@ -38,59 +73,134 @@ namespace CAT.Utility
 
         private void OnEnable()
         {
-            LoadFromPlayerPrefs(); // 변경
+            LoadFromPlayerPrefs();
+            RegisterProjectWindowCallback();
         }
 
         private void OnDisable()
         {
-            SaveToPlayerPrefs(); // 변경
+            SaveToPlayerPrefs();
         }
-        
+
+        // Project View 콜백 등록
+        private void RegisterProjectWindowCallback()
+        {
+            if (!_callbackRegistered)
+            {
+                EditorApplication.projectWindowItemOnGUI -= OnProjectWindowItemGUI;
+                EditorApplication.projectWindowItemOnGUI += OnProjectWindowItemGUI;
+                _callbackRegistered = true;
+            }
+        }
+
+        // Project View 각 아이템이 그려질 때 호출
+        private static void OnProjectWindowItemGUI(string guid, Rect selectionRect)
+        {
+            if (_guidColorCache.TryGetValue(guid, out Color color))
+            {
+                Color bgColor = new Color(color.r, color.g, color.b, HIGHLIGHT_ALPHA);
+                EditorGUI.DrawRect(selectionRect, bgColor);
+            }
+        }
+
+        // GUID→Color 캐시 재구축
+        private void RebuildGuidColorCache()
+        {
+            _guidColorCache.Clear();
+            for (int i = 0; i < _favoriteFolders.Count; i++)
+            {
+                if (_favoriteFolders[i] == null) continue;
+                if (i >= _folderColors.Count) continue;
+
+                Color color = _folderColors[i];
+                if (color.a <= 0f) continue;
+
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(_favoriteFolders[i]));
+                if (!string.IsNullOrEmpty(guid))
+                {
+                    _guidColorCache[guid] = color;
+                }
+            }
+
+            EditorApplication.RepaintProjectWindow();
+        }
+
         private void LoadFromPlayerPrefs()
         {
-            favoriteFolders.Clear();
-            if (PlayerPrefs.HasKey(PREFS_KEY))
+            _favoriteFolders.Clear();
+            _folderColors.Clear();
+
+            if (!PlayerPrefs.HasKey(PREFS_KEY)) return;
+
+            try
             {
-                try
+                string json = PlayerPrefs.GetString(PREFS_KEY);
+                var jsonData = JsonUtility.FromJson<FavoriteFoldersJsonData>(json);
+                if (jsonData == null) return;
+
+                // 새 포맷 (entries) 우선
+                if (jsonData.entries != null && jsonData.entries.Count > 0)
                 {
-                    string json = PlayerPrefs.GetString(PREFS_KEY);
-                    var jsonData = JsonUtility.FromJson<FavoriteFoldersJsonData>(json);
-                    if (jsonData != null && jsonData.folderGUIDs != null)
+                    foreach (var entry in jsonData.entries)
                     {
-                        foreach (string guid in jsonData.folderGUIDs)
+                        string path = AssetDatabase.GUIDToAssetPath(entry.guid);
+                        if (string.IsNullOrEmpty(path)) continue;
+
+                        DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
+                        if (folder != null && AssetDatabase.IsValidFolder(path))
                         {
-                            string path = AssetDatabase.GUIDToAssetPath(guid);
-                            if (!string.IsNullOrEmpty(path))
-                            {
-                                DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
-                                if (folder != null && AssetDatabase.IsValidFolder(path))
-                                {
-                                    favoriteFolders.Add(folder);
-                                }
-                            }
+                            _favoriteFolders.Add(folder);
+                            _folderColors.Add(entry.GetColor());
                         }
                     }
                 }
-                catch (System.Exception e)
+                // 하위 호환: 기존 folderGUIDs 포맷
+                else if (jsonData.folderGUIDs != null)
                 {
-                    Debug.LogError($"Favorite 폴더 데이터 로드 실패: {e.Message}");
-                    favoriteFolders.Clear();
+                    foreach (string guid in jsonData.folderGUIDs)
+                    {
+                        string path = AssetDatabase.GUIDToAssetPath(guid);
+                        if (string.IsNullOrEmpty(path)) continue;
+
+                        DefaultAsset folder = AssetDatabase.LoadAssetAtPath<DefaultAsset>(path);
+                        if (folder != null && AssetDatabase.IsValidFolder(path))
+                        {
+                            _favoriteFolders.Add(folder);
+                            _folderColors.Add(DEFAULT_COLOR);
+                        }
+                    }
                 }
             }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Favorite 폴더 데이터 로드 실패: {e.Message}");
+                _favoriteFolders.Clear();
+                _folderColors.Clear();
+            }
+
+            RebuildGuidColorCache();
         }
-        
+
         private void SaveToPlayerPrefs()
         {
             try
             {
-                var jsonData = new FavoriteFoldersJsonData
+                var jsonData = new FavoriteFoldersJsonData();
+                jsonData.entries = new List<FavoriteFolderEntry>();
+
+                for (int i = 0; i < _favoriteFolders.Count; i++)
                 {
-                    folderGUIDs = favoriteFolders
-                        .Where(f => f != null)
-                        .Select(f => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(f)))
-                        .Where(guid => !string.IsNullOrEmpty(guid))
-                        .ToList()
-                };
+                    if (_favoriteFolders[i] == null) continue;
+
+                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(_favoriteFolders[i]));
+                    if (string.IsNullOrEmpty(guid)) continue;
+
+                    var entry = new FavoriteFolderEntry { guid = guid };
+                    if (i < _folderColors.Count)
+                        entry.SetColor(_folderColors[i]);
+
+                    jsonData.entries.Add(entry);
+                }
 
                 string json = JsonUtility.ToJson(jsonData, true);
                 PlayerPrefs.SetString(PREFS_KEY, json);
@@ -102,7 +212,21 @@ namespace CAT.Utility
             }
         }
 
-        // --- 이하 OnGUI 및 다른 로직들은 변경할 필요가 없습니다. ---
+        // 외부에서 컬러 변경 시 호출 (팝업 → 메인 윈도우)
+        public void SetFolderColor(int index, Color color)
+        {
+            if (index < 0 || index >= _folderColors.Count) return;
+            _folderColors[index] = color;
+            RebuildGuidColorCache();
+            SaveToPlayerPrefs();
+            Repaint();
+        }
+
+        public Color GetFolderColor(int index)
+        {
+            if (index < 0 || index >= _folderColors.Count) return Color.clear;
+            return _folderColors[index];
+        }
 
         private void OnGUI()
         {
@@ -111,7 +235,7 @@ namespace CAT.Utility
 
             DrawHeader();
 
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
             DrawFolders();
             EditorGUILayout.EndScrollView();
 
@@ -120,15 +244,15 @@ namespace CAT.Utility
             HandleDragVisuals();
             HandleWindowDragDrop();
         }
-        
+
         private void HandleDragVisuals()
         {
-            if (isDragging)
+            if (_isDragging)
             {
                 Event current = Event.current;
                 Vector2 mousePos = current.mousePosition;
 
-                float deltaY = mousePos.y - dragRect.y;
+                float deltaY = mousePos.y - _dragRect.y;
                 Color indicatorColor = deltaY > 0 ? Color.green : Color.red;
 
                 Rect indicator = new Rect(mousePos.x - 5, mousePos.y - 1, 10, 2);
@@ -140,17 +264,17 @@ namespace CAT.Utility
 
         private void InitializeStyles()
         {
-            if (stylesInitialized) return;
+            if (_stylesInitialized) return;
 
-            handleStyle = new GUIStyle(EditorStyles.label)
+            _handleStyle = new GUIStyle(EditorStyles.label)
             {
-                normal = { textColor = handleColor },
+                normal = { textColor = _handleColor },
                 alignment = TextAnchor.MiddleCenter
             };
 
-            editModeToggleStyle = new GUIStyle(GUI.skin.toggle) { fontSize = 10 };
+            _editModeToggleStyle = new GUIStyle(GUI.skin.toggle) { fontSize = 10 };
 
-            stylesInitialized = true;
+            _stylesInitialized = true;
         }
 
         private void DrawHeader()
@@ -163,11 +287,11 @@ namespace CAT.Utility
             string toggleLabel = position.width - 40f >= minEditWidth ? "Edit" : "E";
             float toggleWidth = position.width - 40f >= minEditWidth ? minEditWidth : 20f;
 
-            bool newShowUIElements = GUILayout.Toggle(showUIElements, toggleLabel, editModeToggleStyle, GUILayout.Width(toggleWidth));
-            if (newShowUIElements != showUIElements)
+            bool newShowUIElements = GUILayout.Toggle(_showUIElements, toggleLabel, _editModeToggleStyle, GUILayout.Width(toggleWidth));
+            if (newShowUIElements != _showUIElements)
             {
-                showUIElements = newShowUIElements;
-                if (!showUIElements)
+                _showUIElements = newShowUIElements;
+                if (!_showUIElements)
                 {
                     SaveToPlayerPrefs();
                 }
@@ -180,24 +304,37 @@ namespace CAT.Utility
 
         private void DrawFolders()
         {
-            if (favoriteFolders == null) return;
+            if (_favoriteFolders == null) return;
             int folderToDelete = -1;
 
-            for (int i = 0; i < favoriteFolders.Count; i++)
+            for (int i = 0; i < _favoriteFolders.Count; i++)
             {
+                // 컬러 리스트 동기화
+                while (_folderColors.Count <= i)
+                    _folderColors.Add(DEFAULT_COLOR);
+
                 EditorGUILayout.BeginHorizontal();
-                
-                if (showUIElements)
+
+                if (_showUIElements)
                 {
-                    GUILayout.Label("☰", handleStyle, GUILayout.Width(20));
+                    GUILayout.Label("☰", _handleStyle, GUILayout.Width(20));
                     Rect folderDragHandleRect = GUILayoutUtility.GetLastRect();
                     HandleReordering(folderDragHandleRect, i);
+                }
+
+                // 컬러가 지정된 폴더에 컬러 인디케이터 표시
+                Color folderColor = _folderColors[i];
+                if (folderColor.a > 0f)
+                {
+                    Rect colorIndicator = GUILayoutUtility.GetRect(4, 16, GUILayout.Width(4));
+                    EditorGUI.DrawRect(colorIndicator, folderColor);
+                    GUILayout.Space(2);
                 }
 
                 GUIContent folderIcon = EditorGUIUtility.IconContent("Folder Icon");
                 GUILayout.Label(folderIcon, GUILayout.Width(16), GUILayout.Height(16));
 
-                DefaultAsset folder = favoriteFolders[i];
+                DefaultAsset folder = _favoriteFolders[i];
                 if (folder != null)
                 {
                     if (GUILayout.Button(folder.name, EditorStyles.label))
@@ -214,8 +351,11 @@ namespace CAT.Utility
 
                 GUILayout.FlexibleSpace();
 
-                if (showUIElements)
+                if (_showUIElements)
                 {
+                    DrawColorButton(i);
+                    GUILayout.Space(2);
+
                     GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
                     if (GUILayout.Button("×", GUILayout.Width(18), GUILayout.Height(18)))
                     {
@@ -229,8 +369,31 @@ namespace CAT.Utility
 
             if (folderToDelete != -1)
             {
-                favoriteFolders.RemoveAt(folderToDelete);
+                _favoriteFolders.RemoveAt(folderToDelete);
+                if (folderToDelete < _folderColors.Count)
+                    _folderColors.RemoveAt(folderToDelete);
+                RebuildGuidColorCache();
             }
+        }
+
+        // 컬러 선택 버튼 (Edit 모드에서 표시)
+        private void DrawColorButton(int index)
+        {
+            Color currentColor = _folderColors[index];
+            bool hasColor = currentColor.a > 0f;
+
+            Color prevBg = GUI.backgroundColor;
+            GUI.backgroundColor = hasColor ? currentColor : new Color(0.3f, 0.3f, 0.3f);
+
+            string buttonLabel = hasColor ? " " : "—";
+            if (GUILayout.Button(buttonLabel, GUILayout.Width(20), GUILayout.Height(18)))
+            {
+                Rect buttonRect = GUILayoutUtility.GetLastRect();
+                // 스크린 좌표로 변환
+                buttonRect.position = GUIUtility.GUIToScreenPoint(buttonRect.position);
+                FavoriteColorPickerPopup.Show(buttonRect, currentColor, this, index);
+            }
+            GUI.backgroundColor = prevBg;
         }
 
         private void HandleReordering(Rect handleRect, int folderIndex)
@@ -241,21 +404,21 @@ namespace CAT.Utility
             switch (current.type)
             {
                 case EventType.MouseDown when handleRect.Contains(current.mousePosition) && current.button == 0:
-                    isDragging = true;
-                    dragSourceIndex = folderIndex;
-                    dragRect = handleRect;
+                    _isDragging = true;
+                    _dragSourceIndex = folderIndex;
+                    _dragRect = handleRect;
                     GUIUtility.hotControl = controlID;
                     current.Use();
                     break;
 
-                case EventType.MouseDrag when isDragging && GUIUtility.hotControl == controlID:
+                case EventType.MouseDrag when _isDragging && GUIUtility.hotControl == controlID:
                     Repaint();
                     current.Use();
                     break;
 
-                case EventType.MouseUp when isDragging && GUIUtility.hotControl == controlID:
+                case EventType.MouseUp when _isDragging && GUIUtility.hotControl == controlID:
                     PerformSimpleReordering(current.mousePosition);
-                    isDragging = false;
+                    _isDragging = false;
                     GUIUtility.hotControl = 0;
                     current.Use();
                     Repaint();
@@ -265,17 +428,24 @@ namespace CAT.Utility
 
         private void PerformSimpleReordering(Vector2 mousePos)
         {
-            float deltaY = mousePos.y - dragRect.y;
+            float deltaY = mousePos.y - _dragRect.y;
 
             if (Mathf.Abs(deltaY) > 20)
             {
                 int direction = deltaY > 0 ? 1 : -1;
-                int targetIndex = dragSourceIndex + direction;
-                if (targetIndex >= 0 && targetIndex < favoriteFolders.Count)
+                int targetIndex = _dragSourceIndex + direction;
+                if (targetIndex >= 0 && targetIndex < _favoriteFolders.Count)
                 {
-                    var temp = favoriteFolders[dragSourceIndex];
-                    favoriteFolders[dragSourceIndex] = favoriteFolders[targetIndex];
-                    favoriteFolders[targetIndex] = temp;
+                    var tempFolder = _favoriteFolders[_dragSourceIndex];
+                    _favoriteFolders[_dragSourceIndex] = _favoriteFolders[targetIndex];
+                    _favoriteFolders[targetIndex] = tempFolder;
+
+                    if (_dragSourceIndex < _folderColors.Count && targetIndex < _folderColors.Count)
+                    {
+                        var tempColor = _folderColors[_dragSourceIndex];
+                        _folderColors[_dragSourceIndex] = _folderColors[targetIndex];
+                        _folderColors[targetIndex] = tempColor;
+                    }
                 }
             }
         }
@@ -283,8 +453,8 @@ namespace CAT.Utility
         private void HandleWindowDragDrop()
         {
             Event current = Event.current;
-            
-            if (!showUIElements) return;
+
+            if (!_showUIElements) return;
 
             switch (current.type)
             {
@@ -301,9 +471,10 @@ namespace CAT.Utility
                     {
                         if (obj is DefaultAsset folder && AssetDatabase.IsValidFolder(AssetDatabase.GetAssetPath(folder)))
                         {
-                            if (!favoriteFolders.Contains(folder))
+                            if (!_favoriteFolders.Contains(folder))
                             {
-                                favoriteFolders.Add(folder);
+                                _favoriteFolders.Add(folder);
+                                _folderColors.Add(DEFAULT_COLOR);
                                 addedAny = true;
                             }
                         }
@@ -315,6 +486,150 @@ namespace CAT.Utility
                     current.Use();
                     break;
             }
+        }
+    }
+
+    // 컬러 선택 드롭다운 팝업
+    public class FavoriteColorPickerPopup : EditorWindow
+    {
+        private static readonly Color[] PresetColors = new Color[]
+        {
+            new Color(1f, 0.4f, 0.4f),       // 빨강
+            new Color(1f, 0.7f, 0.3f),        // 주황
+            new Color(1f, 0.9f, 0.3f),        // 노랑
+            new Color(0.4f, 0.86f, 0.4f),     // 초록
+            new Color(0.3f, 0.7f, 1f),        // 파랑
+            new Color(0.63f, 0.47f, 1f),      // 보라
+            new Color(1f, 0.47f, 0.78f),      // 분홍
+            new Color(0.63f, 0.63f, 0.63f),   // 회색
+        };
+
+        private FavoriteFoldersWindow _parentWindow;
+        private int _folderIndex;
+        private Color _currentColor;
+        private Color _customColor = Color.white;
+        private bool _showCustomPicker;
+
+        public static void Show(Rect buttonRect, Color currentColor, FavoriteFoldersWindow parent, int folderIndex)
+        {
+            var popup = CreateInstance<FavoriteColorPickerPopup>();
+            popup._currentColor = currentColor;
+            popup._customColor = currentColor.a > 0f ? currentColor : Color.white;
+            popup._parentWindow = parent;
+            popup._folderIndex = folderIndex;
+            popup.ShowAsDropDown(buttonRect, new Vector2(206, 64));
+        }
+
+        private void OnGUI()
+        {
+            EditorGUILayout.Space(4);
+
+            // 프리셋 컬러 그리드
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(4);
+
+            for (int i = 0; i < PresetColors.Length; i++)
+            {
+                Color preset = PresetColors[i];
+                bool isSelected = _currentColor.a > 0f &&
+                    Mathf.Abs(_currentColor.r - preset.r) < 0.01f &&
+                    Mathf.Abs(_currentColor.g - preset.g) < 0.01f &&
+                    Mathf.Abs(_currentColor.b - preset.b) < 0.01f;
+
+                Rect colorRect = GUILayoutUtility.GetRect(20, 20, GUILayout.Width(20), GUILayout.Height(20));
+                EditorGUI.DrawRect(colorRect, preset);
+
+                // 선택된 컬러에 흰색 테두리
+                if (isSelected)
+                {
+                    DrawBorder(colorRect, Color.white, 2);
+                }
+
+                if (Event.current.type == EventType.MouseDown && colorRect.Contains(Event.current.mousePosition))
+                {
+                    ApplyColor(preset);
+                    Close();
+                    Event.current.Use();
+                    return;
+                }
+
+                GUILayout.Space(2);
+            }
+
+            GUILayout.Space(4);
+            EditorGUILayout.EndHorizontal();
+
+            GUILayout.Space(4);
+
+            // 하단: 커스텀 + 제거
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(4);
+
+            if (GUILayout.Button("+ 커스텀", EditorStyles.miniButton, GUILayout.Height(18)))
+            {
+                _showCustomPicker = true;
+                // 팝업 크기 확장
+                minSize = new Vector2(206, 114);
+                maxSize = new Vector2(206, 114);
+            }
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("∅ 제거", EditorStyles.miniButton, GUILayout.Height(18)))
+            {
+                ApplyColor(Color.clear);
+                Close();
+                return;
+            }
+
+            GUILayout.Space(4);
+            EditorGUILayout.EndHorizontal();
+
+            // 커스텀 컬러 피커
+            if (_showCustomPicker)
+            {
+                GUILayout.Space(4);
+
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(4);
+
+                EditorGUI.BeginChangeCheck();
+                _customColor = EditorGUILayout.ColorField(GUIContent.none, _customColor, true, false, false, GUILayout.Height(20));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    // 실시간 미리보기
+                    ApplyColor(_customColor);
+                }
+
+                GUILayout.Space(4);
+
+                if (GUILayout.Button("확인", EditorStyles.miniButton, GUILayout.Width(40), GUILayout.Height(20)))
+                {
+                    ApplyColor(_customColor);
+                    Close();
+                    return;
+                }
+
+                GUILayout.Space(4);
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private void ApplyColor(Color color)
+        {
+            _currentColor = color;
+            if (_parentWindow != null)
+            {
+                _parentWindow.SetFolderColor(_folderIndex, color);
+            }
+        }
+
+        private static void DrawBorder(Rect rect, Color color, float thickness)
+        {
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, thickness), color);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - thickness, rect.width, thickness), color);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y, thickness, rect.height), color);
+            EditorGUI.DrawRect(new Rect(rect.xMax - thickness, rect.y, thickness, rect.height), color);
         }
     }
 }
