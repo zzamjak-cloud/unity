@@ -710,7 +710,15 @@ namespace CAT.UI
                     {
                         if (!_secondFaceObject)
                         {
-                            CreateSecondFaceObject();
+                            // OnValidate 중에는 AddComponent가 SendMessage를 트리거하여 경고 발생
+                            // delayCall로 지연하여 OnValidate 완료 후 생성
+                            UnityEditor.EditorApplication.delayCall += () =>
+                            {
+                                if (this != null && _tmpText != null && !_secondFaceObject && _enableSecondFace)
+                                {
+                                    CreateSecondFaceObject();
+                                }
+                            };
                         }
                         else
                         {
@@ -1610,7 +1618,7 @@ namespace CAT.UI
         /// Material 캐시 초기화 (디버깅용)
         /// </summary>
         [ContextMenu("Clear Material Cache")]
-        public static void ClearMaterialCache()
+        public void ClearMaterialCache()
         {
             TMPMaterialCache.Instance.Clear();
         }

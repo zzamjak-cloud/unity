@@ -19,7 +19,6 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 | **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
 | **TMPOutGlow** | Glow 효과 (방사형) | Material (GPU) + 자식 오브젝트 |
 | **TMPAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
-| **TMPColorToggle** | 컬러 순환 애니메이션 | 크리스마스 조명 스타일 |
 | **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
 | **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
 
@@ -602,7 +601,6 @@ TMPEffects/                          # 루트 폴더 (어디에 위치하든 동
 │   ├── TMPEffectPreset.cs           # ScriptableObject 프리셋
 │   ├── TMPAnimation.cs              # 글자별 애니메이션 컴포넌트
 │   ├── TMPAnimationPreset.cs        # 애니메이션 프리셋
-│   ├── TMPColorToggle.cs            # 컬러 순환 애니메이션 컴포넌트
 │   ├── TMPCurve.cs                  # 텍스트 곡선 변형 컴포넌트
 │   ├── TMPLayoutLimiter.cs          # 레이아웃 크기 제한 컴포넌트
 │   └── TMP_EFFECT_DEVELOPMENT_GUIDE.md  # 개발 가이드
@@ -610,7 +608,6 @@ TMPEffects/                          # 루트 폴더 (어디에 위치하든 동
 │   ├── TMPOutlineEffectEditor.cs    # Outline 커스텀 인스펙터
 │   ├── TMPOutGlowEditor.cs          # Glow 커스텀 인스펙터
 │   ├── TMPAnimationEditor.cs        # 애니메이션 커스텀 인스펙터
-│   ├── TMPColorToggleEditor.cs      # 컬러 토글 커스텀 인스펙터
 │   ├── TMPAnimationComponentHandler.cs  # TMPAnimation 자동 CanvasGroup 추가
 │   └── EditorInputDialog.cs         # 입력 다이얼로그
 ├── Presets/                         # 프리셋 저장 폴더 (기본 저장 경로)
@@ -944,95 +941,6 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - TMPOutlineEffect의 Shadow도 함께 애니메이션됨
 - 메인 텍스트의 알파값이 Shadow에 자동 적용
 
----
-
-## 🎄 TMPColorToggle - 컬러 순환 애니메이션
-
-TMP 텍스트 색상을 크리스마스 트리 조명처럼 시간차를 두고 순환하는 컴포넌트입니다.
-
-### 특징
-- **컬러 순환**: 지정된 컬러 리스트를 시간차로 순환
-- **블렌딩/즉시 전환**: Is Clamp 옵션으로 선택
-- **Inner Face 연동**: TMPOutlineEffect의 Second Face 컬러도 함께 변경
-- **빌트인 프리셋**: Christmas, Rainbow, Neon
-
-### 사용법
-
-#### Inspector
-```
-1. TMP 오브젝트 선택
-2. Add Component → CAT/UI/TMP Color Toggle
-3. Colors 리스트에 순환할 컬러 추가 (최소 2개)
-4. Duration으로 전환 시간 설정
-5. Play On Enable 활성화 시 자동 재생
-```
-
-#### 코드로 사용
-
-```csharp
-using CAT.UI;
-using UnityEngine;
-
-public class ColorToggleExample : MonoBehaviour
-{
-    void Start()
-    {
-        var toggle = GetComponent<TMPColorToggle>();
-
-        // 수동 재생
-        toggle.Play();
-
-        // 일시정지/재개
-        toggle.Pause();
-        toggle.Resume();
-
-        // 정지
-        toggle.Stop();
-
-        // 재시작
-        toggle.Restart();
-
-        // 프리셋 적용
-        toggle.SetChristmasColors();
-        toggle.SetRainbowColors();
-        toggle.SetNeonColors();
-
-        // 동적 컬러 추가
-        toggle.AddColor(Color.magenta);
-        toggle.Colors = new List<Color> { Color.red, Color.blue, Color.green };
-    }
-}
-```
-
-### 속성
-
-```csharp
-// 기본 설정
-toggle.Colors = colorList;          // 순환할 컬러 리스트
-toggle.Duration = 1f;               // 전환 시간 (초)
-toggle.IsClamp = false;             // true: 즉시 전환, false: 블렌딩
-toggle.PlayOnEnable = true;         // 활성화 시 자동 재생
-
-// Inner Face 설정 (TMPOutlineEffect 연동)
-toggle.AffectInnerFace = true;      // Inner Face 컬러도 변경
-toggle.UseInnerFaceColors = false;  // 별도 컬러 리스트 사용
-toggle.InnerFaceColors = colorList; // Inner Face용 컬러 리스트
-
-// 상태 (읽기 전용)
-toggle.IsPlaying                    // 재생 중 여부
-toggle.CurrentIndex                 // 현재 컬러 인덱스
-```
-
-### ⚠️ 주의사항
-
-**TMP Gradient와 충돌**:
-- TMP의 Vertex Gradient가 활성화되어 있으면 자동으로 비활성화됨
-- TMPColorToggle은 단색 컬러만 지원
-
-**Inner Face Gradient와 충돌**:
-- TMPOutlineEffect의 Inner Face Gradient가 활성화된 상태에서 Affect Inner Face를 사용하면
-- Inner Face Gradient가 자동으로 비활성화되고 단색 컬러로 전환됨
-
 ## 📝 요구사항
 
 - Unity 6 (6000.0.x) 이상
@@ -1048,10 +956,21 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
 - ✅ **Shadow 제거 안됨** → 강제 메시 업데이트로 해결
 - ✅ **Hash 충돌** → FNV-1a 알고리즘으로 해결
 
-### 현재 안정 버전 (v2.12.0)
+### 현재 안정 버전 (v2.13.1)
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v2.13.1 (2026-03-24)
+**에디터 경고 수정**
+- ✅ OnValidate에서 Second Face 생성 시 SendMessage 경고 수정
+  - `CreateSecondFaceObject()`를 `EditorApplication.delayCall`로 지연 실행
+  - OnValidate 중 `AddComponent<TextMeshProUGUI>()` 호출 시 TMP Awake → SendMessage 충돌 해결
+  - `DestroySecondFaceObject()`와 동일한 지연 패턴으로 일관성 확보
+  - delayCall 콜백에서 `this`, `_tmpText`, `_secondFaceObject`, `_enableSecondFace` 유효성 재검증
+- ✅ ClearMaterialCache ContextMenu 경고 수정
+  - `static` 메서드에 `[ContextMenu]` 사용 불가 경고 해결
+  - `public static void` → `public void`로 변경 (TMPMaterialCache.Instance 싱글톤 호출이므로 동작 동일)
 
 ### v2.13.0 (2026-02-19)
 **프리셋 기본 저장 폴더 상대 경로화**
@@ -1174,23 +1093,9 @@ toggle.CurrentIndex                 // 현재 컬러 인덱스
   - 코드 중복 제거 및 유지보수성 향상
 
 ### v2.7.0 (2026-02-12)
-**TMPColorToggle 컴포넌트 및 Inner Face Gradient 지원 추가**
-- ✅ TMPColorToggle 컴포넌트 추가
-  - TMP Tint Color를 여러 컬러 사이에서 시간차로 순환 (크리스마스 조명 효과)
-  - Duration 설정으로 전환 시간 조절
-  - Is Clamp 옵션으로 즉시 전환 / 블렌딩 전환 선택
-  - 빌트인 프리셋: Christmas, Rainbow, Neon
-- ✅ Inner Face 컬러 연동
-  - TMPOutlineEffect의 Second Face와 자동 연동
-  - 별도 Inner Face 컬러 리스트 사용 가능
-  - TMP Gradient와의 충돌 자동 해결
+**Inner Face Gradient 지원 추가**
 - ✅ TMPOutlineEffect Inner Face Gradient 지원
   - Second Face에 단색 Color 또는 VertexGradient 선택 가능
-  - TMPColorToggle과 함께 사용 시 자동 비활성화
-- ✅ 커스텀 에디터
-  - 프리셋 버튼 (Christmas, Rainbow, Neon)
-  - 런타임 컨트롤 (Play, Pause, Stop, Restart)
-  - Gradient 충돌 경고 표시
 
 ### v2.6.0 (2026-02-11)
 **TMPAnimation Position Curve 기능 추가**
