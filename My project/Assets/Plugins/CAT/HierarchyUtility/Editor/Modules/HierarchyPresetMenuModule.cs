@@ -37,7 +37,7 @@ namespace CAT.HierarchyUtility
 
         private void UpdateButtonContent()
         {
-            _buttonContent = new GUIContent($"\u25BC {_targetFolderName}", "지정된 폴더의 프리팹을 생성합니다. (검색 및 스크롤 가능)\n우클릭: 폴더 이름 변경");
+            _buttonContent = new GUIContent(_targetFolderName);
         }
 
         public void InitUI(VisualElement container) { }
@@ -62,7 +62,7 @@ namespace CAT.HierarchyUtility
 
         private void DrawButton(Rect selectionRect)
         {
-            const float buttonWidth = 120f;
+            const float buttonWidth = 60f;
             float buttonX = EditorGUIUtility.currentViewWidth - buttonWidth - 4f;
             Rect buttonRect = new Rect(buttonX, 0, buttonWidth, 20f);
 
@@ -252,7 +252,7 @@ namespace CAT.HierarchyUtility
                 _onItemSelected = onItemSelected;
                 _targetFolderName = targetFolderName;
                 // 드롭다운 최소 크기 설정
-                minimumSize = new Vector2(300, 1000);
+                minimumSize = new Vector2(210, 1000);
             }
 
             protected override AdvancedDropdownItem BuildRoot()

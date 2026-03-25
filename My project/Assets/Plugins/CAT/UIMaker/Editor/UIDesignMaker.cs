@@ -793,7 +793,7 @@ namespace CAT.Utility
         public JsonPrefabDropdown(AdvancedDropdownState state, string basePath) : base(state)
         {
             _basePath = basePath;
-            minimumSize = new Vector2(350, 400);
+            minimumSize = new Vector2(245, 400);
         }
 
         protected override AdvancedDropdownItem BuildRoot()
