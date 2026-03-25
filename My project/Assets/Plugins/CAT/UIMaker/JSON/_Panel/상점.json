@@ -1,6 +1,6 @@
 ﻿{
   "prefabName": "ShopPanel",
-  "exportDate": "2026-03-15 20:53:04",
+  "exportDate": "2026-03-25 14:47:36",
   "root": {
       "name": "ShopPanel",
       "active": true,
@@ -351,9 +351,7 @@
                         {
                           "name": "m_Sprite",
                           "type": "ObjectReference",
-                          "value": "UIMask",
-                          "objectRefGuid": "0000000000000000f000000000000000",
-                          "objectRefType": "UnityEngine.Sprite"
+                          "value": "null"
                         },
                         {
                           "name": "m_Type",
@@ -605,17 +603,17 @@
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.x",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.y",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.z",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
@@ -951,17 +949,17 @@
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.x",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.y",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
                               "propertyPath": "m_LocalRotation.z",
-                              "value": "-0"
+                              "value": "0"
                             },
                             {
                               "targetFileId": 5356923330167961051,
@@ -1570,6 +1568,149 @@
                 }
               ],
               "children": []
+            },
+            {
+              "name": "Close Area",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-44, -44, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [1, 1],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [-44, -44],
+                "sizeDelta": [68, 70],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [],
+              "children": [
+                {
+                  "name": "PopupCloseButton",
+                  "active": true,
+                  "prefabGuid": "393bcfaa2e6c446a6960bfb34077a272",
+                  "transform": {
+                    "isRectTransform": true,
+                    "localPosition": [0, 0, 0],
+                    "localRotation": [0, 0, 0, 1],
+                    "localScale": [1, 1, 1],
+                    "anchorMin": [0.5, 0.5],
+                    "anchorMax": [0.5, 0.5],
+                    "anchoredPosition": [0, 0],
+                    "sizeDelta": [68, 70],
+                    "pivot": [0.5, 0.5]
+                  },
+                  "modifications": [
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_Pivot.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_Pivot.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMax.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMax.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMin.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMin.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_SizeDelta.x",
+                      "value": "68"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_SizeDelta.y",
+                      "value": "70"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.w",
+                      "value": "1"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchoredPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchoredPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 3402606177483708490,
+                      "propertyPath": "m_Name",
+                      "value": "PopupCloseButton"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

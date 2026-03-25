@@ -11,6 +11,7 @@ namespace CAT.Utility
     {
         public string guid;
         public float r, g, b, a;
+        public bool includeChildren;
 
         public Color GetColor()
         {
@@ -45,12 +46,14 @@ namespace CAT.Utility
     {
         private const string PREFS_KEY = "CAT_FavoriteFoldersData";
         private const float HIGHLIGHT_ALPHA = 0.28f;
+        private const float CHILD_HIGHLIGHT_ALPHA = 0.16f;
         private static readonly Color DEFAULT_COLOR = new Color(0.3f, 0.7f, 1f); // 파랑
 
         private Color _handleColor = new Color(0.6f, 0.6f, 0.6f, 1f);
 
         private List<DefaultAsset> _favoriteFolders = new List<DefaultAsset>();
         private List<Color> _folderColors = new List<Color>();
+        private List<bool> _includeChildren = new List<bool>();
         private Vector2 _scrollPosition;
         private bool _isDragging;
         private int _dragSourceIndex = -1;
@@ -93,13 +96,12 @@ namespace CAT.Utility
             }
         }
 
-        // Project View 각 아이템이 그려질 때 호출
+        // Project View 각 아이템이 그려질 때 호출 (캐시에 알파값 포함)
         private static void OnProjectWindowItemGUI(string guid, Rect selectionRect)
         {
             if (_guidColorCache.TryGetValue(guid, out Color color))
             {
-                Color bgColor = new Color(color.r, color.g, color.b, HIGHLIGHT_ALPHA);
-                EditorGUI.DrawRect(selectionRect, bgColor);
+                EditorGUI.DrawRect(selectionRect, color);
             }
         }
 
@@ -115,20 +117,51 @@ namespace CAT.Utility
                 Color color = _folderColors[i];
                 if (color.a <= 0f) continue;
 
-                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(_favoriteFolders[i]));
+                string folderPath = AssetDatabase.GetAssetPath(_favoriteFolders[i]);
+                string guid = AssetDatabase.AssetPathToGUID(folderPath);
                 if (!string.IsNullOrEmpty(guid))
                 {
-                    _guidColorCache[guid] = color;
+                    // 부모 폴더: 기본 알파
+                    _guidColorCache[guid] = new Color(color.r, color.g, color.b, HIGHLIGHT_ALPHA);
+                }
+
+                // 자식 폴더 포함 옵션이 켜져 있으면 하위 폴더도 캐시에 추가 (낮은 알파)
+                bool includeChildren = i < _includeChildren.Count && _includeChildren[i];
+                if (includeChildren && !string.IsNullOrEmpty(folderPath))
+                {
+                    Color childColor = new Color(color.r, color.g, color.b, CHILD_HIGHLIGHT_ALPHA);
+                    string[] subFolders = AssetDatabase.GetSubFolders(folderPath);
+                    AddChildFoldersRecursive(subFolders, childColor);
                 }
             }
 
             EditorApplication.RepaintProjectWindow();
         }
 
+        // 자식 폴더를 재귀적으로 캐시에 추가
+        private void AddChildFoldersRecursive(string[] folderPaths, Color color)
+        {
+            foreach (string path in folderPaths)
+            {
+                string childGuid = AssetDatabase.AssetPathToGUID(path);
+                if (!string.IsNullOrEmpty(childGuid) && !_guidColorCache.ContainsKey(childGuid))
+                {
+                    _guidColorCache[childGuid] = color;
+                }
+
+                string[] subFolders = AssetDatabase.GetSubFolders(path);
+                if (subFolders.Length > 0)
+                {
+                    AddChildFoldersRecursive(subFolders, color);
+                }
+            }
+        }
+
         private void LoadFromPlayerPrefs()
         {
             _favoriteFolders.Clear();
             _folderColors.Clear();
+            _includeChildren.Clear();
 
             if (!PlayerPrefs.HasKey(PREFS_KEY)) return;
 
@@ -151,6 +184,7 @@ namespace CAT.Utility
                         {
                             _favoriteFolders.Add(folder);
                             _folderColors.Add(entry.GetColor());
+                            _includeChildren.Add(entry.includeChildren);
                         }
                     }
                 }
@@ -167,6 +201,7 @@ namespace CAT.Utility
                         {
                             _favoriteFolders.Add(folder);
                             _folderColors.Add(DEFAULT_COLOR);
+                            _includeChildren.Add(false);
                         }
                     }
                 }
@@ -176,6 +211,7 @@ namespace CAT.Utility
                 Debug.LogError($"Favorite 폴더 데이터 로드 실패: {e.Message}");
                 _favoriteFolders.Clear();
                 _folderColors.Clear();
+                _includeChildren.Clear();
             }
 
             RebuildGuidColorCache();
@@ -198,6 +234,8 @@ namespace CAT.Utility
                     var entry = new FavoriteFolderEntry { guid = guid };
                     if (i < _folderColors.Count)
                         entry.SetColor(_folderColors[i]);
+                    if (i < _includeChildren.Count)
+                        entry.includeChildren = _includeChildren[i];
 
                     jsonData.entries.Add(entry);
                 }
@@ -309,9 +347,11 @@ namespace CAT.Utility
 
             for (int i = 0; i < _favoriteFolders.Count; i++)
             {
-                // 컬러 리스트 동기화
+                // 리스트 동기화
                 while (_folderColors.Count <= i)
                     _folderColors.Add(DEFAULT_COLOR);
+                while (_includeChildren.Count <= i)
+                    _includeChildren.Add(false);
 
                 EditorGUILayout.BeginHorizontal();
 
@@ -353,6 +393,17 @@ namespace CAT.Utility
 
                 if (_showUIElements)
                 {
+                    // 자식 폴더 포함 체크박스
+                    bool prevInclude = _includeChildren[i];
+                    bool newInclude = GUILayout.Toggle(prevInclude, new GUIContent("▼", "자식 폴더에도 컬러 적용"), GUILayout.Width(16));
+                    if (newInclude != prevInclude)
+                    {
+                        _includeChildren[i] = newInclude;
+                        RebuildGuidColorCache();
+                        SaveToPlayerPrefs();
+                    }
+                    GUILayout.Space(2);
+
                     DrawColorButton(i);
                     GUILayout.Space(2);
 
@@ -372,6 +423,8 @@ namespace CAT.Utility
                 _favoriteFolders.RemoveAt(folderToDelete);
                 if (folderToDelete < _folderColors.Count)
                     _folderColors.RemoveAt(folderToDelete);
+                if (folderToDelete < _includeChildren.Count)
+                    _includeChildren.RemoveAt(folderToDelete);
                 RebuildGuidColorCache();
             }
         }
@@ -446,6 +499,13 @@ namespace CAT.Utility
                         _folderColors[_dragSourceIndex] = _folderColors[targetIndex];
                         _folderColors[targetIndex] = tempColor;
                     }
+
+                    if (_dragSourceIndex < _includeChildren.Count && targetIndex < _includeChildren.Count)
+                    {
+                        var tempInclude = _includeChildren[_dragSourceIndex];
+                        _includeChildren[_dragSourceIndex] = _includeChildren[targetIndex];
+                        _includeChildren[targetIndex] = tempInclude;
+                    }
                 }
             }
         }
@@ -475,6 +535,7 @@ namespace CAT.Utility
                             {
                                 _favoriteFolders.Add(folder);
                                 _folderColors.Add(DEFAULT_COLOR);
+                                _includeChildren.Add(false);
                                 addedAny = true;
                             }
                         }
