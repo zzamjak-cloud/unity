@@ -141,9 +141,15 @@ namespace CAT.Utility
                 File.WriteAllText(filePath, json, System.Text.Encoding.UTF8);
 
                 // Assets 폴더 내부이면 AssetDatabase 갱신
-                if (filePath.StartsWith(Application.dataPath))
+                // Path.Combine은 백슬래시, Application.dataPath는 슬래시를 사용하므로
+                // 정규화 후 비교해야 한다.
+                string normalizedFile = Path.GetFullPath(filePath);
+                string normalizedData = Path.GetFullPath(Application.dataPath);
+                if (normalizedFile.StartsWith(normalizedData, StringComparison.OrdinalIgnoreCase))
                 {
-                    AssetDatabase.Refresh();
+                    string relativePath = "Assets" + normalizedFile
+                        .Substring(normalizedData.Length).Replace('\\', '/');
+                    AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
                 }
 
                 Debug.Log($"[UIMaker] JSON 추출 완료: {filePath}");
