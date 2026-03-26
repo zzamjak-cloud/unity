@@ -1,5 +1,4 @@
 using UnityEngine;
-using DG.Tweening;
 
 namespace CAT.UI
 {
@@ -52,7 +51,7 @@ namespace CAT.UI
 
         [Tooltip("등장 이징 타입")]
         [SerializeField]
-        private Ease _appearEase = Ease.OutBack;
+        private TMPEaseType _appearEase = TMPEaseType.OutBack;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -101,7 +100,7 @@ namespace CAT.UI
 
         [Tooltip("반복 이징 타입")]
         [SerializeField]
-        private Ease _loopEase = Ease.InOutSine;
+        private TMPEaseType _loopEase = TMPEaseType.InOutSine;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -117,7 +116,7 @@ namespace CAT.UI
 
         [Tooltip("반복 타입 (Yoyo: 왕복 반복, Restart: 처음부터 반복)")]
         [SerializeField]
-        private LoopType _loopType = LoopType.Yoyo;
+        private TMPLoopMode _loopType = TMPLoopMode.Yoyo;
 
         [Tooltip("Loop → Disappear 블렌드 비율 (0~1). 0.25 = Loop 마지막 25%와 Disappear 시작이 오버랩")]
         [SerializeField, Range(0f, 0.5f)]
@@ -162,7 +161,7 @@ namespace CAT.UI
 
         [Tooltip("사라짐 이징 타입")]
         [SerializeField]
-        private Ease _disappearEase = Ease.InBack;
+        private TMPEaseType _disappearEase = TMPEaseType.InBack;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -198,7 +197,7 @@ namespace CAT.UI
         public Vector3 AppearRotation => _appearRotation;
         public float AppearAlpha => _appearAlpha;
         public float AppearDuration => _appearDuration;
-        public Ease AppearEase => _appearEase;
+        public TMPEaseType AppearEase => _appearEase;
         public bool AppearUseCustomCurve => _appearUseCustomCurve;
         public AnimationCurve AppearCustomCurve => _appearCustomCurve;
         public float AppearToLoopBlend => _appearToLoopBlend;
@@ -211,11 +210,11 @@ namespace CAT.UI
         public Vector3 LoopScale => _loopScale;
         public Vector3 LoopRotation => _loopRotation;
         public float LoopDuration => _loopDuration;
-        public Ease LoopEase => _loopEase;
+        public TMPEaseType LoopEase => _loopEase;
         public bool LoopUseCustomCurve => _loopUseCustomCurve;
         public AnimationCurve LoopCustomCurve => _loopCustomCurve;
         public int LoopCount => _loopCount;
-        public LoopType LoopType => _loopType;
+        public TMPLoopMode LoopType => _loopType;
         public float LoopToDisappearBlend => _loopToDisappearBlend;
         public bool LoopUsePositionCurve => _loopUsePositionCurve;
         public Vector2 LoopPositionCurveOffset => _loopPositionCurveOffset;
@@ -227,7 +226,7 @@ namespace CAT.UI
         public Vector3 DisappearRotation => _disappearRotation;
         public float DisappearAlpha => _disappearAlpha;
         public float DisappearDuration => _disappearDuration;
-        public Ease DisappearEase => _disappearEase;
+        public TMPEaseType DisappearEase => _disappearEase;
         public bool DisappearUseCustomCurve => _disappearUseCustomCurve;
         public AnimationCurve DisappearCustomCurve => _disappearCustomCurve;
         public bool DisappearUsePositionCurve => _disappearUsePositionCurve;
@@ -316,7 +315,7 @@ namespace CAT.UI
             preset._appearRotation = Vector3.zero;
             preset._appearAlpha = 0f;
             preset._appearDuration = 0.6f;
-            preset._appearEase = Ease.OutBounce;
+            preset._appearEase = TMPEaseType.OutBounce;
             preset._appearUseCustomCurve = false;
 
             preset._enableLoop = false;
@@ -343,10 +342,10 @@ namespace CAT.UI
             preset._loopScale = Vector3.one;
             preset._loopRotation = Vector3.zero;
             preset._loopDuration = 0.8f;
-            preset._loopEase = Ease.InOutSine;
+            preset._loopEase = TMPEaseType.InOutSine;
             preset._loopUseCustomCurve = false;
             preset._loopCount = -1;
-            preset._loopType = LoopType.Yoyo;
+            preset._loopType = TMPLoopMode.Yoyo;
 
             preset._enableDisappear = false;
 
@@ -373,7 +372,7 @@ namespace CAT.UI
             preset._disappearRotation = Vector3.zero;
             preset._disappearAlpha = 0f;
             preset._disappearDuration = 0.5f;
-            preset._disappearEase = Ease.InBack;
+            preset._disappearEase = TMPEaseType.InBack;
             preset._disappearUseCustomCurve = false;
 
             return preset;
@@ -396,7 +395,7 @@ namespace CAT.UI
             preset._appearRotation = new Vector3(0, 0, 180);
             preset._appearAlpha = 0f;
             preset._appearDuration = 0.5f;
-            preset._appearEase = Ease.OutBack;
+            preset._appearEase = TMPEaseType.OutBack;
             preset._appearUseCustomCurve = false;
 
             preset._enableLoop = false;
@@ -422,7 +421,7 @@ namespace CAT.UI
             preset._appearRotation = Vector3.zero;
             preset._appearAlpha = 0f;
             preset._appearDuration = 0.3f;
-            preset._appearEase = Ease.OutQuad;
+            preset._appearEase = TMPEaseType.OutQuad;
             preset._appearUseCustomCurve = false;
 
             preset._enableLoop = false;
@@ -434,7 +433,7 @@ namespace CAT.UI
             preset._disappearRotation = Vector3.zero;
             preset._disappearAlpha = 0f;
             preset._disappearDuration = 0.3f;
-            preset._disappearEase = Ease.InQuad;
+            preset._disappearEase = TMPEaseType.InQuad;
             preset._disappearUseCustomCurve = false;
 
             return preset;

@@ -18,7 +18,7 @@ ChocDino UIFX의 성능 문제를 해결한 **모바일 게임 특화** TMP 텍�
 |----------|------|-----------|
 | **TMPOutlineEffect** | Outline/Shadow 효과 | Material (GPU) + IMeshModifier (CPU) |
 | **TMPOutGlow** | Glow 효과 (방사형) | Material (GPU) + 자식 오브젝트 |
-| **TMPAnimation** | 글자별 애니메이션 | DOTween + Vertex 조작 |
+| **TMPAnimation** | 글자별 애니메이션 | Update 기반 자체 이징 + Vertex 조작 |
 | **TMPCurve** | 텍스트 곡선 변형 | TMP 이벤트 기반 정점 수정 |
 | **TMPLayoutLimiter** | 너비/높이 제한 | LayoutElement 조작 |
 
@@ -799,7 +799,7 @@ limiter.Refresh();          // 강제 갱신
 
 ## 🎬 TMPAnimation - 글자별 애니메이션
 
-TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 DOTween 기반 컴포넌트입니다.
+TMP 텍스트의 각 글자를 독립적으로 애니메이션하는 자체 이징 시스템 기반 컴포넌트입니다. 외부 의존성 없이 독립 동작합니다.
 
 ### 특징
 - **글자별 애니메이션**: 각 글자를 독립적으로 위치/스케일/회전/알파 애니메이션
@@ -865,7 +865,7 @@ anim.AppearScale = new Vector3(0.5f, 0.5f, 1);  // 시작 스케일
 anim.AppearRotation = Vector3.zero; // 시작 회전
 anim.AppearAlpha = 0f;              // 시작 알파 (0~1)
 anim.AppearDuration = 0.5f;         // 애니메이션 시간
-anim.AppearEase = Ease.OutBack;     // DOTween 이징
+anim.AppearEase = TMPEaseType.OutBack;     // 이징 타입
 anim.AppearToLoopBlend = 0f;        // Loop 전환 블렌드 (0~0.5)
 anim.AppearUsePositionCurve = false;  // Position 커브 사용
 anim.AppearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
@@ -877,9 +877,9 @@ anim.LoopPosition = new Vector3(0, 20, 0);  // 목표 위치
 anim.LoopScale = Vector3.one;       // 목표 스케일
 anim.LoopRotation = Vector3.zero;   // 목표 회전
 anim.LoopDuration = 1f;             // 애니메이션 시간
-anim.LoopEase = Ease.InOutSine;     // DOTween 이징
+anim.LoopEase = TMPEaseType.InOutSine;     // 이징 타입
 anim.LoopCount = 1;                 // 반복 횟수 (-1 = 무한)
-anim.LoopType = LoopType.Yoyo;      // Yoyo 또는 Restart
+anim.LoopType = TMPLoopMode.Yoyo;      // Yoyo 또는 Restart
 anim.LoopToDisappearBlend = 0f;     // Disappear 전환 블렌드
 anim.LoopUsePositionCurve = false;  // Position 커브 사용
 anim.LoopPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
@@ -892,7 +892,7 @@ anim.DisappearScale = new Vector3(0.5f, 0.5f, 1);  // 목표 스케일
 anim.DisappearRotation = Vector3.zero;  // 목표 회전
 anim.DisappearAlpha = 0f;           // 목표 알파
 anim.DisappearDuration = 0.5f;      // 애니메이션 시간
-anim.DisappearEase = Ease.InBack;   // DOTween 이징
+anim.DisappearEase = TMPEaseType.InBack;   // 이징 타입
 anim.DisappearUsePositionCurve = false;  // Position 커브 사용
 anim.DisappearPositionCurveOffset = Vector2.zero;  // 커브 중간점 오프셋
 
@@ -946,7 +946,7 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - Unity 6 (6000.0.x) 이상
 - TextMeshPro 패키지
 - URP (Universal Render Pipeline) 17.2.0 이상
-- DOTween (글자별 애니메이션용)
+- ~~DOTween~~ (v3.0.0부터 불필요 — 자체 이징 시스템 내장)
 
 ## 🐛 알려진 이슈 및 해결
 
@@ -960,6 +960,23 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 - 알려진 이슈 없음
 
 ## 📈 변경 이력
+
+### v3.0.0 (2026-03-26)
+**DOTween 의존성 제거 — 자체 이징 시스템 도입**
+- ✅ DOTween 완전 제거 — 외부 의존성 없이 독립 동작
+  - `TMPEaseType` enum: DOTween Ease와 동일한 정수값으로 기존 .asset 파일 호환 유지
+  - `TMPLoopMode` enum: Restart/Yoyo 루프 모드 (DOTween LoopType 대체)
+  - `TMPEasing` static 클래스: Robert Penner 이징 함수 30종 구현 (GC 할당 없음)
+- ✅ Update 기반 애니메이션 시스템으로 전환
+  - DOTween Sequence/Tween → `CharAnimState` struct 배열 + Update() 기반
+  - 글자별 독립 타이머, Phase 판별, 이징 적용
+  - `AdvanceAnimation(float deltaTime)` 메서드로 에디터 프리뷰 지원
+- ✅ 성능 개선
+  - `UpdateVertexData` 호출: 글자×Phase마다 → 프레임당 1회 배치
+  - DOTween 람다 클로저 제거 → struct 필드로 GC 할당 없음
+  - Sequence/Tween 힙 할당 제거 → 연속 메모리 struct 배열
+- ⚠️ **마이그레이션 노트**: 기존 프리셋 .asset 파일은 수정 없이 호환됩니다.
+  코드에서 `Ease` → `TMPEaseType`, `LoopType` → `TMPLoopMode`로 변경하세요.
 
 ### v2.13.1 (2026-03-24)
 **에디터 경고 수정**
@@ -1112,7 +1129,7 @@ anim.Play();  // 메인 텍스트와 Inner Face 모두 애니메이션됨
 ### v2.5.0 (2026-02-11)
 **TMPAnimation 글자별 애니메이션 추가**
 - ✅ TMPAnimation 컴포넌트 추가
-  - DOTween 기반 글자별 애니메이션 (Appear, Loop, Disappear)
+  - 자체 이징 시스템 기반 글자별 애니메이션 (Appear, Loop, Disappear)
   - 위치/스케일/회전/알파 독립 애니메이션
   - 블렌딩 지원 (Appear↔Loop↔Disappear 부드러운 전환)
   - 커스텀 이징 곡선 (AnimationCurve) 지원

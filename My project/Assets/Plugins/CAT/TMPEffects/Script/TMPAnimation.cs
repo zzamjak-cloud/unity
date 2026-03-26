@@ -2,16 +2,15 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using DG.Tweening;
 
 namespace CAT.UI
 {
     /// <summary>
     /// TMP 텍스트 글자별 애니메이션
     /// - 각 글자를 독립적으로 애니메이션 (Appear, Loop, Disappear)
-    /// - DOTween 기반 시퀀스 관리
+    /// - Update 기반 자체 시간 관리 (DOTween 의존성 제거)
     /// - 프리셋 시스템 지원
-    /// - 모바일 최적화: Sequence 재사용, GC Alloc 최소화
+    /// - 모바일 최적화: 배열 재사용, GC Alloc 최소화
     /// </summary>
     [ExecuteAlways]
     [DefaultExecutionOrder(20)]  // TMPCurve(10) 이후 실행
@@ -72,7 +71,7 @@ namespace CAT.UI
 
         [Tooltip("등장 이징 타입")]
         [SerializeField]
-        private Ease _appearEase = Ease.OutBack;
+        private TMPEaseType _appearEase = TMPEaseType.OutBack;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -122,7 +121,7 @@ namespace CAT.UI
 
         [Tooltip("반복 이징 타입")]
         [SerializeField]
-        private Ease _loopEase = Ease.InOutSine;
+        private TMPEaseType _loopEase = TMPEaseType.InOutSine;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -138,7 +137,7 @@ namespace CAT.UI
 
         [Tooltip("반복 타입 (Yoyo: 왕복 반복, Restart: 처음부터 반복)")]
         [SerializeField]
-        private LoopType _loopType = LoopType.Yoyo;
+        private TMPLoopMode _loopType = TMPLoopMode.Yoyo;
 
         [Tooltip("Loop → Disappear 블렌드 비율 (0~1). 0.25 = Loop 마지막 25%와 Disappear 시작이 오버랩")]
         [SerializeField, Range(0f, 0.5f)]
@@ -184,7 +183,7 @@ namespace CAT.UI
 
         [Tooltip("사라짐 이징 타입")]
         [SerializeField]
-        private Ease _disappearEase = Ease.InBack;
+        private TMPEaseType _disappearEase = TMPEaseType.InBack;
 
         [Tooltip("커스텀 이징 곡선 사용")]
         [SerializeField]
@@ -204,12 +203,78 @@ namespace CAT.UI
         private Vector2 _disappearPositionCurveOffset = Vector2.zero;
 
         // ─────────────────────────────────────────────
+        // 글자별 애니메이션 상태 (DOTween Sequence 대체)
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 각 글자의 애니메이션 타임라인 및 상태를 추적하는 구조체.
+        /// DOTween Sequence를 대체하여 Update 기반 시간 관리를 수행합니다.
+        /// </summary>
+        private struct CharAnimState
+        {
+            public float delay;           // 글자별 지연 시간
+            public float elapsedTime;     // 경과 시간 (delay 포함)
+            public bool isActive;
+
+            // Appear 타임라인
+            public float appearStart, appearEnd;
+            public Vector3 appearFromPos, appearToPos;
+            public Vector3 appearFromScale, appearToScale;
+            public Vector3 appearFromRot, appearToRot;
+            public float appearFromAlpha, appearToAlpha;
+            public bool appearUsePosCurve;
+            public Vector2 appearPosCurveOffset;
+            public bool appearUseCustomCurve;
+            public AnimationCurve appearCustomCurve;
+            public TMPEaseType appearEase;
+
+            // Loop 타임라인
+            public float loopStart;       // 루프 시작 시간 (delay 이후 기준)
+            public float loopSingleDuration;
+            public int loopCount;         // -1 = 무한
+            public TMPLoopMode loopMode;
+            public Vector3 loopFromPos, loopToPos;
+            public Vector3 loopFromScale, loopToScale;
+            public Vector3 loopFromRot, loopToRot;
+            public float loopFromAlpha, loopToAlpha;
+            public bool loopUsePosCurve;
+            public Vector2 loopPosCurveOffset;
+            public bool loopUseCustomCurve;
+            public AnimationCurve loopCustomCurve;
+            public TMPEaseType loopEase;
+            public bool loopEnabled;
+
+            // Disappear 타임라인
+            public float disappearStart, disappearEnd;
+            public Vector3 disappearFromPos, disappearToPos;
+            public Vector3 disappearFromScale, disappearToScale;
+            public Vector3 disappearFromRot, disappearToRot;
+            public float disappearFromAlpha, disappearToAlpha;
+            public bool disappearUsePosCurve;
+            public Vector2 disappearPosCurveOffset;
+            public bool disappearUseCustomCurve;
+            public AnimationCurve disappearCustomCurve;
+            public TMPEaseType disappearEase;
+            public bool disappearEnabled;
+
+            // 블렌딩 캡처 상태
+            public bool appearToLoopBlendActive;
+            public bool loopToDisappearBlendActive;
+            public bool hasLoopCaptured;       // Loop 시작 시 캡처 완료 여부
+            public bool hasDisappearCaptured;  // Disappear 시작 시 캡처 완료 여부
+
+            // 전체 타임라인 끝 시간 (무한 루프가 아닌 경우)
+            public float totalDuration;
+            public bool isInfiniteLoop;
+        }
+
+        // ─────────────────────────────────────────────
         // 캐싱
         // ─────────────────────────────────────────────
 
         private TMP_Text _tmpText;
         private CanvasGroup _canvasGroup;
-        private Sequence[] _sequences;
+        private CharAnimState[] _charStates;
         private Vector3[] _originalPositions;
         private Vector3[][] _originalVertices;
         private Vector3[][] _originalVerticesSecondFace;
@@ -218,6 +283,7 @@ namespace CAT.UI
         private Color32[][] _originalColorsSecondFace;
         private Color32[][] _originalColorsInnerGlow;  // InnerGlow 원본 색상
         private bool _isPlaying = false;
+        private bool _isPaused = false;
         private bool _isPlayingInProgress = false;
         private bool _hasStarted = false;
 
@@ -257,7 +323,7 @@ namespace CAT.UI
         public Vector3 AppearRotation => _appearRotation;
         public float AppearAlpha => _appearAlpha;
         public float AppearDuration => _appearDuration;
-        public Ease AppearEase => _appearEase;
+        public TMPEaseType AppearEase => _appearEase;
         public bool AppearUseCustomCurve => _appearUseCustomCurve;
         public AnimationCurve AppearCustomCurve => _appearCustomCurve;
         public float AppearToLoopBlend => _appearToLoopBlend;
@@ -271,11 +337,11 @@ namespace CAT.UI
         public Vector3 LoopScale => _loopScale;
         public Vector3 LoopRotation => _loopRotation;
         public float LoopDuration => _loopDuration;
-        public Ease LoopEase => _loopEase;
+        public TMPEaseType LoopEase => _loopEase;
         public bool LoopUseCustomCurve => _loopUseCustomCurve;
         public AnimationCurve LoopCustomCurve => _loopCustomCurve;
         public int LoopCount => _loopCount;
-        public LoopType LoopType => _loopType;
+        public TMPLoopMode LoopType => _loopType;
         public float LoopToDisappearBlend => _loopToDisappearBlend;
         public bool LoopUsePositionCurve => _loopUsePositionCurve;
         public Vector2 LoopPositionCurveOffset => _loopPositionCurveOffset;
@@ -288,7 +354,7 @@ namespace CAT.UI
         public Vector3 DisappearRotation => _disappearRotation;
         public float DisappearAlpha => _disappearAlpha;
         public float DisappearDuration => _disappearDuration;
-        public Ease DisappearEase => _disappearEase;
+        public TMPEaseType DisappearEase => _disappearEase;
         public bool DisappearUseCustomCurve => _disappearUseCustomCurve;
         public AnimationCurve DisappearCustomCurve => _disappearCustomCurve;
         public bool DisappearUsePositionCurve => _disappearUsePositionCurve;
@@ -383,12 +449,12 @@ namespace CAT.UI
             if (Application.isPlaying || _isPlaying)
             {
                 TMPro_EventManager.TEXT_CHANGED_EVENT.Remove(OnTextChanged);
-                KillAllSequences();
+                ResetAllCharStates();
                 RestoreOriginalMesh();
             }
 
             // 상태 초기화
-            _sequences = null;
+            _charStates = null;
             _originalPositions = null;
             _originalVertices = null;
             _originalVerticesSecondFace = null;
@@ -401,6 +467,7 @@ namespace CAT.UI
             _currentCharRot = null;
             _currentCharAlpha = null;
             _isPlaying = false;
+            _isPaused = false;
 
             // Shadow Mesh 정리
             if (_shadowMesh != null)
@@ -411,6 +478,13 @@ namespace CAT.UI
                     DestroyImmediate(_shadowMesh);
                 _shadowMesh = null;
             }
+        }
+
+        private void Update()
+        {
+            if (!_isPlaying || _isPaused) return;
+            if (!Application.isPlaying) return; // 에디터 모드에서는 AdvanceAnimation으로 직접 호출
+            AdvanceAnimation(Time.deltaTime);
         }
 
         private void OnTextChanged(Object obj)
@@ -757,160 +831,438 @@ namespace CAT.UI
             }
         }
 
-        private Tween AnimateCharacter(int charIndex,
+        // ─────────────────────────────────────────────
+        // Update 기반 애니메이션 시스템
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 프레임 단위 애니메이션 진행 (에디터에서도 호출 가능)
+        /// </summary>
+        public void AdvanceAnimation(float deltaTime)
+        {
+            if (_charStates == null) return;
+
+            bool anyActive = false;
+            for (int i = 0; i < _charStates.Length; i++)
+            {
+                if (!_charStates[i].isActive) continue;
+                _charStates[i].elapsedTime += deltaTime;
+                EvaluateCharacter(i);
+                anyActive = true;
+            }
+
+            if (anyActive)
+            {
+                UpdateAllVertexData();
+
+                // Shadow 처리 (프레임당 1회)
+                var outlineEffect = GetComponent<TMPOutlineEffect>();
+                if (outlineEffect != null && outlineEffect.EnableShadow)
+                {
+                    ApplyShadowMesh(_tmpText, outlineEffect);
+                }
+            }
+            else if (_isPlaying)
+            {
+                _isPlaying = false;
+            }
+        }
+
+        /// <summary>
+        /// 개별 글자의 현재 시간에 따른 애니메이션 상태를 계산하고 정점에 적용합니다.
+        /// </summary>
+        private void EvaluateCharacter(int index)
+        {
+            ref CharAnimState state = ref _charStates[index];
+
+            // delay 이전 시간 계산
+            float time = state.elapsedTime - state.delay;
+            if (time < 0f)
+            {
+                // 아직 시작 안 됨 — Appear 시작 상태 유지
+                if (state.appearEnd > 0f) // appear가 활성화된 경우
+                {
+                    ApplyCharState(index, state.appearFromPos, state.appearFromScale, state.appearFromRot, state.appearFromAlpha);
+                }
+                return;
+            }
+
+            // ── Appear 구간 ──
+            if (state.appearEnd > 0f && time < state.appearEnd)
+            {
+                if (time >= state.appearStart)
+                {
+                    float duration = state.appearEnd - state.appearStart;
+                    float rawT = duration > 0f ? Mathf.Clamp01((time - state.appearStart) / duration) : 1f;
+                    float easedT = EvaluateEasing(rawT, state.appearUseCustomCurve, state.appearCustomCurve, state.appearEase);
+
+                    InterpolateAndApply(index,
+                        state.appearFromPos, state.appearToPos,
+                        state.appearFromScale, state.appearToScale,
+                        state.appearFromRot, state.appearToRot,
+                        state.appearFromAlpha, state.appearToAlpha,
+                        easedT, state.appearUsePosCurve, state.appearPosCurveOffset,
+                        false, false);
+                }
+                else
+                {
+                    ApplyCharState(index, state.appearFromPos, state.appearFromScale, state.appearFromRot, state.appearFromAlpha);
+                }
+
+                // Appear 구간 내 Loop 블렌딩 (오버랩 구간 체크)
+                // Loop는 loopStart에서 시작하므로 Appear 끝나기 전에 Loop가 시작될 수 있음
+                if (state.loopEnabled && state.appearToLoopBlendActive && time >= state.loopStart)
+                {
+                    EvaluateLoop(index, ref state, time);
+                }
+                return;
+            }
+
+            // Appear 종료 후 → Loop 또는 Disappear 또는 완료
+            // ── Loop 구간 ──
+            if (state.loopEnabled && time >= state.loopStart)
+            {
+                // Loop 시작 시 캡처 (블렌딩용)
+                if (!state.hasLoopCaptured && state.appearToLoopBlendActive)
+                {
+                    CaptureLoopFrom(index, ref state);
+                    state.hasLoopCaptured = true;
+                }
+
+                // Disappear 블렌딩 체크: Loop 내에서 Disappear가 겹칠 수 있음
+                if (state.disappearEnabled && time >= state.disappearStart)
+                {
+                    EvaluateDisappear(index, ref state, time);
+                    return;
+                }
+
+                EvaluateLoop(index, ref state, time);
+
+                // 유한 루프: 종료 여부 확인
+                if (!state.isInfiniteLoop)
+                {
+                    float loopTotalDuration = CalculateLoopTotalDuration(ref state);
+                    float loopEndTime = state.loopStart + loopTotalDuration;
+                    if (time >= loopEndTime && !state.disappearEnabled)
+                    {
+                        // 루프 완료, Disappear 없음 → 최종 상태 적용 및 비활성화
+                        ApplyLoopFinalState(index, ref state);
+                        state.isActive = false;
+                    }
+                }
+                return;
+            }
+
+            // ── Disappear 구간 ── (Loop 없이 직접 도달)
+            if (state.disappearEnabled && time >= state.disappearStart)
+            {
+                EvaluateDisappear(index, ref state, time);
+                return;
+            }
+
+            // 모든 구간 종료 — 최종 상태 적용
+            if (!state.isInfiniteLoop)
+            {
+                state.isActive = false;
+            }
+        }
+
+        /// <summary>
+        /// Loop 구간의 애니메이션 평가
+        /// </summary>
+        private void EvaluateLoop(int index, ref CharAnimState state, float time)
+        {
+            float loopTime = time - state.loopStart;
+            if (loopTime < 0f) return;
+
+            float singleDuration = state.loopSingleDuration;
+            if (singleDuration <= 0f) return;
+
+            // Yoyo의 경우: 한 사이클 = forward + backward = singleDuration * 2
+            // Restart의 경우: 한 사이클 = singleDuration
+            float cycleDuration;
+            if (state.loopMode == TMPLoopMode.Yoyo)
+            {
+                cycleDuration = singleDuration * 2f;
+            }
+            else
+            {
+                cycleDuration = singleDuration;
+            }
+
+            // 유한 루프 완료 여부
+            if (!state.isInfiniteLoop && state.loopCount > 0)
+            {
+                float totalLoopTime = cycleDuration * state.loopCount;
+                if (loopTime >= totalLoopTime)
+                {
+                    loopTime = totalLoopTime - 0.0001f; // 마지막 프레임 값 고정
+                }
+            }
+
+            // 현재 사이클 내 위치
+            float cycleTime = loopTime % cycleDuration;
+
+            float rawT;
+            Vector3 fromPos, toPos, fromScale, toScale, fromRot, toRot;
+            float fromAlpha, toAlpha;
+            bool usePosCurve = state.loopUsePosCurve;
+            Vector2 posCurveOffset = state.loopPosCurveOffset;
+
+            if (state.loopMode == TMPLoopMode.Yoyo)
+            {
+                if (cycleTime < singleDuration)
+                {
+                    // Forward
+                    rawT = cycleTime / singleDuration;
+                    fromPos = state.loopFromPos;
+                    toPos = state.loopToPos;
+                    fromScale = state.loopFromScale;
+                    toScale = state.loopToScale;
+                    fromRot = state.loopFromRot;
+                    toRot = state.loopToRot;
+                    fromAlpha = state.loopFromAlpha;
+                    toAlpha = state.loopToAlpha;
+                }
+                else
+                {
+                    // Backward
+                    rawT = (cycleTime - singleDuration) / singleDuration;
+                    fromPos = state.loopToPos;
+                    toPos = state.loopFromPos;
+                    fromScale = state.loopToScale;
+                    toScale = state.loopFromScale;
+                    fromRot = state.loopToRot;
+                    toRot = state.loopFromRot;
+                    fromAlpha = state.loopToAlpha;
+                    toAlpha = state.loopFromAlpha;
+                }
+            }
+            else
+            {
+                // Restart
+                rawT = cycleTime / singleDuration;
+                fromPos = state.loopFromPos;
+                toPos = state.loopToPos;
+                fromScale = state.loopFromScale;
+                toScale = state.loopToScale;
+                fromRot = state.loopFromRot;
+                toRot = state.loopToRot;
+                fromAlpha = state.loopFromAlpha;
+                toAlpha = state.loopToAlpha;
+            }
+
+            rawT = Mathf.Clamp01(rawT);
+            float easedT = EvaluateEasing(rawT, state.loopUseCustomCurve, state.loopCustomCurve, state.loopEase);
+
+            // 첫 Loop의 첫 forward에서 블렌딩 적용 (캡처된 상태에서 시작)
+            bool isFirstForward = (loopTime < singleDuration) && state.appearToLoopBlendActive && state.hasLoopCaptured;
+
+            InterpolateAndApply(index,
+                fromPos, toPos,
+                fromScale, toScale,
+                fromRot, toRot,
+                fromAlpha, toAlpha,
+                easedT, usePosCurve, posCurveOffset,
+                isFirstForward, false);
+        }
+
+        /// <summary>
+        /// Disappear 구간의 애니메이션 평가
+        /// </summary>
+        private void EvaluateDisappear(int index, ref CharAnimState state, float time)
+        {
+            // 첫 프레임 캡처 (블렌딩용)
+            if (!state.hasDisappearCaptured && state.loopToDisappearBlendActive)
+            {
+                CaptureDisappearFrom(index, ref state);
+                state.hasDisappearCaptured = true;
+            }
+
+            float duration = state.disappearEnd - state.disappearStart;
+            if (time >= state.disappearEnd)
+            {
+                // Disappear 완료 — 최종 상태 적용
+                ApplyCharState(index, state.disappearToPos, state.disappearToScale, state.disappearToRot, state.disappearToAlpha);
+                state.isActive = false;
+                return;
+            }
+
+            float rawT = duration > 0f ? Mathf.Clamp01((time - state.disappearStart) / duration) : 1f;
+            float easedT = EvaluateEasing(rawT, state.disappearUseCustomCurve, state.disappearCustomCurve, state.disappearEase);
+
+            bool useBlend = state.loopToDisappearBlendActive && state.hasDisappearCaptured;
+
+            InterpolateAndApply(index,
+                state.disappearFromPos, state.disappearToPos,
+                state.disappearFromScale, state.disappearToScale,
+                state.disappearFromRot, state.disappearToRot,
+                state.disappearFromAlpha, state.disappearToAlpha,
+                easedT, state.disappearUsePosCurve, state.disappearPosCurveOffset,
+                useBlend, false);
+        }
+
+        /// <summary>
+        /// Loop 전체 소요 시간 계산 (유한 루프)
+        /// </summary>
+        private float CalculateLoopTotalDuration(ref CharAnimState state)
+        {
+            float cycleDuration = state.loopMode == TMPLoopMode.Yoyo
+                ? state.loopSingleDuration * 2f
+                : state.loopSingleDuration;
+            return cycleDuration * state.loopCount;
+        }
+
+        /// <summary>
+        /// Loop 최종 상태 적용 (유한 루프 완료 시)
+        /// </summary>
+        private void ApplyLoopFinalState(int index, ref CharAnimState state)
+        {
+            // Yoyo: 원래 위치로 돌아옴, Restart: toPos에서 끝남
+            if (state.loopMode == TMPLoopMode.Yoyo)
+            {
+                ApplyCharState(index, state.loopFromPos, state.loopFromScale, state.loopFromRot, state.loopFromAlpha);
+            }
+            else
+            {
+                ApplyCharState(index, state.loopToPos, state.loopToScale, state.loopToRot, state.loopToAlpha);
+            }
+        }
+
+        /// <summary>
+        /// Loop 시작 시 현재 상태를 loopFrom으로 캡처 (Appear→Loop 블렌딩)
+        /// </summary>
+        private void CaptureLoopFrom(int index, ref CharAnimState state)
+        {
+            if (_currentCharPos != null && index < _currentCharPos.Length)
+            {
+                state.loopFromPos = _currentCharPos[index];
+                state.loopFromScale = _currentCharScale[index];
+                state.loopFromRot = _currentCharRot[index];
+                state.loopFromAlpha = _currentCharAlpha[index];
+            }
+        }
+
+        /// <summary>
+        /// Disappear 시작 시 현재 상태를 disappearFrom으로 캡처 (Loop→Disappear 블렌딩)
+        /// </summary>
+        private void CaptureDisappearFrom(int index, ref CharAnimState state)
+        {
+            if (_currentCharPos != null && index < _currentCharPos.Length)
+            {
+                state.disappearFromPos = _currentCharPos[index];
+                state.disappearFromScale = _currentCharScale[index];
+                state.disappearFromRot = _currentCharRot[index];
+                state.disappearFromAlpha = _currentCharAlpha[index];
+            }
+        }
+
+        /// <summary>
+        /// 이징 값 평가 (커스텀 곡선 또는 TMPEasing)
+        /// </summary>
+        private static float EvaluateEasing(float rawT, bool useCustomCurve, AnimationCurve customCurve, TMPEaseType ease)
+        {
+            if (useCustomCurve && customCurve != null)
+            {
+                return customCurve.Evaluate(rawT);
+            }
+            return TMPEasing.Evaluate(ease, rawT);
+        }
+
+        /// <summary>
+        /// 보간 + 정점 적용 (블렌딩 캡처 지원)
+        /// </summary>
+        private void InterpolateAndApply(int index,
             Vector3 fromPos, Vector3 toPos,
             Vector3 fromScale, Vector3 toScale,
             Vector3 fromRot, Vector3 toRot,
             float fromAlpha, float toAlpha,
-            float duration, Ease ease,
-            AnimationCurve customCurve = null,
-            bool useCurrentAsFrom = false,
-            bool usePositionCurve = false,
-            Vector2 positionCurveOffset = default)
+            float easedT, bool usePositionCurve, Vector2 positionCurveOffset,
+            bool useCurrentAsFrom, bool _unused)
         {
-            // 시작 위치 캡처용 변수 (블렌딩 시 현재 위치에서 시작)
-            Vector3 capturedFromPos = fromPos;
-            Vector3 capturedFromScale = fromScale;
-            Vector3 capturedFromRot = fromRot;
-            float capturedFromAlpha = fromAlpha;
-            bool hasCaptured = false;
+            // 블렌딩 캡처: 현재 상태에서 시작
+            Vector3 actualFromPos = fromPos;
+            Vector3 actualFromScale = fromScale;
+            Vector3 actualFromRot = fromRot;
+            float actualFromAlpha = fromAlpha;
 
-            var tween = DOTween.To(() => 0f, (t) =>
+            if (useCurrentAsFrom && _currentCharPos != null && index < _currentCharPos.Length)
             {
-                // 첫 프레임에서 현재 상태 캡처 (블렌딩용)
-                if (!hasCaptured && useCurrentAsFrom && _currentCharPos != null && charIndex < _currentCharPos.Length)
-                {
-                    capturedFromPos = _currentCharPos[charIndex];
-                    capturedFromScale = _currentCharScale[charIndex];
-                    capturedFromRot = _currentCharRot[charIndex];
-                    capturedFromAlpha = _currentCharAlpha[charIndex];
-                    hasCaptured = true;
-                }
-                else if (!hasCaptured)
-                {
-                    hasCaptured = true;
-                }
-
-                float easedT = customCurve != null ? customCurve.Evaluate(t) : t;
-
-                // Position 커브 적용: Quadratic Bezier Curve (시작점→중간점→도착점)
-                Vector3 currentPos;
-                if (usePositionCurve)
-                {
-                    // 중간 제어점 계산: 시작점과 도착점의 중간 + 오프셋
-                    Vector3 midPoint = (capturedFromPos + toPos) * 0.5f;
-                    midPoint.x += positionCurveOffset.x;
-                    midPoint.y += positionCurveOffset.y;
-
-                    // Quadratic Bezier: P(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-                    float oneMinusT = 1f - easedT;
-                    float posX = oneMinusT * oneMinusT * capturedFromPos.x
-                               + 2f * oneMinusT * easedT * midPoint.x
-                               + easedT * easedT * toPos.x;
-                    float posY = oneMinusT * oneMinusT * capturedFromPos.y
-                               + 2f * oneMinusT * easedT * midPoint.y
-                               + easedT * easedT * toPos.y;
-                    float posZ = Mathf.Lerp(capturedFromPos.z, toPos.z, easedT);
-                    currentPos = new Vector3(posX, posY, posZ);
-                }
-                else
-                {
-                    currentPos = Vector3.Lerp(capturedFromPos, toPos, easedT);
-                }
-
-                // Scale, Rotation, Alpha는 기존 Curve(easedT)에 영향을 받음
-                Vector3 currentScale = Vector3.Lerp(capturedFromScale, toScale, easedT);
-                Vector3 currentRot = Vector3.Lerp(capturedFromRot, toRot, easedT);
-                float currentAlpha = Mathf.Lerp(capturedFromAlpha, toAlpha, easedT);
-
-                // 현재 상태 업데이트 (다음 애니메이션 블렌딩용)
-                if (_currentCharPos != null && charIndex < _currentCharPos.Length)
-                {
-                    _currentCharPos[charIndex] = currentPos;
-                    _currentCharScale[charIndex] = currentScale;
-                    _currentCharRot[charIndex] = currentRot;
-                    _currentCharAlpha[charIndex] = currentAlpha;
-                }
-
-                TransformCharacterVertices(charIndex, currentPos, currentScale, currentRot, currentAlpha);
-
-                _tmpText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-
-                var outlineEffect = GetComponent<TMPOutlineEffect>();
-                if (outlineEffect != null)
-                {
-                    // Second Face 처리 (Shadow 없음)
-                    if (outlineEffect.EnableSecondFace)
-                    {
-                        var secondFaceText = outlineEffect.GetSecondFaceText();
-                        if (secondFaceText != null)
-                        {
-                            secondFaceText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-                        }
-                    }
-
-                    // 메인 텍스트의 Shadow 처리
-                    if (outlineEffect.EnableShadow)
-                    {
-                        ApplyShadowMesh(_tmpText, outlineEffect);
-                    }
-                }
-
-                // Inner Glow 처리
-                var glowEffect = GetComponent<TMPOutGlow>();
-                if (glowEffect != null)
-                {
-                    var innerGlowText = glowEffect.GetInnerGlowText();
-                    if (innerGlowText != null)
-                    {
-                        innerGlowText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-                    }
-                }
-            }, 1f, duration);
-
-            // 에디터 모드에서는 Manual 업데이트 사용
-            if (!Application.isPlaying)
-            {
-                tween.SetUpdate(UpdateType.Manual);
+                actualFromPos = _currentCharPos[index];
+                actualFromScale = _currentCharScale[index];
+                actualFromRot = _currentCharRot[index];
+                actualFromAlpha = _currentCharAlpha[index];
             }
 
-            if (customCurve == null)
+            // Position 커브 적용: Quadratic Bezier Curve (시작점→중간점→도착점)
+            Vector3 currentPos;
+            if (usePositionCurve)
             {
-                tween.SetEase(ease);
+                // 중간 제어점 계산: 시작점과 도착점의 중간 + 오프셋
+                Vector3 midPoint = (actualFromPos + toPos) * 0.5f;
+                midPoint.x += positionCurveOffset.x;
+                midPoint.y += positionCurveOffset.y;
+
+                // Quadratic Bezier: P(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+                float oneMinusT = 1f - easedT;
+                float posX = oneMinusT * oneMinusT * actualFromPos.x
+                           + 2f * oneMinusT * easedT * midPoint.x
+                           + easedT * easedT * toPos.x;
+                float posY = oneMinusT * oneMinusT * actualFromPos.y
+                           + 2f * oneMinusT * easedT * midPoint.y
+                           + easedT * easedT * toPos.y;
+                float posZ = Mathf.Lerp(actualFromPos.z, toPos.z, easedT);
+                currentPos = new Vector3(posX, posY, posZ);
             }
             else
             {
-                tween.SetEase(Ease.Linear);
+                currentPos = Vector3.Lerp(actualFromPos, toPos, easedT);
             }
 
-            return tween;
+            // Scale, Rotation, Alpha 보간
+            Vector3 currentScale = Vector3.Lerp(actualFromScale, toScale, easedT);
+            Vector3 currentRot = Vector3.Lerp(actualFromRot, toRot, easedT);
+            float currentAlpha = Mathf.Lerp(actualFromAlpha, toAlpha, easedT);
+
+            ApplyCharState(index, currentPos, currentScale, currentRot, currentAlpha);
         }
 
-        private Sequence CreateCharacterSequence(int charIndex)
+        /// <summary>
+        /// 글자의 현재 상태를 설정하고 정점 변환 적용
+        /// </summary>
+        private void ApplyCharState(int index, Vector3 pos, Vector3 scale, Vector3 rot, float alpha)
         {
-            var seq = DOTween.Sequence();
-
-            // 에디터 모드에서는 Manual 업데이트 사용
-            if (!Application.isPlaying)
+            // 현재 상태 업데이트 (다음 애니메이션 블렌딩용)
+            if (_currentCharPos != null && index < _currentCharPos.Length)
             {
-                seq.SetUpdate(UpdateType.Manual);
+                _currentCharPos[index] = pos;
+                _currentCharScale[index] = scale;
+                _currentCharRot[index] = rot;
+                _currentCharAlpha[index] = alpha;
             }
 
-            float delay = charIndex * _characterDelay;
+            TransformCharacterVertices(index, pos, scale, rot, alpha);
+        }
+
+        /// <summary>
+        /// 글자별 애니메이션 상태 초기화 (DOTween CreateCharacterSequence 대체)
+        /// </summary>
+        private CharAnimState InitCharacterState(int charIndex)
+        {
+            CharAnimState state = default;
+            state.isActive = true;
+            state.elapsedTime = 0f;
+            state.delay = charIndex * _characterDelay;
 
             Vector3 originalPos = _originalPositions[charIndex];
             Vector3 originalScale = Vector3.one;
             Vector3 originalRot = Vector3.zero;
             float originalAlpha = 1f;
 
-            // 시간 추적 (Insert 위치 계산용)
+            // 시간 추적
             float currentTime = 0f;
 
-            AnimationCurve curve;
-
-            // ─────────────────────────────────────────────
-            // Appear
-            // ─────────────────────────────────────────────
+            // ── Appear ──
             if (_enableAppear)
             {
                 Vector3 appearFromPos, appearToPos, appearFromScale, appearToScale, appearFromRot, appearToRot;
@@ -926,27 +1278,31 @@ namespace CAT.UI
                     out appearFromRot, out appearToRot,
                     out appearFromAlpha, out appearToAlpha);
 
-                curve = _appearUseCustomCurve ? _appearCustomCurve : null;
-                seq.Insert(currentTime, AnimateCharacter(charIndex,
-                    appearFromPos, appearToPos,
-                    appearFromScale, appearToScale,
-                    appearFromRot, appearToRot,
-                    appearFromAlpha, appearToAlpha,
-                    _appearDuration, _appearEase, curve, false,
-                    _appearUsePositionCurve, _appearPositionCurveOffset));
+                state.appearStart = currentTime;
+                state.appearEnd = currentTime + _appearDuration;
+                state.appearFromPos = appearFromPos;
+                state.appearToPos = appearToPos;
+                state.appearFromScale = appearFromScale;
+                state.appearToScale = appearToScale;
+                state.appearFromRot = appearFromRot;
+                state.appearToRot = appearToRot;
+                state.appearFromAlpha = appearFromAlpha;
+                state.appearToAlpha = appearToAlpha;
+                state.appearUsePosCurve = _appearUsePositionCurve;
+                state.appearPosCurveOffset = _appearPositionCurveOffset;
+                state.appearUseCustomCurve = _appearUseCustomCurve;
+                state.appearCustomCurve = _appearUseCustomCurve ? _appearCustomCurve : null;
+                state.appearEase = _appearEase;
 
-                // 다음 애니메이션 시작 시간 (블렌딩 적용 - 비율 기반)
-                // 블렌드 비율 0.25 = Appear 마지막 25% 시점에서 Loop 시작
+                // 다음 애니메이션 시작 시간 (블렌딩 적용)
                 float appearBlendTime = _appearDuration * _appearToLoopBlend;
                 currentTime += _appearDuration - appearBlendTime;
-                if (currentTime < 0) currentTime = 0;
+                if (currentTime < 0f) currentTime = 0f;
             }
 
-            // ─────────────────────────────────────────────
-            // Loop (0이면 건너뜀)
-            // Loop Count: 0=비활성화, 1=1회, 2=2회, -1=무한
-            // ─────────────────────────────────────────────
-            if (_enableLoop && _loopCount != 0)
+            // ── Loop ──
+            state.loopEnabled = _enableLoop && _loopCount != 0;
+            if (state.loopEnabled)
             {
                 Vector3 loopFromPos, loopToPos, loopFromScale, loopToScale, loopFromRot, loopToRot;
                 float loopFromAlpha, loopToAlpha;
@@ -961,97 +1317,53 @@ namespace CAT.UI
                     out loopFromRot, out loopToRot,
                     out loopFromAlpha, out loopToAlpha);
 
-                curve = _loopUseCustomCurve ? _loopCustomCurve : null;
+                state.loopStart = currentTime;
+                state.loopSingleDuration = _loopDuration;
+                state.loopCount = _loopCount;
+                state.loopMode = _loopType;
+                state.loopFromPos = loopFromPos;
+                state.loopToPos = loopToPos;
+                state.loopFromScale = loopFromScale;
+                state.loopToScale = loopToScale;
+                state.loopFromRot = loopFromRot;
+                state.loopToRot = loopToRot;
+                state.loopFromAlpha = loopFromAlpha;
+                state.loopToAlpha = loopToAlpha;
+                state.loopUsePosCurve = _loopUsePositionCurve;
+                state.loopPosCurveOffset = _loopPositionCurveOffset;
+                state.loopUseCustomCurve = _loopUseCustomCurve;
+                state.loopCustomCurve = _loopUseCustomCurve ? _loopCustomCurve : null;
+                state.loopEase = _loopEase;
 
-                // 블렌딩 사용 여부 (Appear와 오버랩되면 현재 위치에서 시작)
-                bool useBlendFromAppear = _enableAppear && _appearToLoopBlend > 0;
+                // 블렌딩 플래그
+                state.appearToLoopBlendActive = _enableAppear && _appearToLoopBlend > 0f;
+                state.hasLoopCaptured = false;
 
-                // 무한 루프인 경우
-                if (_loopCount == -1)
+                // 무한 루프 여부
+                state.isInfiniteLoop = (_loopCount == -1);
+
+                if (state.isInfiniteLoop)
                 {
-                    if (_loopType == LoopType.Yoyo)
-                    {
-                        // Yoyo: Forward + Backward를 묶어서 무한 반복
-                        var loopSeq = DOTween.Sequence();
-                        if (!Application.isPlaying) loopSeq.SetUpdate(UpdateType.Manual);
-
-                        loopSeq.Append(AnimateCharacter(charIndex,
-                            loopFromPos, loopToPos,
-                            loopFromScale, loopToScale,
-                            loopFromRot, loopToRot,
-                            loopFromAlpha, loopToAlpha,
-                            _loopDuration, _loopEase, curve, useBlendFromAppear,
-                            _loopUsePositionCurve, _loopPositionCurveOffset));
-                        loopSeq.Append(AnimateCharacter(charIndex,
-                            loopToPos, loopFromPos,
-                            loopToScale, loopFromScale,
-                            loopToRot, loopFromRot,
-                            loopToAlpha, loopFromAlpha,
-                            _loopDuration, _loopEase, curve, false,
-                            _loopUsePositionCurve, _loopPositionCurveOffset));
-                        loopSeq.SetLoops(-1, LoopType.Restart);
-                        seq.Insert(currentTime, loopSeq);
-                    }
-                    else
-                    {
-                        // Restart: Forward만 무한 반복
-                        var forwardTween = AnimateCharacter(charIndex,
-                            loopFromPos, loopToPos,
-                            loopFromScale, loopToScale,
-                            loopFromRot, loopToRot,
-                            loopFromAlpha, loopToAlpha,
-                            _loopDuration, _loopEase, curve, useBlendFromAppear,
-                            _loopUsePositionCurve, _loopPositionCurveOffset);
-                        forwardTween.SetLoops(-1, LoopType.Restart);
-                        seq.Insert(currentTime, forwardTween);
-                    }
-
-                    // 무한 루프면 여기서 종료 (Disappear 없음)
-                    seq.SetDelay(delay);
-                    seq.SetAutoKill(false);
-                    return seq;
+                    // 무한 루프: Disappear 없음, 종료 시간 없음
+                    state.disappearEnabled = false;
+                    state.totalDuration = float.MaxValue;
+                    return state;
                 }
 
-                // 유한 루프: 직접 Loop 횟수만큼 애니메이션 추가
-                for (int i = 0; i < _loopCount; i++)
-                {
-                    // 첫 번째 Loop만 블렌딩 적용
-                    bool useBlend = (i == 0) && useBlendFromAppear;
-
-                    // Forward 애니메이션
-                    seq.Insert(currentTime, AnimateCharacter(charIndex,
-                        loopFromPos, loopToPos,
-                        loopFromScale, loopToScale,
-                        loopFromRot, loopToRot,
-                        loopFromAlpha, loopToAlpha,
-                        _loopDuration, _loopEase, curve, useBlend,
-                        _loopUsePositionCurve, _loopPositionCurveOffset));
-                    currentTime += _loopDuration;
-
-                    if (_loopType == LoopType.Yoyo)
-                    {
-                        // Backward 애니메이션
-                        seq.Insert(currentTime, AnimateCharacter(charIndex,
-                            loopToPos, loopFromPos,
-                            loopToScale, loopFromScale,
-                            loopToRot, loopFromRot,
-                            loopToAlpha, loopFromAlpha,
-                            _loopDuration, _loopEase, curve, false,
-                            _loopUsePositionCurve, _loopPositionCurveOffset));
-                        currentTime += _loopDuration;
-                    }
-                }
+                // 유한 루프: 시간 진행
+                float cycleDuration = _loopType == TMPLoopMode.Yoyo
+                    ? _loopDuration * 2f
+                    : _loopDuration;
+                currentTime += cycleDuration * _loopCount;
 
                 // Loop → Disappear 블렌딩 적용 (비율 기반)
-                // 블렌드 비율 0.25 = Loop 마지막 25% 시점에서 Disappear 시작
                 float loopBlendTime = _loopDuration * _loopToDisappearBlend;
                 currentTime -= loopBlendTime;
-                if (currentTime < 0) currentTime = 0;
+                if (currentTime < 0f) currentTime = 0f;
             }
 
-            // ─────────────────────────────────────────────
-            // Disappear (블렌딩 시 현재 위치에서 시작)
-            // ─────────────────────────────────────────────
+            // ── Disappear ──
+            state.disappearEnabled = _enableDisappear;
             if (_enableDisappear)
             {
                 Vector3 disappearFromPos, disappearToPos, disappearFromScale, disappearToScale, disappearFromRot, disappearToRot;
@@ -1067,23 +1379,35 @@ namespace CAT.UI
                     out disappearFromRot, out disappearToRot,
                     out disappearFromAlpha, out disappearToAlpha);
 
-                // 블렌딩 사용 여부
-                bool useBlend = (_enableLoop && _loopCount != 0 && _loopToDisappearBlend > 0) ||
-                                (_enableAppear && !_enableLoop && _appearToLoopBlend > 0);
+                state.disappearStart = currentTime;
+                state.disappearEnd = currentTime + _disappearDuration;
+                state.disappearFromPos = disappearFromPos;
+                state.disappearToPos = disappearToPos;
+                state.disappearFromScale = disappearFromScale;
+                state.disappearToScale = disappearToScale;
+                state.disappearFromRot = disappearFromRot;
+                state.disappearToRot = disappearToRot;
+                state.disappearFromAlpha = disappearFromAlpha;
+                state.disappearToAlpha = disappearToAlpha;
+                state.disappearUsePosCurve = _disappearUsePositionCurve;
+                state.disappearPosCurveOffset = _disappearPositionCurveOffset;
+                state.disappearUseCustomCurve = _disappearUseCustomCurve;
+                state.disappearCustomCurve = _disappearUseCustomCurve ? _disappearCustomCurve : null;
+                state.disappearEase = _disappearEase;
 
-                curve = _disappearUseCustomCurve ? _disappearCustomCurve : null;
-                seq.Insert(currentTime, AnimateCharacter(charIndex,
-                    disappearFromPos, disappearToPos,
-                    disappearFromScale, disappearToScale,
-                    disappearFromRot, disappearToRot,
-                    disappearFromAlpha, disappearToAlpha,
-                    _disappearDuration, _disappearEase, curve, useBlend,
-                    _disappearUsePositionCurve, _disappearPositionCurveOffset));
+                // 블렌딩 플래그
+                state.loopToDisappearBlendActive = (state.loopEnabled && _loopToDisappearBlend > 0f) ||
+                                                   (_enableAppear && !state.loopEnabled && _appearToLoopBlend > 0f);
+                state.hasDisappearCaptured = false;
+
+                state.totalDuration = state.disappearEnd;
+            }
+            else
+            {
+                state.totalDuration = currentTime;
             }
 
-            seq.SetDelay(delay);
-            seq.SetAutoKill(false);
-            return seq;
+            return state;
         }
 
         private void CalculateFromTo(bool from, bool relative,
@@ -1166,16 +1490,12 @@ namespace CAT.UI
             }
         }
 
-        private void KillAllSequences()
+        /// <summary>
+        /// 모든 글자 애니메이션 상태 초기화 (DOTween KillAllSequences 대체)
+        /// </summary>
+        private void ResetAllCharStates()
         {
-            if (_sequences != null)
-            {
-                foreach (var seq in _sequences)
-                {
-                    if (seq != null && seq.IsActive()) seq.Kill();
-                }
-                _sequences = null;
-            }
+            _charStates = null;
         }
 
         private void RestoreOriginalMesh()
@@ -1365,7 +1685,7 @@ namespace CAT.UI
 
             _isPlayingInProgress = true;
 
-            KillAllSequences();
+            ResetAllCharStates();
 
             _tmpText.SetVerticesDirty();
             _tmpText.ForceMeshUpdate();
@@ -1419,8 +1739,9 @@ namespace CAT.UI
             }
 
             _isPlaying = true;
+            _isPaused = false;
 
-            _sequences = new Sequence[charCount];
+            _charStates = new CharAnimState[charCount];
             _originalPositions = new Vector3[charCount];
 
             // 현재 상태 배열 초기화 (블렌딩용)
@@ -1515,7 +1836,7 @@ namespace CAT.UI
                 if (!charInfo.isVisible) continue;
 
                 _originalPositions[i] = GetCharacterCenter(charInfo);
-                _sequences[i] = CreateCharacterSequence(i);
+                _charStates[i] = InitCharacterState(i);
             }
 
             if (_enableAppear)
@@ -1560,29 +1881,22 @@ namespace CAT.UI
 
         public void Stop()
         {
-            KillAllSequences();
+            ResetAllCharStates();
             _isPlaying = false;
+            _isPaused = false;
             RestoreOriginalMesh();
         }
 
         public void Pause()
         {
-            if (_sequences == null) return;
-
-            foreach (var seq in _sequences)
-            {
-                if (seq != null && seq.IsActive()) seq.Pause();
-            }
+            if (_charStates == null) return;
+            _isPaused = true;
         }
 
         public void Resume()
         {
-            if (_sequences == null) return;
-
-            foreach (var seq in _sequences)
-            {
-                if (seq != null && seq.IsActive()) seq.Play();
-            }
+            if (_charStates == null) return;
+            _isPaused = false;
         }
 
         public void Restart()

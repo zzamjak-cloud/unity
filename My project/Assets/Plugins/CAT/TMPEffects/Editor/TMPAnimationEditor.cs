@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEditor;
-using DG.Tweening;
 
 namespace CAT.UI
 {
@@ -57,7 +56,7 @@ namespace CAT.UI
             // Ease 이름 캐시 초기화
             if (_easeNames == null)
             {
-                _easeNames = System.Enum.GetNames(typeof(Ease));
+                _easeNames = System.Enum.GetNames(typeof(TMPEaseType));
                 _easeDisplayNames = new string[_easeNames.Length + 1];
                 System.Array.Copy(_easeNames, _easeDisplayNames, _easeNames.Length);
                 _easeDisplayNames[_easeDisplayNames.Length - 1] = "Custom";
@@ -397,10 +396,6 @@ namespace CAT.UI
             _isEditorPlaying = true;
             _lastEditorTime = EditorApplication.timeSinceStartup;
 
-            // DOTween 에디터 초기화
-            DOTween.Init();
-            DOTween.defaultUpdateType = UpdateType.Manual;
-
             _target.Play();
             EditorApplication.update += EditorUpdate;
         }
@@ -413,8 +408,6 @@ namespace CAT.UI
             EditorApplication.update -= EditorUpdate;
 
             _target.Stop();
-            DOTween.Clear();
-            DOTween.defaultUpdateType = UpdateType.Normal;
 
             // 씬 뷰 갱신
             SceneView.RepaintAll();
@@ -429,8 +422,8 @@ namespace CAT.UI
             float deltaTime = (float)(currentTime - _lastEditorTime);
             _lastEditorTime = currentTime;
 
-            // DOTween 에디터 업데이트
-            DOTween.ManualUpdate(deltaTime, deltaTime);
+            // 애니메이션 업데이트
+            _target.AdvanceAnimation(deltaTime);
 
             // 인스펙터 및 씬 뷰 갱신
             Repaint();
