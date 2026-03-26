@@ -417,6 +417,13 @@ namespace CAT.UI
         {
             if (!_isEditorPlaying) return;
 
+            // 타겟 유효성 검사 (Undo, 오브젝트 삭제 등으로 인한 무효화 방지)
+            if (_target == null)
+            {
+                StopEditorPreview();
+                return;
+            }
+
             // 에디터에서 실제 경과 시간 계산
             double currentTime = EditorApplication.timeSinceStartup;
             float deltaTime = (float)(currentTime - _lastEditorTime);
@@ -424,6 +431,10 @@ namespace CAT.UI
 
             // 애니메이션 업데이트
             _target.AdvanceAnimation(deltaTime);
+
+            // 에디터 비플레이 모드에서 Canvas 렌더링 파이프라인 강제 업데이트
+            // SceneView.RepaintAll()만으로는 Player Loop가 돌지 않아 Canvas가 갱신되지 않음
+            EditorApplication.QueuePlayerLoopUpdate();
 
             // 인스펙터 및 씬 뷰 갱신
             Repaint();

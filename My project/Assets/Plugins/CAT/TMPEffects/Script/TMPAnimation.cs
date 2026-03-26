@@ -468,6 +468,7 @@ namespace CAT.UI
             _currentCharAlpha = null;
             _isPlaying = false;
             _isPaused = false;
+            _isPlayingInProgress = false;
 
             // Shadow Mesh 정리
             if (_shadowMesh != null)
@@ -1488,7 +1489,47 @@ namespace CAT.UI
                     innerGlowText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
                 }
             }
+
+#if UNITY_EDITOR
+            // 에디터 비플레이 모드: CanvasRenderer에 수정된 메시를 직접 적용
+            // UpdateVertexData()만으로는 에디터에서 Canvas 렌더링 파이프라인이
+            // 자동 갱신되지 않아 정점 수정이 화면에 반영되지 않음
+            if (!Application.isPlaying)
+            {
+                ForceCanvasRendererUpdate(_tmpText);
+
+                if (outlineEffect != null && outlineEffect.EnableSecondFace)
+                {
+                    var secondFaceText = outlineEffect.GetSecondFaceText();
+                    if (secondFaceText != null)
+                        ForceCanvasRendererUpdate(secondFaceText);
+                }
+
+                if (glowEffect != null)
+                {
+                    var innerGlowText = glowEffect.GetInnerGlowText();
+                    if (innerGlowText != null)
+                        ForceCanvasRendererUpdate(innerGlowText);
+                }
+            }
+#endif
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// 에디터 모드에서 CanvasRenderer에 메시를 직접 설정하여 즉시 갱신
+        /// </summary>
+        private static void ForceCanvasRendererUpdate(TMP_Text tmpText)
+        {
+            var tmpUGUI = tmpText as TMPro.TextMeshProUGUI;
+            if (tmpUGUI == null) return;
+            var cr = tmpUGUI.canvasRenderer;
+            if (cr != null && tmpUGUI.mesh != null)
+            {
+                cr.SetMesh(tmpUGUI.mesh);
+            }
+        }
+#endif
 
         /// <summary>
         /// 모든 글자 애니메이션 상태 초기화 (DOTween KillAllSequences 대체)
@@ -1676,6 +1717,7 @@ namespace CAT.UI
 
         public void Play()
         {
+            CacheComponents();
             if (_tmpText == null) return;
 
             if (_isPlayingInProgress)
@@ -1685,9 +1727,12 @@ namespace CAT.UI
 
             _isPlayingInProgress = true;
 
+            try
+            {
             ResetAllCharStates();
 
-            _tmpText.SetVerticesDirty();
+            // SetVerticesDirty() 호출 금지: TMP 내부 m_havePropertiesChanged 플래그를 설정하여
+            // 다음 Canvas 업데이트에서 메시 재생성 → 정점 수정이 덮어쓰임 (에디터 프리뷰 깨짐)
             _tmpText.ForceMeshUpdate();
 
             var outlineEffect = GetComponent<TMPOutlineEffect>();
@@ -1705,7 +1750,6 @@ namespace CAT.UI
                     {
                         secondFaceText.text = _tmpText.text;
                     }
-                    secondFaceText.SetVerticesDirty();
                     secondFaceText.ForceMeshUpdate();
                     Canvas.ForceUpdateCanvases();
 
@@ -1725,7 +1769,6 @@ namespace CAT.UI
                     {
                         innerGlowText.text = _tmpText.text;
                     }
-                    innerGlowText.SetVerticesDirty();
                     innerGlowText.ForceMeshUpdate();
                     Canvas.ForceUpdateCanvases();
                 }
@@ -1734,8 +1777,7 @@ namespace CAT.UI
             int charCount = _tmpText.textInfo.characterCount;
             if (charCount == 0)
             {
-                _isPlayingInProgress = false;
-                return;
+                return; // finally에서 _isPlayingInProgress = false 처리됨
             }
 
             _isPlaying = true;
@@ -1876,7 +1918,11 @@ namespace CAT.UI
                 _canvasGroup.alpha = 1f;
             }
 
-            _isPlayingInProgress = false;
+            } // try
+            finally
+            {
+                _isPlayingInProgress = false;
+            }
         }
 
         public void Stop()
@@ -1884,6 +1930,7 @@ namespace CAT.UI
             ResetAllCharStates();
             _isPlaying = false;
             _isPaused = false;
+            _isPlayingInProgress = false;
             RestoreOriginalMesh();
         }
 
