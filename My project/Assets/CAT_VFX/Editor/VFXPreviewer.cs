@@ -341,13 +341,19 @@ namespace CAT.VFX.Editor
                     inst.transform.localScale = Vector3.one;
                     entry.previewInstance = inst;
 
-                    var uiParticles = inst.GetComponentsInChildren<CatUIParticle>(true);
-                    for (int u = 0; u < uiParticles.Length; u++)
+                    // CatUIParticle 비활성화
+                    var catUips = inst.GetComponentsInChildren<CatUIParticle>(true);
+                    for (int u = 0; u < catUips.Length; u++)
                     {
-                        CatUIParticleUpdater.Unregister(uiParticles[u]);
-                        uiParticles[u].enabled = false;
+                        CatUIParticleUpdater.Unregister(catUips[u]);
+                        catUips[u].enabled = false;
                     }
 
+                    // 외부 UIParticle 등 MaskableGraphic 기반 파티클 래퍼를 비활성화
+                    // (ParticleSystem을 직접 렌더링하기 위해 PSR을 가로채는 모든 컴포넌트 대응)
+                    DisableNonBuiltinGraphics(inst);
+
+                    // ParticleSystemRenderer 강제 활성화
                     var renderers = inst.GetComponentsInChildren<ParticleSystemRenderer>(true);
                     for (int r = 0; r < renderers.Length; r++)
                         renderers[r].enabled = true;
@@ -521,6 +527,30 @@ namespace CAT.VFX.Editor
 
             Undo.RegisterCreatedObjectUndo(instance, $"Instantiate VFX {instance.name}");
             Selection.activeObject = instance;
+        }
+
+        /// <summary>
+        /// CatUIParticle 이외의 MaskableGraphic 기반 파티클 래퍼(외부 UIParticle 등)를 비활성화.
+        /// Unity 빌트인 UI 컴포넌트(Image, RawImage, Text 등)는 제외.
+        /// 외부 패키지 미설치 시에도 에러 없이 동작 (타입 참조 없이 상속 체인으로 판정).
+        /// </summary>
+        private static void DisableNonBuiltinGraphics(GameObject root)
+        {
+            var graphics = root.GetComponentsInChildren<MaskableGraphic>(true);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                var g = graphics[i];
+                if (g is CatUIParticle) continue;
+
+                // Unity 빌트인 UI 컴포넌트는 건드리지 않음
+                var ns = g.GetType().Namespace;
+                if (ns != null && (ns.StartsWith("UnityEngine") || ns.StartsWith("TMPro")))
+                    continue;
+
+                // 외부 패키지의 MaskableGraphic (UIParticle 등) → 비활성화
+                var mb = g as MonoBehaviour;
+                if (mb != null) mb.enabled = false;
+            }
         }
 
         private static bool IsRootPS(ParticleSystem ps, Transform boundary)
