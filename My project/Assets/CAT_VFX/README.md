@@ -37,7 +37,8 @@ CAT_VFX/
 │   │   ├── CatUIParticleMenu.cs      # GameObject/UI/CAT Particle System 메뉴
 │   │   └── AnimatablePropertyEditor.cs # 셰이더 프로퍼티 선택 드롭다운
 │   ├── HierarchyVFXModule.cs         # 하이어라키 VFX 드롭다운 (Use UI 체크박스)
-│   └── VFXPreviewer.cs               # VFX 프리뷰 윈도우 (Spacebar 토글)
+│   ├── VFXPreviewer.cs               # VFX 프리뷰 윈도우 (Spacebar 토글, 카테고리 탐색)
+│   └── VFXInstantiateHelper.cs       # 프리팹 인스턴스 생성 공용 유틸리티
 ├── Shader/
 │   ├── CAT_UIAdditive.shader         # UI Additive 블렌드 (Stencil Mask + SoftMask 조건부)
 │   └── CAT_UIAlphaBlend.shader       # UI AlphaBlend (Stencil Mask + SoftMask 조건부)
@@ -60,24 +61,47 @@ CAT_VFX/
 
 Project 뷰에서 프리팹 선택 후 **Spacebar**로 프리뷰 윈도우를 토글한다.
 
-- **카테고리 탐색**: `VFX_Prefabs` 폴더의 하위 폴더 구조가 카테고리로 표시. 클릭으로 진입, `<` 헤더로 뒤로가기
+**리스트 조작:**
 - **체크박스**: 카테고리 간 이펙트 비교 선택 (체크 유지)
 - **클릭**: 단일 선택 (기존 체크 해제)
 - **Ctrl+클릭**: 토글 추가/제거
 - **Shift+클릭**: 범위 선택
-- **이름태그 클릭**: 하이어라키에 프리팹 인스턴스 (현재 선택 오브젝트의 자식으로)
+
+**카테고리 탐색:**
+- `VFX_Prefabs` 폴더의 하위 폴더 구조가 카테고리로 표시
+- 카테고리 클릭으로 진입, `<` 헤더로 뒤로가기
+- 검색 시 카테고리 무시하고 전체 프리팹에서 필터링
+
+**프리뷰 기능:**
+- **이름태그 클릭**: 하이어라키에 프리팹 인스턴스 (Use UI 상태 반영)
+- **Use UI 체크박스** (프리뷰 좌상단): CatUIParticle 래핑 + Canvas 자동 배치
 - **자동 크기 조정**: 파티클 바운드를 측정하여 프리뷰 셀 크기에 맞춤
-- **검색**: 카테고리 무시하고 전체 프리팹에서 필터링
 
 ### 2. 하이어라키 VFX 드롭다운
 
 하이어라키 창 상단의 **VFX** 버튼 사용:
 
 - **Use UI 체크 해제**: 프리팹을 일반 이펙트로 인스턴스
-- **Use UI 체크 활성화**: `CatUIParticle` 래퍼를 자동 생성하고, 프리팹을 자식으로 배치, 레이어를 UI로 변경, 머티리얼 자동 등록까지 원클릭 처리
-- 이미 `CatUIParticle`이 포함된 프리팹은 Use UI 체크와 무관하게 일반 로드
+- **Use UI 체크 활성화**: CatUIParticle 래핑 + Canvas 자동 배치
 
 **대상 폴더**: 프로젝트 내 `VFX_Prefabs` 이름의 모든 폴더를 자동 스캔 (우클릭으로 폴더명 변경 가능, VFX Previewer와 공유)
+
+### 인스턴스 생성 규칙 (VFXInstantiateHelper)
+
+VFX Previewer와 HierarchyVFXModule에서 공유하는 생성 로직:
+
+| 조건 | 동작 |
+|------|------|
+| Use UI + CatUIParticle 미포함 프리팹 | CatUIParticle 래핑 생성 → Canvas 하위 배치 |
+| CatUIParticle 이미 포함 (Use UI 무관) | 래핑 없이 Canvas 하위 배치 |
+| Use UI 해제 + Canvas 내부 오브젝트 선택 | Canvas **밖** 씬 루트에 생성 |
+| Use UI 해제 + Canvas 외부 오브젝트 선택 | 선택 오브젝트의 자식으로 생성 |
+| 프리팹 편집 모드 | Canvas 유무 무관, 프리팹 내부 자식으로 생성 |
+
+**Canvas 자동 탐색 (UI 모드):**
+1. 선택된 오브젝트가 Canvas 내부 → 해당 오브젝트의 자식
+2. 씬에 Canvas 존재 → 해당 Canvas의 자식
+3. Canvas 없음 → Canvas 신규 생성 (ScreenSpaceOverlay)
 
 ### 3. 수동 설정
 
@@ -123,6 +147,10 @@ Project 뷰에서 프리팹 선택 후 **Spacebar**로 프리뷰 윈도우를 �
 **SoftMaskLight** (자체 개발):
 - Hidden 변형 셰이더가 별도 파일이므로 동일한 조건부 처리 불가
 - 필요 시 CLAUDE.md의 SoftMaskLight 가이드라인에 따라 Hidden 변형 셰이더를 별도 생성
+
+**외부 UIParticle 패키지 호환:**
+- VFXPreviewer에서 외부 UIParticle(Coffee.UIExtensions 등)이 적용된 프리팹도 프리뷰 가능
+- 네임스페이스 기반 판정으로 외부 패키지 미설치 시에도 에러 없이 동작
 
 ### Linear 색 공간 대응
 
