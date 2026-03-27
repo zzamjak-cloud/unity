@@ -36,8 +36,9 @@ namespace CAT.VFX.Editor
             public List<GameObject> prefabs = new List<GameObject>();
         }
 
-        // HierarchyVFXModule과 동일한 EditorPrefs 키
+        // HierarchyVFXModule과 동일한 EditorPrefs 키 공유
         private const string PrefKeyTargetFolder = "HierarchyVFX_TargetFolder";
+        private const string PrefKeyUseUI = "HierarchyVFX_UseUI";
         private const string DefaultTargetFolder = "VFX_Prefabs";
 
         private PreviewRenderUtility _previewUtility;
@@ -73,8 +74,9 @@ namespace CAT.VFX.Editor
         private const float ListItemHeight = 20f;
         private const float CategoryItemHeight = 22f;
 
-        // 카테고리
+        // 카테고리 / Use UI
         private string _targetFolderName;
+        private bool _useUI;
         private CategoryNode _rootCategory;
         private CategoryNode _currentCategory;
         private List<GameObject> _allPrefabs = new List<GameObject>();
@@ -173,6 +175,7 @@ namespace CAT.VFX.Editor
         private void RefreshAll()
         {
             _targetFolderName = EditorPrefs.GetString(PrefKeyTargetFolder, DefaultTargetFolder);
+            _useUI = EditorPrefs.GetBool(PrefKeyUseUI, false);
             BuildCategoryTree();
         }
 
@@ -514,22 +517,6 @@ namespace CAT.VFX.Editor
         }
 
         /// <summary>
-        /// 프리뷰에서 이름 태그 클릭 시 하이어라키에 프리팹 인스턴스 생성
-        /// </summary>
-        private static void InstantiatePrefabToHierarchy(GameObject prefab)
-        {
-            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            instance.name = prefab.name;
-
-            var parent = Selection.activeGameObject;
-            if (parent != null && !EditorUtility.IsPersistent(parent))
-                instance.transform.SetParent(parent.transform, false);
-
-            Undo.RegisterCreatedObjectUndo(instance, $"Instantiate VFX {instance.name}");
-            Selection.activeObject = instance;
-        }
-
-        /// <summary>
         /// CatUIParticle 이외의 MaskableGraphic 기반 파티클 래퍼(외부 UIParticle 등)를 비활성화.
         /// Unity 빌트인 UI 컴포넌트(Image, RawImage, Text 등)는 제외.
         /// 외부 패키지 미설치 시에도 에러 없이 동작 (타입 참조 없이 상속 체인으로 판정).
@@ -614,8 +601,17 @@ namespace CAT.VFX.Editor
             }
             else
             {
-                GUI.Label(previewRect, "파티클을 선택하세요.\n(Ctrl/Shift 클릭으로 복수 선택)", _centeredStyle);
+                GUI.Label(previewRect, "파티클을 선택하세요.\n(체크박스/Ctrl/Shift 복수선택)", _centeredStyle);
             }
+
+            // 프리뷰 좌상단 Use UI 체크박스
+            var useUICheckRect = new Rect(previewRect.x + 6, previewRect.y + 4, 16, 16);
+            var useUILabelRect = new Rect(previewRect.x + 24, previewRect.y + 3, 50, 18);
+            EditorGUI.BeginChangeCheck();
+            _useUI = GUI.Toggle(useUICheckRect, _useUI, GUIContent.none);
+            if (EditorGUI.EndChangeCheck())
+                EditorPrefs.SetBool(PrefKeyUseUI, _useUI);
+            GUI.Label(useUILabelRect, "Use UI", EditorStyles.miniLabel);
 
             DrawBottomBar(toolbarRect);
             if (_showDebug) DrawDebugPanel(debugRect);
@@ -913,8 +909,8 @@ namespace CAT.VFX.Editor
                     _pingPrefab = entry.prefab;
                     _pingStartTime = EditorApplication.timeSinceStartup;
 
-                    // 클릭 시 하이어라키에 프리팹 인스턴스
-                    InstantiatePrefabToHierarchy(entry.prefab);
+                    // 클릭 시 하이어라키에 프리팹 인스턴스 (Use UI 상태 반영)
+                    VFXInstantiateHelper.Instantiate(entry.prefab, _useUI);
 
                     ev.Use();
                 }

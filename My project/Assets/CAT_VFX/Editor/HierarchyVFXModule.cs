@@ -141,7 +141,6 @@ namespace CAT.VFX.Editor
             menu.ShowAsContext();
         }
 
-        // 프리팹 선택 콜백
         private static void OnPrefabSelected(string path, bool useUI)
         {
             if (string.IsNullOrEmpty(path)) return;
@@ -153,89 +152,7 @@ namespace CAT.VFX.Editor
                 return;
             }
 
-            var parentObject = Selection.activeGameObject;
-            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-
-            // 프리팹에 이미 CatUIParticle이 포함되어 있으면 래핑 없이 일반 로드
-            if (useUI && !prefab.GetComponentInChildren<CatUIParticle>(true))
-            {
-                CreateAsUIParticle(prefab, parentObject, prefabStage);
-            }
-            else
-            {
-                CreateAsRegularPrefab(prefab, parentObject, prefabStage);
-            }
-        }
-
-        // 일반 프리팹으로 생성
-        private static void CreateAsRegularPrefab(GameObject prefab, GameObject parentObject, PrefabStage prefabStage)
-        {
-            var instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
-            instance.name = prefab.name;
-
-            SetParent(instance, parentObject, prefabStage);
-
-            Undo.RegisterCreatedObjectUndo(instance, $"Create VFX {instance.name}");
-            Selection.activeObject = instance;
-        }
-
-        // CatUIParticle로 래핑하여 UI 이펙트로 생성
-        private static void CreateAsUIParticle(GameObject prefab, GameObject parentObject, PrefabStage prefabStage)
-        {
-            Undo.IncrementCurrentGroup();
-            int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName($"Create UI VFX {prefab.name}");
-
-            // 1. 빈 GameObject 생성 + CatUIParticle 컴포넌트 추가
-            var uiGo = new GameObject(prefab.name, typeof(RectTransform), typeof(CatUIParticle));
-            var uiParticle = uiGo.GetComponent<CatUIParticle>();
-
-            // RectTransform 초기화
-            var rt = uiGo.GetComponent<RectTransform>();
-            rt.sizeDelta = Vector2.zero;
-
-            SetParent(uiGo, parentObject, prefabStage);
-
-            Undo.RegisterCreatedObjectUndo(uiGo, $"Create UI VFX {prefab.name}");
-
-            // 2. 프리팹을 자식으로 인스턴스
-            var vfxInstance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
-            vfxInstance.transform.SetParent(uiGo.transform, false);
-            vfxInstance.transform.localPosition = Vector3.zero;
-
-            Undo.RegisterCreatedObjectUndo(vfxInstance, $"Instantiate VFX {prefab.name}");
-
-            // 3. 래퍼 + 자식 오브젝트 전체 레이어를 UI로 변경
-            SetLayerRecursive(uiGo, LayerMask.NameToLayer("UI"));
-
-            // 4. CatUIParticle Refresh → 자식 ParticleSystem 수집 + 머티리얼 등록
-            uiParticle.RefreshParticles();
-
-            Undo.CollapseUndoOperations(undoGroup);
-            Selection.activeObject = uiGo;
-        }
-
-        private static void SetLayerRecursive(GameObject go, int layer)
-        {
-            go.layer = layer;
-            var t = go.transform;
-            for (int i = 0; i < t.childCount; i++)
-                SetLayerRecursive(t.GetChild(i).gameObject, layer);
-        }
-
-        private static void SetParent(GameObject instance, GameObject parentObject, PrefabStage prefabStage)
-        {
-            if (prefabStage != null)
-            {
-                if (parentObject != null && parentObject.scene == prefabStage.scene)
-                    instance.transform.SetParent(parentObject.transform, false);
-                else
-                    instance.transform.SetParent(prefabStage.prefabContentsRoot.transform, false);
-            }
-            else if (parentObject != null)
-            {
-                instance.transform.SetParent(parentObject.transform, false);
-            }
+            VFXInstantiateHelper.Instantiate(prefab, useUI);
         }
 
         // --- 폴더 이름 입력 팝업 ---
