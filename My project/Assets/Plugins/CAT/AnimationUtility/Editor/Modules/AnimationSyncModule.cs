@@ -10,7 +10,7 @@ namespace CAT.AnimationUtility
 {
     // Hierarchy에서 GameObject를 선택하면 Animation Window에서 해당 항목으로 자동 스크롤.
     // 기존 AnimSyncTool.cs를 IAnimationToolModule 기반으로 리팩토링.
-    public class AnimSyncModule : IAnimationToolModule
+    public class AnimationSyncModule : IAnimationToolModule
     {
         private AnimationWindowAccessor _accessor;
 

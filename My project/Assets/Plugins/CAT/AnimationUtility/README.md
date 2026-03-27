@@ -13,7 +13,8 @@ Assets/Plugins/CAT/AnimationUtility/Editor/
 │   ├── AnimationWindowAccessor.cs    Reflection 래퍼 — 내부 상태 접근
 │   └── AnimationUtilityManager.cs   중앙 관리자 — 모듈 자동 발견·등록
 └── Modules/
-    ├── AnimSyncModule.cs             Hierarchy 선택 → Animation Window 자동 스크롤
+    ├── AnimationAutoSaveModule.cs    애니메이션 에셋 자동 저장
+    ├── AnimationSyncModule.cs        Hierarchy 선택 → Animation Window 자동 스크롤
     ├── AnimationOffsetModule.cs      루프 오프셋·키 추가·키 정리 UI
     └── AnimationParticleModule.cs    파티클 시뮬레이션 토글
 ```
@@ -68,9 +69,10 @@ public interface IAnimationToolModule
 
 | 값 | 모듈 |
 |----|------|
-| 0  | AnimSyncModule |
-| 10 | AnimationOffsetModule |
-| 20 | AnimationParticleModule |
+| 0   | AnimationSyncModule |
+| 10  | AnimationOffsetModule |
+| 20  | AnimationParticleModule |
+| 100 | AnimationAutoSaveModule |
 
 ---
 
@@ -101,7 +103,7 @@ Animation Window 내부 상태에 Reflection으로 접근하는 래퍼. 모듈�
 
 ## 모듈 설명
 
-### AnimSyncModule (UIOrder: 0)
+### AnimationSyncModule (UIOrder: 0)
 
 Hierarchy에서 GameObject를 선택하면 Animation Window의 해당 항목으로 자동 스크롤.
 
@@ -137,13 +139,23 @@ Animation Window 상단에 파티클 시뮬레이션 토글 버튼 주입.
 - 활성화 시: 애니메이션 프레임 진행에 따라 `m_IsActive`가 켜지는 오브젝트의 ParticleSystem을 자동 시뮬레이션
 - 비활성화 시: 파티클 처리 없이 일반 재생
 
+### AnimationAutoSaveModule (UIOrder: 100)
+
+애니메이션 관련 에셋(AnimationClip, AnimatorController 등)이 변경되면 자동으로 저장.
+
+- **트리거:** `Undo.postprocessModifications` — 애니메이션 관련 오브젝트 변경 감지 시 `_pendingSave` 플래그 설정
+- **저장 주기:** 2초 간격 (변경이 없으면 실행하지 않음)
+- **대상:** AnimationClip, AnimatorController, AnimatorOverrideController, AnimatorState, AnimatorStateMachine, AnimatorTransitionBase, BlendTree
+- **ON/OFF:** `Tools > Animation Auto Save > Enabled` 메뉴 토글 (EditorPrefs 저장)
+- **UI:** 없음
+
 ---
 
 ## 새 모듈 추가 방법
 
 1. `Editor/Modules/` 에 새 `.cs` 파일 생성
 2. `IAnimationToolModule` 구현
-3. `UIOrder` 설정 (기존: 0, 10, 20)
+3. `UIOrder` 설정 (기존: 0, 10, 20, 100)
 4. **끝** — `TypeCache`가 자동 발견·등록
 
 ```csharp
@@ -176,6 +188,10 @@ namespace CAT.AnimationUtility
 ---
 
 ## 버전 이력
+
+### v1.2.0 (2026-03-27)
+- `AnimationAutoSaveModule` 추가 — 애니메이션 에셋 자동 저장
+- `AnimSyncModule` → `AnimationSyncModule`로 파일명·클래스명 통일
 
 ### v1.1.0 (2026-02-22)
 - 모듈 시스템으로 전환 (`IAnimationToolModule` 인터페이스)
