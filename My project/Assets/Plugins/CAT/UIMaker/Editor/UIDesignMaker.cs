@@ -107,6 +107,103 @@ namespace CAT.Utility
         }
 
         /// <summary>
+        /// 명시적 부모 하위에 JSON 오브젝트를 생성한다.
+        /// parentOverride가 null이면 기존 GetOrCreateCanvasParent() 동작.
+        /// </summary>
+        public static void CreateFromJsonAbsolute(string absolutePath, Transform parentOverride)
+        {
+            if (parentOverride == null)
+            {
+                CreateFromJsonAbsolute(absolutePath);
+                return;
+            }
+
+            if (!File.Exists(absolutePath))
+            {
+                Debug.LogError($"[UIDesignMaker] JSON 파일을 찾을 수 없습니다: {absolutePath}");
+                return;
+            }
+
+            string json = File.ReadAllText(absolutePath, System.Text.Encoding.UTF8);
+
+            PrefabJsonRoot root;
+            try
+            {
+                root = SimpleJsonParser.Parse(json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[UIDesignMaker] JSON 파싱 실패: {ex.Message}");
+                return;
+            }
+
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName($"UIDesignMaker: {root.prefabName}");
+
+            _deferredRefs = new List<DeferredSceneRef>();
+
+            GameObject created = CreateGameObjectFromNode(root.root, parentOverride);
+
+            ResolveDeferredSceneRefs(created.transform);
+            _deferredRefs = null;
+
+            Selection.activeGameObject = created;
+            EditorGUIUtility.PingObject(created);
+
+            Undo.CollapseUndoOperations(undoGroup);
+        }
+
+        /// <summary>
+        /// JSON에서 프리뷰용 오브젝트를 생성한다. Undo 없이 생성하며 HideFlags.HideAndDontSave 설정.
+        /// </summary>
+        internal static GameObject CreatePreviewFromJson(string absolutePath, Transform previewParent)
+        {
+            if (!File.Exists(absolutePath))
+            {
+                Debug.LogError($"[UIDesignMaker] JSON 파일을 찾을 수 없습니다: {absolutePath}");
+                return null;
+            }
+
+            string json = File.ReadAllText(absolutePath, System.Text.Encoding.UTF8);
+
+            PrefabJsonRoot root;
+            try
+            {
+                root = SimpleJsonParser.Parse(json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[UIDesignMaker] JSON 파싱 실패: {ex.Message}");
+                return null;
+            }
+
+            _deferredRefs = new List<DeferredSceneRef>();
+
+            GameObject created = CreateGameObjectFromNode(root.root, previewParent, false);
+
+            // 지연 참조 해결 시도 (실패해도 프리뷰이므로 무시)
+            ResolveDeferredSceneRefs(created.transform);
+            _deferredRefs = null;
+
+            // 전체 계층에 HideFlags 설정
+            SetHideFlagsRecursive(created, HideFlags.HideAndDontSave);
+
+            return created;
+        }
+
+        /// <summary>
+        /// GameObject와 모든 자식에 HideFlags를 재귀적으로 설정한다.
+        /// </summary>
+        static void SetHideFlagsRecursive(GameObject go, HideFlags flags)
+        {
+            go.hideFlags = flags;
+            var t = go.transform;
+            for (int i = 0; i < t.childCount; i++)
+                SetHideFlagsRecursive(t.GetChild(i).gameObject, flags);
+        }
+
+        /// <summary>
         /// Canvas를 찾거나 생성한다.
         /// </summary>
         static Transform GetOrCreateCanvasParent()
@@ -149,15 +246,23 @@ namespace CAT.Utility
         /// GameObjectNode에서 재귀적으로 GameObject를 생성한다.
         /// </summary>
         static GameObject CreateGameObjectFromNode(GameObjectNode node, Transform parent)
+            => CreateGameObjectFromNode(node, parent, true);
+
+        /// <summary>
+        /// GameObjectNode에서 재귀적으로 GameObject를 생성한다.
+        /// registerUndo가 false이면 Undo 등록 없이 생성한다 (프리뷰용).
+        /// </summary>
+        internal static GameObject CreateGameObjectFromNode(GameObjectNode node, Transform parent, bool registerUndo)
         {
             // 중첩 프리팹 참조인 경우 프리팹을 인스턴스화
             if (node.IsPrefabReference)
             {
-                return CreatePrefabInstance(node, parent);
+                return CreatePrefabInstance(node, parent, registerUndo);
             }
 
             var go = new GameObject(node.name);
-            Undo.RegisterCreatedObjectUndo(go, $"생성: {node.name}");
+            if (registerUndo)
+                Undo.RegisterCreatedObjectUndo(go, $"생성: {node.name}");
 
             // RectTransform이 필요한 경우 추가
             if (node.transform.isRectTransform && go.GetComponent<RectTransform>() == null)
@@ -183,7 +288,7 @@ namespace CAT.Utility
             // 자식 오브젝트 재귀 생성
             foreach (var child in node.children)
             {
-                CreateGameObjectFromNode(child, go.transform);
+                CreateGameObjectFromNode(child, go.transform, registerUndo);
             }
 
             return go;
@@ -273,13 +378,17 @@ namespace CAT.Utility
         /// modifications 데이터가 있으면 SetPropertyModifications()로 원자적 적용.
         /// </summary>
         static GameObject CreatePrefabInstance(GameObjectNode node, Transform parent)
+            => CreatePrefabInstance(node, parent, true);
+
+        static GameObject CreatePrefabInstance(GameObjectNode node, Transform parent, bool registerUndo)
         {
             string assetPath = AssetDatabase.GUIDToAssetPath(node.prefabGuid);
             if (string.IsNullOrEmpty(assetPath))
             {
                 Debug.LogWarning($"[UIDesignMaker] 프리팹을 찾을 수 없습니다 (GUID: {node.prefabGuid}, 이름: {node.name})");
                 var fallback = new GameObject(node.name);
-                Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
+                if (registerUndo)
+                    Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
                 if (parent != null)
                     GameObjectUtility.SetParentAndAlign(fallback, parent.gameObject);
                 return fallback;
@@ -290,7 +399,8 @@ namespace CAT.Utility
             {
                 Debug.LogWarning($"[UIDesignMaker] 프리팹 로드 실패: {assetPath}");
                 var fallback = new GameObject(node.name);
-                Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
+                if (registerUndo)
+                    Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
                 if (parent != null)
                     GameObjectUtility.SetParentAndAlign(fallback, parent.gameObject);
                 return fallback;
@@ -298,7 +408,8 @@ namespace CAT.Utility
 
             // PrefabUtility로 인스턴스화 — 프리팹 연결 유지
             GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            Undo.RegisterCreatedObjectUndo(instance, $"프리팹 생성: {node.name}");
+            if (registerUndo)
+                Undo.RegisterCreatedObjectUndo(instance, $"프리팹 생성: {node.name}");
             instance.name = node.name;
 
             if (parent != null)
