@@ -1,0 +1,339 @@
+﻿{
+  "prefabName": "RewardItem",
+  "exportDate": "2026-04-02 12:59:32",
+  "root": {
+      "name": "RewardItem_new",
+      "active": true,
+      "tag": "Untagged",
+      "layer": 5,
+      "transform": {
+        "isRectTransform": true,
+        "localPosition": [0, 0, 0],
+        "localRotation": [0, 0, 0, 1],
+        "localScale": [1, 1, 1],
+        "anchorMin": [0.5, 0.5],
+        "anchorMax": [0.5, 0.5],
+        "anchoredPosition": [0, 0],
+        "sizeDelta": [128, 128],
+        "pivot": [0.5, 0.5]
+      },
+      "components": [],
+      "children": [
+        {
+          "name": "Offset",
+          "active": true,
+          "tag": "Untagged",
+          "layer": 5,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0, 0],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [0, 0],
+            "sizeDelta": [0, 0],
+            "pivot": [0.5, 0.5]
+          },
+          "components": [
+            {
+              "typeName": "UnityEngine.CanvasGroup",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Alpha",
+                  "type": "Float",
+                  "value": "1"
+                },
+                {
+                  "name": "m_Interactable",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_BlocksRaycasts",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_IgnoreParentGroups",
+                  "type": "Boolean",
+                  "value": "false"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "Icon",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 0,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [0, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.CanvasRenderer",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_CullTransparentMesh",
+                      "type": "Boolean",
+                      "value": "true"
+                    }
+                  ]
+                },
+                {
+                  "typeName": "UnityEngine.UI.Image",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Material",
+                      "type": "ObjectReference",
+                      "value": "null"
+                    },
+                    {
+                      "name": "m_Color",
+                      "type": "Color",
+                      "value": "1,1,1,1"
+                    },
+                    {
+                      "name": "m_RaycastTarget",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_RaycastPadding",
+                      "type": "Vector4",
+                      "value": "0,0,0,0"
+                    },
+                    {
+                      "name": "m_Maskable",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                      "type": "ArraySize",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Sprite",
+                      "type": "ObjectReference",
+                      "value": "Pictogram_Coin",
+                      "objectRefGuid": "73be463c6923c405e9589d5f5a52ce37",
+                      "objectRefType": "UnityEngine.Sprite"
+                    },
+                    {
+                      "name": "m_Type",
+                      "type": "Enum",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_PreserveAspect",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillCenter",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillMethod",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_FillAmount",
+                      "type": "Float",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_FillClockwise",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillOrigin",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_UseSpriteMesh",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_PixelsPerUnitMultiplier",
+                      "type": "Float",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "Amount (TMP)",
+              "active": true,
+              "prefabGuid": "6ebcda72f9c3d449480ec6f45a9bbff1",
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [64, -47.6499977, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [1, 0],
+                "anchorMax": [1, 0],
+                "anchoredPosition": [0, 16.3500023],
+                "sizeDelta": [128, 60],
+                "pivot": [1, 0.5]
+              },
+              "modifications": [
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_text",
+                  "value": "x99"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontSize",
+                  "value": "50"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontSizeMax",
+                  "value": "50"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_sharedMaterial",
+                  "value": "",
+                  "objectRefGuid": "79606cf178cb44f44b35c05e435e729d"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_HorizontalAlignment",
+                  "value": "4"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_Pivot.x",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_Pivot.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMax.x",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMax.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMin.x",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMin.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_SizeDelta.x",
+                  "value": "128"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_SizeDelta.y",
+                  "value": "60"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.w",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchoredPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchoredPosition.y",
+                  "value": "16.350002"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 7605912525047592318,
+                  "propertyPath": "m_Name",
+                  "value": "Amount (TMP)"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+}

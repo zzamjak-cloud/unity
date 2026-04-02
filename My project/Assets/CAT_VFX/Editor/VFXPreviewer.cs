@@ -39,6 +39,7 @@ namespace CAT.VFX.Editor
         // HierarchyVFXModule과 동일한 EditorPrefs 키 공유
         private const string PrefKeyTargetFolder = "HierarchyVFX_TargetFolder";
         private const string PrefKeyUseUI = "HierarchyVFX_UseUI";
+        private const string PrefKeyBgColor = "VFXPreviewer_BgColor";
         private const string DefaultTargetFolder = "VFX_Prefabs";
 
         private PreviewRenderUtility _previewUtility;
@@ -64,7 +65,8 @@ namespace CAT.VFX.Editor
         // 카메라
         private Vector3 _cameraPivot;
         private float _orthoSize = 5f;
-        private Color _bgColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+        private static readonly Color DefaultBgColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+        private Color _bgColor;
         private float _listWidth = 230f;
         private bool _isResizing;
 
@@ -176,7 +178,23 @@ namespace CAT.VFX.Editor
         {
             _targetFolderName = EditorPrefs.GetString(PrefKeyTargetFolder, DefaultTargetFolder);
             _useUI = EditorPrefs.GetBool(PrefKeyUseUI, false);
+            LoadBgColor();
             BuildCategoryTree();
+        }
+
+        // ── 배경색 저장/복원 ────────────────────────────────────────────────
+        private void LoadBgColor()
+        {
+            string hex = EditorPrefs.GetString(PrefKeyBgColor, "");
+            if (!string.IsNullOrEmpty(hex) && ColorUtility.TryParseHtmlString(hex, out Color c))
+                _bgColor = c;
+            else
+                _bgColor = DefaultBgColor;
+        }
+
+        private void SaveBgColor()
+        {
+            EditorPrefs.SetString(PrefKeyBgColor, "#" + ColorUtility.ToHtmlStringRGBA(_bgColor));
         }
 
         // ── 정리 ────────────────────────────────────────────────────────────
@@ -930,7 +948,9 @@ namespace CAT.VFX.Editor
             GUI.backgroundColor = _showDebug ? Color.yellow : Color.white;
             if (GUILayout.Button("D", GUILayout.Width(25))) _showDebug = !_showDebug;
             GUI.backgroundColor = Color.white;
+            EditorGUI.BeginChangeCheck();
             _bgColor = EditorGUILayout.ColorField(_bgColor, GUILayout.Width(50));
+            if (EditorGUI.EndChangeCheck()) SaveBgColor();
             EditorGUI.BeginChangeCheck();
             float newTime = GUILayout.HorizontalSlider(_currentTime, 0f, _maxDuration, GUILayout.ExpandWidth(true));
             if (EditorGUI.EndChangeCheck()) { _currentTime = newTime; _isPaused = true; ScrubAllSimulations(_currentTime); }

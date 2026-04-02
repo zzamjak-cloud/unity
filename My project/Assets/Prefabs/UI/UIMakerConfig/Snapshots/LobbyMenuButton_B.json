@@ -1,0 +1,1116 @@
+﻿{
+  "prefabName": "LobbyMenuButton_B",
+  "exportDate": "2026-04-02 12:59:32",
+  "root": {
+      "name": "LobbyMenuButton_B_new",
+      "active": true,
+      "tag": "Untagged",
+      "layer": 5,
+      "transform": {
+        "isRectTransform": true,
+        "localPosition": [0, 0, 0],
+        "localRotation": [0, 0, 0, 1],
+        "localScale": [1, 1, 1],
+        "anchorMin": [0, 0],
+        "anchorMax": [1, 1],
+        "anchoredPosition": [0, 0],
+        "sizeDelta": [0, 0],
+        "pivot": [0.5, 0.5]
+      },
+      "components": [
+        {
+          "typeName": "UnityEngine.CanvasRenderer",
+          "enabled": true,
+          "properties": [
+            {
+              "name": "m_CullTransparentMesh",
+              "type": "Boolean",
+              "value": "true"
+            }
+          ]
+        },
+        {
+          "typeName": "UnityEngine.UI.Image",
+          "enabled": true,
+          "properties": [
+            {
+              "name": "m_Material",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Color",
+              "type": "Color",
+              "value": "1,1,1,0"
+            },
+            {
+              "name": "m_RaycastTarget",
+              "type": "Boolean",
+              "value": "true"
+            },
+            {
+              "name": "m_RaycastPadding",
+              "type": "Vector4",
+              "value": "0,0,0,0"
+            },
+            {
+              "name": "m_Maskable",
+              "type": "Boolean",
+              "value": "true"
+            },
+            {
+              "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+              "type": "ArraySize",
+              "value": "0"
+            },
+            {
+              "name": "m_Sprite",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Type",
+              "type": "Enum",
+              "value": "0"
+            },
+            {
+              "name": "m_PreserveAspect",
+              "type": "Boolean",
+              "value": "false"
+            },
+            {
+              "name": "m_FillCenter",
+              "type": "Boolean",
+              "value": "true"
+            },
+            {
+              "name": "m_FillMethod",
+              "type": "Enum",
+              "value": "4"
+            },
+            {
+              "name": "m_FillAmount",
+              "type": "Float",
+              "value": "1"
+            },
+            {
+              "name": "m_FillClockwise",
+              "type": "Boolean",
+              "value": "true"
+            },
+            {
+              "name": "m_FillOrigin",
+              "type": "Integer",
+              "value": "0"
+            },
+            {
+              "name": "m_UseSpriteMesh",
+              "type": "Boolean",
+              "value": "false"
+            },
+            {
+              "name": "m_PixelsPerUnitMultiplier",
+              "type": "Float",
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "typeName": "UnityEngine.UI.Button",
+          "enabled": true,
+          "properties": [
+            {
+              "name": "m_Navigation.m_Mode",
+              "type": "Enum",
+              "value": "3"
+            },
+            {
+              "name": "m_Navigation.m_WrapAround",
+              "type": "Boolean",
+              "value": "false"
+            },
+            {
+              "name": "m_Navigation.m_SelectOnUp",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Navigation.m_SelectOnDown",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Navigation.m_SelectOnLeft",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Navigation.m_SelectOnRight",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_Transition",
+              "type": "Enum",
+              "value": "1"
+            },
+            {
+              "name": "m_Colors.m_NormalColor",
+              "type": "Color",
+              "value": "1,1,1,1"
+            },
+            {
+              "name": "m_Colors.m_HighlightedColor",
+              "type": "Color",
+              "value": "0.9607843,0.9607843,0.9607843,1"
+            },
+            {
+              "name": "m_Colors.m_PressedColor",
+              "type": "Color",
+              "value": "0.7843137,0.7843137,0.7843137,1"
+            },
+            {
+              "name": "m_Colors.m_SelectedColor",
+              "type": "Color",
+              "value": "0.9607843,0.9607843,0.9607843,1"
+            },
+            {
+              "name": "m_Colors.m_DisabledColor",
+              "type": "Color",
+              "value": "0.7843137,0.7843137,0.7843137,0.5019608"
+            },
+            {
+              "name": "m_Colors.m_ColorMultiplier",
+              "type": "Float",
+              "value": "1"
+            },
+            {
+              "name": "m_Colors.m_FadeDuration",
+              "type": "Float",
+              "value": "0.100000001"
+            },
+            {
+              "name": "m_SpriteState.m_HighlightedSprite",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_SpriteState.m_PressedSprite",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_SpriteState.m_SelectedSprite",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_SpriteState.m_DisabledSprite",
+              "type": "ObjectReference",
+              "value": "null"
+            },
+            {
+              "name": "m_AnimationTriggers.m_NormalTrigger",
+              "type": "String",
+              "value": "Normal"
+            },
+            {
+              "name": "m_AnimationTriggers.m_HighlightedTrigger",
+              "type": "String",
+              "value": "Highlighted"
+            },
+            {
+              "name": "m_AnimationTriggers.m_PressedTrigger",
+              "type": "String",
+              "value": "Pressed"
+            },
+            {
+              "name": "m_AnimationTriggers.m_SelectedTrigger",
+              "type": "String",
+              "value": "Selected"
+            },
+            {
+              "name": "m_AnimationTriggers.m_DisabledTrigger",
+              "type": "String",
+              "value": "Disabled"
+            },
+            {
+              "name": "m_Interactable",
+              "type": "Boolean",
+              "value": "true"
+            },
+            {
+              "name": "m_TargetGraphic",
+              "type": "ObjectReference",
+              "value": "LobbyMenuButton_B_new"
+            },
+            {
+              "name": "m_OnClick.m_PersistentCalls.m_Calls.Array.size",
+              "type": "ArraySize",
+              "value": "0"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "Frame",
+          "active": true,
+          "tag": "Untagged",
+          "layer": 0,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0, 0],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [0, 0],
+            "sizeDelta": [0, 0],
+            "pivot": [0.5, 0.5]
+          },
+          "components": [
+            {
+              "typeName": "UnityEngine.CanvasRenderer",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_CullTransparentMesh",
+                  "type": "Boolean",
+                  "value": "true"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.Image",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Material",
+                  "type": "ObjectReference",
+                  "value": "null"
+                },
+                {
+                  "name": "m_Color",
+                  "type": "Color",
+                  "value": "0,0,0,1"
+                },
+                {
+                  "name": "m_RaycastTarget",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_RaycastPadding",
+                  "type": "Vector4",
+                  "value": "0,0,0,0"
+                },
+                {
+                  "name": "m_Maskable",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                  "type": "ArraySize",
+                  "value": "0"
+                },
+                {
+                  "name": "m_Sprite",
+                  "type": "ObjectReference",
+                  "value": "Circle_R30",
+                  "objectRefGuid": "e2659e3d44dae44eebdf7aa47cfea6be",
+                  "objectRefType": "UnityEngine.Sprite"
+                },
+                {
+                  "name": "m_Type",
+                  "type": "Enum",
+                  "value": "1"
+                },
+                {
+                  "name": "m_PreserveAspect",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_FillCenter",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillMethod",
+                  "type": "Enum",
+                  "value": "4"
+                },
+                {
+                  "name": "m_FillAmount",
+                  "type": "Float",
+                  "value": "1"
+                },
+                {
+                  "name": "m_FillClockwise",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillOrigin",
+                  "type": "Integer",
+                  "value": "0"
+                },
+                {
+                  "name": "m_UseSpriteMesh",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_PixelsPerUnitMultiplier",
+                  "type": "Float",
+                  "value": "1"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "Solid",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 0,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 5, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 5],
+                "sizeDelta": [-10, -10],
+                "pivot": [0.5, 0]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.CanvasRenderer",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_CullTransparentMesh",
+                      "type": "Boolean",
+                      "value": "true"
+                    }
+                  ]
+                },
+                {
+                  "typeName": "UnityEngine.UI.Image",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Material",
+                      "type": "ObjectReference",
+                      "value": "null"
+                    },
+                    {
+                      "name": "m_Color",
+                      "type": "Color",
+                      "value": "0.6886792,0.6886792,0.6886792,1"
+                    },
+                    {
+                      "name": "m_RaycastTarget",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_RaycastPadding",
+                      "type": "Vector4",
+                      "value": "0,0,0,0"
+                    },
+                    {
+                      "name": "m_Maskable",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                      "type": "ArraySize",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Sprite",
+                      "type": "ObjectReference",
+                      "value": "Circle_R25",
+                      "objectRefGuid": "577dc531af9b448c7911eed17a2c8a3b",
+                      "objectRefType": "UnityEngine.Sprite"
+                    },
+                    {
+                      "name": "m_Type",
+                      "type": "Enum",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_PreserveAspect",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_FillCenter",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillMethod",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_FillAmount",
+                      "type": "Float",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_FillClockwise",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillOrigin",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_UseSpriteMesh",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_PixelsPerUnitMultiplier",
+                      "type": "Float",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "InnerLine",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 0,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 2.5, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 2.5],
+                "sizeDelta": [-10, -15],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.CanvasRenderer",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_CullTransparentMesh",
+                      "type": "Boolean",
+                      "value": "true"
+                    }
+                  ]
+                },
+                {
+                  "typeName": "UnityEngine.UI.Image",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Material",
+                      "type": "ObjectReference",
+                      "value": "null"
+                    },
+                    {
+                      "name": "m_Color",
+                      "type": "Color",
+                      "value": "1,1,1,1"
+                    },
+                    {
+                      "name": "m_RaycastTarget",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_RaycastPadding",
+                      "type": "Vector4",
+                      "value": "0,0,0,0"
+                    },
+                    {
+                      "name": "m_Maskable",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                      "type": "ArraySize",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Sprite",
+                      "type": "ObjectReference",
+                      "value": "Circle_R25",
+                      "objectRefGuid": "577dc531af9b448c7911eed17a2c8a3b",
+                      "objectRefType": "UnityEngine.Sprite"
+                    },
+                    {
+                      "name": "m_Type",
+                      "type": "Enum",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_PreserveAspect",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_FillCenter",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillMethod",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_FillAmount",
+                      "type": "Float",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_FillClockwise",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillOrigin",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_UseSpriteMesh",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_PixelsPerUnitMultiplier",
+                      "type": "Float",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "InBox",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 0,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 2.5, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 2.5],
+                "sizeDelta": [-20, -25],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.CanvasRenderer",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_CullTransparentMesh",
+                      "type": "Boolean",
+                      "value": "true"
+                    }
+                  ]
+                },
+                {
+                  "typeName": "UnityEngine.UI.Image",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Material",
+                      "type": "ObjectReference",
+                      "value": "null"
+                    },
+                    {
+                      "name": "m_Color",
+                      "type": "Color",
+                      "value": "0.754717,0.754717,0.754717,1"
+                    },
+                    {
+                      "name": "m_RaycastTarget",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_RaycastPadding",
+                      "type": "Vector4",
+                      "value": "0,0,0,0"
+                    },
+                    {
+                      "name": "m_Maskable",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                      "type": "ArraySize",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Sprite",
+                      "type": "ObjectReference",
+                      "value": "Circle_R20",
+                      "objectRefGuid": "cb53f69196acf4b16b210396c9a3fb12",
+                      "objectRefType": "UnityEngine.Sprite"
+                    },
+                    {
+                      "name": "m_Type",
+                      "type": "Enum",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_PreserveAspect",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_FillCenter",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillMethod",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_FillAmount",
+                      "type": "Float",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_FillClockwise",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillOrigin",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_UseSpriteMesh",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_PixelsPerUnitMultiplier",
+                      "type": "Float",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Icon",
+          "active": true,
+          "tag": "Untagged",
+          "layer": 5,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 3, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0, 0],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [0, 3],
+            "sizeDelta": [-32, -32],
+            "pivot": [0.5, 0.5]
+          },
+          "components": [
+            {
+              "typeName": "UnityEngine.CanvasRenderer",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_CullTransparentMesh",
+                  "type": "Boolean",
+                  "value": "true"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.Image",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Material",
+                  "type": "ObjectReference",
+                  "value": "null"
+                },
+                {
+                  "name": "m_Color",
+                  "type": "Color",
+                  "value": "1,1,1,1"
+                },
+                {
+                  "name": "m_RaycastTarget",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_RaycastPadding",
+                  "type": "Vector4",
+                  "value": "0,0,0,0"
+                },
+                {
+                  "name": "m_Maskable",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                  "type": "ArraySize",
+                  "value": "0"
+                },
+                {
+                  "name": "m_Sprite",
+                  "type": "ObjectReference",
+                  "value": "Pictogram_Shop",
+                  "objectRefGuid": "5fe67a9f9c1034a7ba71d006cf27d7cf",
+                  "objectRefType": "UnityEngine.Sprite"
+                },
+                {
+                  "name": "m_Type",
+                  "type": "Enum",
+                  "value": "0"
+                },
+                {
+                  "name": "m_PreserveAspect",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillCenter",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillMethod",
+                  "type": "Enum",
+                  "value": "4"
+                },
+                {
+                  "name": "m_FillAmount",
+                  "type": "Float",
+                  "value": "1"
+                },
+                {
+                  "name": "m_FillClockwise",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillOrigin",
+                  "type": "Integer",
+                  "value": "0"
+                },
+                {
+                  "name": "m_UseSpriteMesh",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_PixelsPerUnitMultiplier",
+                  "type": "Float",
+                  "value": "1"
+                }
+              ]
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "Dimmer",
+          "active": false,
+          "tag": "Untagged",
+          "layer": 5,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0, 0],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [0, 0],
+            "sizeDelta": [0, 0],
+            "pivot": [0.5, 0.5]
+          },
+          "components": [
+            {
+              "typeName": "UnityEngine.CanvasRenderer",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_CullTransparentMesh",
+                  "type": "Boolean",
+                  "value": "true"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.Image",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Material",
+                  "type": "ObjectReference",
+                  "value": "null"
+                },
+                {
+                  "name": "m_Color",
+                  "type": "Color",
+                  "value": "0,0,0,0.6980392"
+                },
+                {
+                  "name": "m_RaycastTarget",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_RaycastPadding",
+                  "type": "Vector4",
+                  "value": "0,0,0,0"
+                },
+                {
+                  "name": "m_Maskable",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                  "type": "ArraySize",
+                  "value": "0"
+                },
+                {
+                  "name": "m_Sprite",
+                  "type": "ObjectReference",
+                  "value": "Circle_R30",
+                  "objectRefGuid": "e2659e3d44dae44eebdf7aa47cfea6be",
+                  "objectRefType": "UnityEngine.Sprite"
+                },
+                {
+                  "name": "m_Type",
+                  "type": "Enum",
+                  "value": "1"
+                },
+                {
+                  "name": "m_PreserveAspect",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_FillCenter",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillMethod",
+                  "type": "Enum",
+                  "value": "4"
+                },
+                {
+                  "name": "m_FillAmount",
+                  "type": "Float",
+                  "value": "1"
+                },
+                {
+                  "name": "m_FillClockwise",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_FillOrigin",
+                  "type": "Integer",
+                  "value": "0"
+                },
+                {
+                  "name": "m_UseSpriteMesh",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_PixelsPerUnitMultiplier",
+                  "type": "Float",
+                  "value": "1"
+                }
+              ]
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "RedDot",
+          "active": true,
+          "tag": "Untagged",
+          "layer": 5,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [6, 6, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [1, 1],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [6, 6],
+            "sizeDelta": [38, 38],
+            "pivot": [1, 1]
+          },
+          "components": [],
+          "children": [
+            {
+              "name": "RedDot",
+              "active": true,
+              "prefabGuid": "8db5ec5bf3c644276bfa1cff347369de",
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-19, -19, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0.5, 0.5],
+                "anchorMax": [0.5, 0.5],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [38, 38],
+                "pivot": [0.5, 0.5]
+              },
+              "modifications": [
+                {
+                  "targetFileId": 5723608357382774658,
+                  "propertyPath": "m_Name",
+                  "value": "RedDot"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_Pivot.x",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_Pivot.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchorMax.x",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchorMax.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchorMin.x",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchorMin.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_SizeDelta.x",
+                  "value": "38"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_SizeDelta.y",
+                  "value": "38"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalPosition.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalRotation.w",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalRotation.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalRotation.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalRotation.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchoredPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_AnchoredPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalEulerAnglesHint.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalEulerAnglesHint.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 6243248152997715797,
+                  "propertyPath": "m_LocalEulerAnglesHint.z",
+                  "value": "0"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+}
