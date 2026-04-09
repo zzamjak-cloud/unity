@@ -9,8 +9,8 @@ namespace CAT.Utility
 {
     /// <summary>
     /// JSON 기반 UI 프리뷰 윈도우.
-    /// 왼쪽에 카테고리별 JSON 리스트, 오른쪽에 720x1280 프리뷰를 표시한다.
-    /// JSON 항목 클릭 시 프리뷰 생성, "사용하기" 버튼으로 씬에 실제 생성.
+    /// 왼쪽에 카테고리별 JSON 리스트, 오른쪽에 프리뷰를 표시한다.
+    /// 복수 선택 지원: 체크박스, Ctrl+클릭 토글, Shift+클릭 범위 선택.
     /// </summary>
     public class UIPreviewWindow : EditorWindow
     {
@@ -30,12 +30,23 @@ namespace CAT.Utility
             public string fullPath;   // 절대 경로
         }
 
+        // ── 프리뷰 엔트리 (다중 선택) ─────────────────────────────────────
+        private class PreviewEntry
+        {
+            public string jsonPath;
+            public string jsonName;
+            public GameObject instance;
+            public Canvas canvas;
+        }
+
         // ── 프리뷰 상태 ────────────────────────────────────────────────────
         private PreviewRenderUtility _previewUtility;
-        private Canvas _previewCanvas;
-        private GameObject _previewInstance;
-        private string _selectedJsonPath;
-        private string _selectedJsonName;
+        private readonly List<PreviewEntry> _entries = new List<PreviewEntry>();
+
+        // ── 선택 상태 ─────────────────────────────────────────────────────
+        private readonly HashSet<string> _selectedPaths = new HashSet<string>();
+        private JsonEntry _lastClickedEntry;
+        private bool _hasLastClicked;
 
         // ── 카테고리 리스트 ────────────────────────────────────────────────
         private CategoryNode _rootCategory;
@@ -52,7 +63,12 @@ namespace CAT.Utility
         private const float BottomBarHeight = 35f;
         private const float ListItemHeight = 22f;
         private const float CategoryItemHeight = 24f;
-        private const float PreviewAspect = 720f / 1280f; // 9:16
+
+        // 단일 캔버스 크기: 720x1280 → 0.01 스케일 → 7.2 x 12.8 월드 유닛
+        private const float CanvasWorldWidth = 7.2f;
+        private const float CanvasWorldHeight = 12.8f;
+        private const float CellPadding = 1.2f;
+        private const int MaxGridColumns = 5;
 
         // ── 스타일 ────────────────────────────────────────────────────────
         private GUIStyle _listButtonStyle;
@@ -79,11 +95,7 @@ namespace CAT.Utility
 
         private void OnDisable()
         {
-            CleanupPreview();
-
-            if (_previewCanvas != null)
-                DestroyImmediate(_previewCanvas.gameObject);
-            _previewCanvas = null;
+            CleanupAllEntries();
 
             if (_previewUtility != null)
                 _previewUtility.Cleanup();
@@ -98,22 +110,6 @@ namespace CAT.Utility
             _previewUtility.camera.farClipPlane = 10000f;
             _previewUtility.camera.backgroundColor = _bgColor;
             _previewUtility.camera.clearFlags = CameraClearFlags.SolidColor;
-
-            // 프리뷰용 WorldSpace Canvas 생성
-            var canvasGO = new GameObject("UIPreviewCanvas") { hideFlags = HideFlags.HideAndDontSave };
-            _previewCanvas = canvasGO.AddComponent<Canvas>();
-            _previewCanvas.renderMode = RenderMode.WorldSpace;
-            _previewCanvas.worldCamera = _previewUtility.camera;
-
-            var scaler = canvasGO.AddComponent<CanvasScaler>();
-            scaler.dynamicPixelsPerUnit = 1f;
-
-            var rt = canvasGO.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(720, 1280);
-            // 0.01 스케일 → 7.2 x 12.8 월드 유닛
-            canvasGO.transform.localScale = Vector3.one * 0.01f;
-
-            _previewUtility.AddSingleGO(canvasGO);
         }
 
         // ── 카테고리 트리 구축 ────────────────────────────────────────────
@@ -178,34 +174,88 @@ namespace CAT.Utility
             }
         }
 
-        // ── 프리뷰 생성/삭제 ──────────────────────────────────────────────
-        private void SelectJsonItem(string absolutePath, string displayName)
+        // ── 프리뷰 엔트리 관리 ────────────────────────────────────────────
+
+        /// <summary>
+        /// 선택 상태에 따라 프리뷰 엔트리를 재구축한다.
+        /// </summary>
+        private void RebuildPreviewEntries()
         {
-            // 동일 항목 재선택 방지
-            if (_selectedJsonPath == absolutePath) return;
+            CleanupAllEntries();
+            if (_previewUtility == null || _selectedPaths.Count == 0) return;
 
-            CleanupPreview();
-            _selectedJsonPath = absolutePath;
-            _selectedJsonName = displayName;
-
-            if (_previewCanvas == null) return;
-
-            _previewInstance = UIDesignMaker.CreatePreviewFromJson(absolutePath, _previewCanvas.transform);
-
-            if (_previewInstance != null)
+            // 선택 순서 유지 (allJsonEntries 순서 기준)
+            var ordered = new List<JsonEntry>();
+            for (int i = 0; i < _allJsonEntries.Count; i++)
             {
-                // TMP 텍스트 강제 갱신
-                ForceTMPUpdate(_previewInstance);
+                if (_selectedPaths.Contains(_allJsonEntries[i].fullPath))
+                    ordered.Add(_allJsonEntries[i]);
+            }
+
+            // 그리드 배치 계산
+            int count = ordered.Count;
+            int cols = Mathf.Min(count, MaxGridColumns);
+            int rows = Mathf.CeilToInt((float)count / cols);
+            float stepX = CanvasWorldWidth * CellPadding;
+            float stepY = CanvasWorldHeight * CellPadding;
+
+            // 중심 오프셋 (전체 그리드를 원점 중심으로 배치)
+            float offsetX = (cols - 1) * stepX * 0.5f;
+            float offsetY = (rows - 1) * stepY * 0.5f;
+
+            for (int i = 0; i < count; i++)
+            {
+                int col = i % cols;
+                int row = i / cols;
+
+                // 캔버스 생성
+                var canvasGO = new GameObject($"PreviewCanvas_{ordered[i].name}")
+                    { hideFlags = HideFlags.HideAndDontSave };
+                var canvas = canvasGO.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.WorldSpace;
+                canvas.worldCamera = _previewUtility.camera;
+
+                var scaler = canvasGO.AddComponent<CanvasScaler>();
+                scaler.dynamicPixelsPerUnit = 1f;
+
+                var rt = canvasGO.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(720, 1280);
+                canvasGO.transform.localScale = Vector3.one * 0.01f;
+
+                // 그리드 위치 설정
+                float x = col * stepX - offsetX;
+                float y = -(row * stepY - offsetY);
+                canvasGO.transform.position = new Vector3(x, y, 0f);
+
+                _previewUtility.AddSingleGO(canvasGO);
+
+                // JSON에서 프리뷰 오브젝트 생성
+                var instance = UIDesignMaker.CreatePreviewFromJson(ordered[i].fullPath, canvas.transform);
+                if (instance != null)
+                    ForceTMPUpdate(instance);
+
+                _entries.Add(new PreviewEntry
+                {
+                    jsonPath = ordered[i].fullPath,
+                    jsonName = ordered[i].name,
+                    instance = instance,
+                    canvas = canvas
+                });
             }
 
             Repaint();
         }
 
-        private void CleanupPreview()
+        private void CleanupAllEntries()
         {
-            if (_previewInstance != null)
-                DestroyImmediate(_previewInstance);
-            _previewInstance = null;
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                if (_entries[i].instance != null)
+                    DestroyImmediate(_entries[i].instance);
+                if (_entries[i].canvas != null)
+                    DestroyImmediate(_entries[i].canvas.gameObject);
+            }
+            _entries.Clear();
         }
 
         /// <summary>
@@ -300,51 +350,113 @@ namespace CAT.Utility
         // ── 프리뷰 렌더링 ────────────────────────────────────────────────
         private void DrawPreview(Rect areaRect)
         {
-            if (_previewUtility == null || _previewInstance == null)
+            if (_previewUtility == null || _entries.Count == 0)
             {
                 GUI.Label(areaRect, "JSON 항목을 선택하면\n프리뷰가 표시됩니다.", _centeredStyle);
                 return;
             }
 
-            // 9:16 비율 유지
-            Rect previewRect = CalculateAspectRect(areaRect, PreviewAspect);
-
-            // 비율 영역 외부를 어둡게
             EditorGUI.DrawRect(areaRect, new Color(0.1f, 0.1f, 0.1f, 1f));
 
-            _previewUtility.BeginPreview(previewRect, GUIStyle.none);
+            _previewUtility.BeginPreview(areaRect, GUIStyle.none);
             _previewUtility.camera.backgroundColor = _bgColor;
             _previewUtility.camera.clearFlags = CameraClearFlags.SolidColor;
             _previewUtility.camera.transform.position = new Vector3(0f, 0f, -1000f);
-            _previewUtility.camera.orthographicSize = 6.4f; // 1280 * 0.01 / 2
-            _previewUtility.camera.aspect = previewRect.width / Mathf.Max(previewRect.height, 1f);
+
+            // 카메라 크기 계산: 그리드 전체가 보이도록 조정
+            int count = _entries.Count;
+            int cols = Mathf.Min(count, MaxGridColumns);
+            int rows = Mathf.CeilToInt((float)count / cols);
+            float totalWidth = cols * CanvasWorldWidth * CellPadding;
+            float totalHeight = rows * CanvasWorldHeight * CellPadding;
+            float areaAspect = areaRect.width / Mathf.Max(areaRect.height, 1f);
+            float gridAspect = totalWidth / Mathf.Max(totalHeight, 1f);
+
+            if (areaAspect > gridAspect)
+                _previewUtility.camera.orthographicSize = totalHeight * 0.5f + 0.5f;
+            else
+                _previewUtility.camera.orthographicSize = (totalWidth / areaAspect) * 0.5f + 0.5f;
+
+            _previewUtility.camera.aspect = areaAspect;
 
             Canvas.ForceUpdateCanvases();
 
             _previewUtility.camera.Render();
-            _previewUtility.EndAndDrawPreview(previewRect);
+            _previewUtility.EndAndDrawPreview(areaRect);
+
+            // 이름 라벨 표시
+            DrawEntryLabels(areaRect);
         }
 
-        private static Rect CalculateAspectRect(Rect available, float targetAspect)
+        /// <summary>
+        /// 프리뷰 영역 위에 각 엔트리의 이름 라벨을 표시한다.
+        /// 라벨 클릭 시 해당 JSON을 씬에 생성한다.
+        /// </summary>
+        private void DrawEntryLabels(Rect areaRect)
         {
-            float availAspect = available.width / Mathf.Max(available.height, 1f);
-            if (availAspect > targetAspect)
+            if (_entries.Count == 0) return;
+
+            var cam = _previewUtility.camera;
+            var labelStyle = new GUIStyle(EditorStyles.boldLabel)
             {
-                // 좌우 여백
-                float w = available.height * targetAspect;
-                return new Rect(
-                    available.x + (available.width - w) * 0.5f,
-                    available.y, w, available.height);
+                alignment = TextAnchor.UpperCenter,
+                normal = { textColor = new Color(0.4f, 0.85f, 1f, 0.95f) },
+                fontSize = 11
+            };
+            var hoverStyle = new GUIStyle(labelStyle)
+            {
+                normal = { textColor = Color.white }
+            };
+
+            var ev = Event.current;
+
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                if (_entries[i].canvas == null) continue;
+
+                // 캔버스 하단 월드 좌표
+                var worldPos = _entries[i].canvas.transform.position
+                    + new Vector3(0f, -(CanvasWorldHeight * 0.5f + 0.3f), 0f);
+
+                // 월드 → 뷰포트 → GUI 좌표 변환
+                var viewPos = cam.WorldToViewportPoint(worldPos);
+                float guiX = areaRect.x + viewPos.x * areaRect.width;
+                float guiY = areaRect.y + (1f - viewPos.y) * areaRect.height;
+
+                var labelRect = new Rect(guiX - 100f, guiY, 200f, 22f);
+                bool isHover = labelRect.Contains(ev.mousePosition);
+
+                // 검은색 알파 배경 프레임
+                EditorGUI.DrawRect(labelRect, new Color(0f, 0f, 0f, isHover ? 0.75f : 0.55f));
+                GUI.Label(labelRect, _entries[i].jsonName, isHover ? hoverStyle : labelStyle);
+                EditorGUIUtility.AddCursorRect(labelRect, MouseCursor.Link);
+
+                // 클릭 시 씬에 생성
+                if (ev.type == EventType.MouseDown && isHover)
+                {
+                    CreateInScene(_entries[i].jsonPath);
+                    ev.Use();
+                }
             }
+        }
+
+        /// <summary>
+        /// 단일 JSON을 씬에 생성한다.
+        /// </summary>
+        private static void CreateInScene(string jsonPath)
+        {
+            Transform parent = null;
+            if (Selection.activeGameObject != null)
+            {
+                var canvas = Selection.activeGameObject.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                    parent = Selection.activeGameObject.transform;
+            }
+
+            if (parent != null)
+                UIDesignMaker.CreateFromJsonAbsolute(jsonPath, parent);
             else
-            {
-                // 상하 여백
-                float h = available.width / targetAspect;
-                return new Rect(
-                    available.x,
-                    available.y + (available.height - h) * 0.5f,
-                    available.width, h);
-            }
+                UIDesignMaker.CreateFromJsonAbsolute(jsonPath);
         }
 
         // ── 카테고리 리스트 패널 ──────────────────────────────────────────
@@ -356,6 +468,12 @@ namespace CAT.Utility
             // 헤더
             GUILayout.BeginHorizontal();
             GUILayout.Label("UI Design Maker", EditorStyles.boldLabel);
+            if (_selectedPaths.Count > 0)
+            {
+                var countStyle = new GUIStyle(EditorStyles.miniLabel)
+                    { normal = { textColor = new Color(0.4f, 0.8f, 1f) } };
+                GUILayout.Label($"({_selectedPaths.Count})", countStyle);
+            }
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("↻", EditorStyles.miniButton, GUILayout.Width(22)))
             {
@@ -369,6 +487,17 @@ namespace CAT.Utility
             EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1), new Color(0.3f, 0.3f, 0.3f));
             GUILayout.Space(2);
 
+            // 선택 해제 버튼
+            if (_selectedPaths.Count > 0)
+            {
+                if (GUILayout.Button("선택 해제", EditorStyles.miniButton))
+                {
+                    _selectedPaths.Clear();
+                    RebuildPreviewEntries();
+                }
+                GUILayout.Space(2);
+            }
+
             // 스크롤 리스트
             _listScrollPos = GUILayout.BeginScrollView(_listScrollPos, GUILayout.ExpandHeight(true));
 
@@ -378,6 +507,10 @@ namespace CAT.Utility
                 DrawCategoryNavigation();
 
             GUILayout.EndScrollView();
+
+            // 안내 텍스트
+            GUILayout.Label("체크박스/Ctrl/Shift 복수선택", EditorStyles.centeredGreyMiniLabel);
+
             GUILayout.EndArea();
         }
 
@@ -448,20 +581,70 @@ namespace CAT.Utility
         private void DrawJsonItem(JsonEntry entry)
         {
             Rect rowRect = EditorGUILayout.GetControlRect(false, ListItemHeight);
-            bool isSelected = _selectedJsonPath == entry.fullPath;
+            bool isSelected = _selectedPaths.Contains(entry.fullPath);
 
+            // 배경
             if (isSelected)
                 EditorGUI.DrawRect(rowRect, new Color(0.17f, 0.36f, 0.53f, 0.9f));
             else if (rowRect.Contains(Event.current.mousePosition))
                 EditorGUI.DrawRect(rowRect, new Color(0.3f, 0.3f, 0.3f, 0.3f));
 
-            GUI.Label(rowRect, entry.name, isSelected ? _selectedStyle : _listButtonStyle);
-            EditorGUIUtility.AddCursorRect(rowRect, MouseCursor.Link);
-
-            if (Event.current.type == EventType.MouseDown && rowRect.Contains(Event.current.mousePosition))
+            // 체크박스
+            var checkRect = new Rect(rowRect.x + 2, rowRect.y + 2, 16, rowRect.height - 4);
+            EditorGUI.BeginChangeCheck();
+            bool newChecked = GUI.Toggle(checkRect, isSelected, GUIContent.none);
+            if (EditorGUI.EndChangeCheck())
             {
-                SelectJsonItem(entry.fullPath, entry.name);
-                Event.current.Use();
+                if (newChecked) _selectedPaths.Add(entry.fullPath);
+                else _selectedPaths.Remove(entry.fullPath);
+                _lastClickedEntry = entry;
+                _hasLastClicked = true;
+                RebuildPreviewEntries();
+            }
+
+            // 이름 라벨 (체크박스 오른쪽)
+            var labelRect = new Rect(rowRect.x + 20, rowRect.y, rowRect.width - 20, rowRect.height);
+            GUI.Label(labelRect, entry.name, isSelected ? _selectedStyle : _listButtonStyle);
+            EditorGUIUtility.AddCursorRect(labelRect, MouseCursor.Link);
+
+            // 클릭 처리
+            if (Event.current.type == EventType.MouseDown && labelRect.Contains(Event.current.mousePosition))
+            {
+                var ev = Event.current;
+
+                if (ev.control)
+                {
+                    // Ctrl+클릭: 토글
+                    if (_selectedPaths.Contains(entry.fullPath)) _selectedPaths.Remove(entry.fullPath);
+                    else _selectedPaths.Add(entry.fullPath);
+                    _lastClickedEntry = entry;
+                    _hasLastClicked = true;
+                    RebuildPreviewEntries();
+                }
+                else if (ev.shift && _hasLastClicked)
+                {
+                    // Shift+클릭: 범위 선택
+                    int from = _allJsonEntries.FindIndex(e => e.fullPath == _lastClickedEntry.fullPath);
+                    int to = _allJsonEntries.FindIndex(e => e.fullPath == entry.fullPath);
+                    if (from >= 0 && to >= 0)
+                    {
+                        int lo = Mathf.Min(from, to), hi = Mathf.Max(from, to);
+                        for (int si = lo; si <= hi; si++)
+                            _selectedPaths.Add(_allJsonEntries[si].fullPath);
+                    }
+                    RebuildPreviewEntries();
+                }
+                else
+                {
+                    // 단일 클릭: 기존 해제 후 선택
+                    _selectedPaths.Clear();
+                    _selectedPaths.Add(entry.fullPath);
+                    _lastClickedEntry = entry;
+                    _hasLastClicked = true;
+                    RebuildPreviewEntries();
+                }
+
+                ev.Use();
             }
         }
 
@@ -480,9 +663,17 @@ namespace CAT.Utility
             GUILayout.BeginHorizontal();
 
             // 선택 정보
-            string info = _selectedJsonName != null
-                ? $"선택: {_selectedJsonName}"
-                : "JSON 항목을 선택하세요";
+            string info;
+            if (_selectedPaths.Count == 0)
+                info = "JSON 항목을 선택하세요";
+            else if (_selectedPaths.Count == 1)
+            {
+                string name = _entries.Count > 0 ? _entries[0].jsonName : "";
+                info = $"선택: {name}";
+            }
+            else
+                info = $"선택: {_selectedPaths.Count}개 — 이름 라벨 클릭으로 개별 생성";
+
             GUILayout.Label(info, EditorStyles.miniLabel);
 
             GUILayout.FlexibleSpace();
@@ -490,36 +681,8 @@ namespace CAT.Utility
             // 배경색
             _bgColor = EditorGUILayout.ColorField(_bgColor, GUILayout.Width(40));
 
-            // 사용하기 버튼
-            EditorGUI.BeginDisabledGroup(_selectedJsonPath == null);
-            if (GUILayout.Button("사용하기", GUILayout.Width(80), GUILayout.Height(24)))
-            {
-                OnUseButtonClicked();
-            }
-            EditorGUI.EndDisabledGroup();
-
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
-        }
-
-        private void OnUseButtonClicked()
-        {
-            if (_selectedJsonPath == null) return;
-
-            // 현재 하이어라키 선택 오브젝트를 부모로 사용
-            Transform parent = null;
-            if (Selection.activeGameObject != null)
-            {
-                var canvas = Selection.activeGameObject.GetComponentInParent<Canvas>();
-                if (canvas != null)
-                    parent = Selection.activeGameObject.transform;
-            }
-
-            // 실제 씬에 생성
-            if (parent != null)
-                UIDesignMaker.CreateFromJsonAbsolute(_selectedJsonPath, parent);
-            else
-                UIDesignMaker.CreateFromJsonAbsolute(_selectedJsonPath);
         }
 
         // ── 리사이저 ─────────────────────────────────────────────────────

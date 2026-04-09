@@ -382,52 +382,109 @@ namespace CAT.Utility
 
         static GameObject CreatePrefabInstance(GameObjectNode node, Transform parent, bool registerUndo)
         {
-            string assetPath = AssetDatabase.GUIDToAssetPath(node.prefabGuid);
-            if (string.IsNullOrEmpty(assetPath))
+            string assetPath = null;
+            GameObject prefab = null;
+
+            // Tier 1: 레지스트리 Override 조회 (사용자 교체 프리팹 최우선)
+            var registry = UIMakerPrefabRegistry.GetInstance();
+            if (registry != null)
             {
-                Debug.LogWarning($"[UIDesignMaker] 프리팹을 찾을 수 없습니다 (GUID: {node.prefabGuid}, 이름: {node.name})");
-                var fallback = new GameObject(node.name);
-                if (registerUndo)
-                    Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
-                if (parent != null)
-                    GameObjectUtility.SetParentAndAlign(fallback, parent.gameObject);
-                return fallback;
+                prefab = registry.ResolveOverride(node.prefabGuid, node.name);
+                if (prefab != null)
+                    assetPath = AssetDatabase.GetAssetPath(prefab);
             }
 
-            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            // Tier 2: GUID 직접 조회 (기존 동작)
             if (prefab == null)
             {
-                Debug.LogWarning($"[UIDesignMaker] 프리팹 로드 실패: {assetPath}");
-                var fallback = new GameObject(node.name);
-                if (registerUndo)
-                    Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
-                if (parent != null)
-                    GameObjectUtility.SetParentAndAlign(fallback, parent.gameObject);
-                return fallback;
+                assetPath = AssetDatabase.GUIDToAssetPath(node.prefabGuid);
+                prefab = !string.IsNullOrEmpty(assetPath)
+                    ? AssetDatabase.LoadAssetAtPath<GameObject>(assetPath)
+                    : null;
             }
 
-            // PrefabUtility로 인스턴스화 — 프리팹 연결 유지
-            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            if (registerUndo)
-                Undo.RegisterCreatedObjectUndo(instance, $"프리팹 생성: {node.name}");
-            instance.name = node.name;
-
-            if (parent != null)
-                GameObjectUtility.SetParentAndAlign(instance, parent.gameObject);
-
-            // modifications 데이터가 있으면 PropertyModification 기반 복원 (Transform 적용 전에 실행)
-            // SetPropertyModifications()는 인스턴스를 "프리팹 기본값 + modifications"로 재설정하므로,
-            // ApplyTransform보다 먼저 호출해야 앵커 등 RectTransform 값이 유실되지 않는다.
-            if (node.modifications != null && node.modifications.Count > 0)
+            // Tier 3: 레지스트리 이름 매칭 (GUID 변경 시 폴백)
+            if (prefab == null && registry != null)
             {
-                ApplyModifications(instance, assetPath, node.modifications);
+                prefab = registry.ResolveByName(node.name);
+                if (prefab != null)
+                    assetPath = AssetDatabase.GetAssetPath(prefab);
             }
 
-            // 루트 Transform은 직접 적용 — modifications 이후에 적용하여 앵커/포지션 값을 확정한다.
-            ApplyTransform(instance.transform, node.transform);
-            instance.SetActive(node.active);
+            // Tier 1~3 성공: PrefabUtility로 인스턴스화 (프리팹 연결 유지)
+            if (prefab != null)
+            {
+                GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                if (registerUndo)
+                    Undo.RegisterCreatedObjectUndo(instance, $"프리팹 생성: {node.name}");
+                instance.name = node.name;
 
-            return instance;
+                if (parent != null)
+                    GameObjectUtility.SetParentAndAlign(instance, parent.gameObject);
+
+                // modifications 데이터가 있으면 PropertyModification 기반 복원 (Transform 적용 전에 실행)
+                // SetPropertyModifications()는 인스턴스를 "프리팹 기본값 + modifications"로 재설정하므로,
+                // ApplyTransform보다 먼저 호출해야 앵커 등 RectTransform 값이 유실되지 않는다.
+                if (node.modifications != null && node.modifications.Count > 0)
+                {
+                    ApplyModifications(instance, assetPath, node.modifications);
+                }
+
+                // 루트 Transform은 직접 적용 — modifications 이후에 적용하여 앵커/포지션 값을 확정한다.
+                ApplyTransform(instance.transform, node.transform);
+                instance.SetActive(node.active);
+
+                return instance;
+            }
+
+            // Tier 4: JSON 스냅샷 복원
+            var restored = TryRestoreFromSnapshot(node.name, parent, registerUndo);
+            if (restored != null)
+            {
+                ApplyTransform(restored.transform, node.transform);
+                restored.SetActive(node.active);
+                Debug.LogWarning($"[UIDesignMaker] 스냅샷에서 복원됨: {node.name} (GUID: {node.prefabGuid})");
+                return restored;
+            }
+
+            // Tier 5: 최종 폴백 — 빈 GameObject + RectTransform
+            Debug.LogError($"[UIDesignMaker] 프리팹 복원 완전 실패: {node.name} (GUID: {node.prefabGuid})");
+            var fallback = new GameObject(node.name);
+            if (node.transform != null && node.transform.isRectTransform)
+                fallback.AddComponent<RectTransform>();
+            if (registerUndo)
+                Undo.RegisterCreatedObjectUndo(fallback, $"생성: {node.name}");
+            if (parent != null)
+                GameObjectUtility.SetParentAndAlign(fallback, parent.gameObject);
+            return fallback;
+        }
+
+        /// <summary>
+        /// JSON 스냅샷에서 프리팹 구조를 복원한다 (Tier 4).
+        /// 프리팹 연결 없는 일반 GameObject로 생성된다.
+        /// </summary>
+        static GameObject TryRestoreFromSnapshot(string logicalName, Transform parent, bool registerUndo)
+        {
+            string snapshotPath = UIMakerPrefabRegistry.GetSnapshotPath(logicalName);
+            if (!File.Exists(snapshotPath)) return null;
+
+            try
+            {
+                string json = File.ReadAllText(snapshotPath, System.Text.Encoding.UTF8);
+                PrefabJsonRoot root = SimpleJsonParser.Parse(json);
+                if (root?.root == null) return null;
+
+                // 스냅샷의 루트 노드에서 prefabGuid를 제거하여 일반 오브젝트로 생성
+                root.root.prefabGuid = null;
+
+                var go = CreateGameObjectFromNode(root.root, parent, registerUndo);
+                return go;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[UIDesignMaker] 스냅샷 복원 실패 ({logicalName}): {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>
