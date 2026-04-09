@@ -46,11 +46,6 @@ namespace CAT.BookFlip
         // Direct 모드
         [SerializeField] private Sprite _sprite;
         [SerializeField] private GameObject _prefab;
-        /// <summary>
-        /// 씬에 미리 둔 페이지 UI 템플릿(비활성 권장). 설정 시 복제 원본으로 사용하며 Project 프리팹 참조는 폴백으로만 쓴다.
-        /// 런타임에는 SetScenePageTemplate으로 지정 가능.
-        /// </summary>
-        [SerializeField] private GameObject _scenePageTemplate;
         [SerializeField] private GameObject _gameObject;
 
         // ResourcesPath / CustomAsync 모드 (Resources 폴더 기준 경로 또는 Addressable 키)
@@ -82,8 +77,6 @@ namespace CAT.BookFlip
         public SourceMode Source => _sourceMode;
         public Sprite Sprite => _sprite;
         public GameObject Prefab => _prefab;
-        /// <summary>씬에 둔 복제 원본(직렬화 또는 SetScenePageTemplate으로 설정).</summary>
-        public GameObject ScenePageTemplate => _scenePageTemplate;
         public GameObject SourceGameObject => _gameObject;
         public string ResourcePath => _resourcePath;
         public bool PersistInstance => _persistInstance;
@@ -112,14 +105,6 @@ namespace CAT.BookFlip
         /// </summary>
         public static System.Action<string, System.Type, System.Action<Object>> AsyncLoader { get; set; }
 
-        /// <summary>
-        /// 런타임 풀/초기화에서 씬에 올려 둔 인스턴스를 복제 원본으로 지정합니다. Project 프리팹 필드 없이 사용할 때 호출합니다.
-        /// </summary>
-        public void SetScenePageTemplate(GameObject sceneTemplate)
-        {
-            _scenePageTemplate = sceneTemplate;
-        }
-
         // ─────────────────────────────────────────────
         // 공개 메서드 — 인스턴스 생성 / 관리
         // ─────────────────────────────────────────────
@@ -137,6 +122,7 @@ namespace CAT.BookFlip
                 {
                     _runtimeInstance.transform.SetParent(parent, false);
                     ApplyFullStretchRT(_runtimeInstance.GetComponent<RectTransform>());
+                    _runtimeInstance.transform.SetAsFirstSibling(); // 그림자 스프라이트보다 아래 뎁스
                     _runtimeInstance.SetActive(true);
                 }
                 return _runtimeImage;
@@ -161,7 +147,10 @@ namespace CAT.BookFlip
             }
 
             if (_runtimeInstance != null)
+            {
                 CacheComponents();
+                _runtimeInstance.transform.SetAsFirstSibling(); // 그림자 스프라이트보다 아래 뎁스
+            }
 
             return _runtimeImage;
         }
@@ -393,7 +382,7 @@ namespace CAT.BookFlip
             switch (_type)
             {
                 case PageType.Sprite:     return _sprite != null;
-                case PageType.Prefab:     return _scenePageTemplate != null || _prefab != null;
+                case PageType.Prefab:     return _prefab != null;
                 case PageType.GameObject: return _gameObject != null;
                 default:                  return false;
             }
@@ -408,9 +397,7 @@ namespace CAT.BookFlip
             switch (_type)
             {
                 case PageType.Sprite:     return _sprite     != null ? _sprite.name     : "null";
-                case PageType.Prefab:
-                    if (_scenePageTemplate != null) return _scenePageTemplate.name;
-                    return _prefab != null ? _prefab.name : "null";
+                case PageType.Prefab:     return _prefab != null ? _prefab.name : "null";
                 case PageType.GameObject: return _gameObject != null ? _gameObject.name : "null";
                 default:                  return "unknown";
             }
@@ -437,15 +424,13 @@ namespace CAT.BookFlip
 
         private GameObject CreatePrefabInstance(Transform parent, string name)
         {
-            // 씬 템플릿 우선(사용자 배치 또는 런타임 SetScenePageTemplate), 없으면 Project 프리팹 에셋
-            GameObject cloneSource = _scenePageTemplate != null ? _scenePageTemplate : _prefab;
-            if (cloneSource == null)
+            if (_prefab == null)
             {
-                Debug.LogError($"[BookFlipPage] 씬 템플릿 또는 Prefab이 없습니다: {name}");
+                Debug.LogError($"[BookFlipPage] Prefab이 null입니다: {name}");
                 return null;
             }
 
-            GameObject instance = Object.Instantiate(cloneSource, parent);
+            GameObject instance = Object.Instantiate(_prefab, parent);
             instance.name = name;
             instance.hideFlags = HideFlags.DontSave;
             ApplyFullStretchRT(instance.GetComponent<RectTransform>());
@@ -487,8 +472,8 @@ namespace CAT.BookFlip
             _isInitialized = true;
         }
 
-        /// <summary>BookFlip 웜풀 및 페이지 인스턴스에 공통으로 사용하는 전체 스트레치.</summary>
-        public static void ApplyFullStretchRT(RectTransform rt)
+        /// <summary>RectTransform을 부모에 맞춰 전체 스트레치 적용.</summary>
+        private static void ApplyFullStretchRT(RectTransform rt)
         {
             if (rt == null) return;
             rt.anchorMin = Vector2.zero;

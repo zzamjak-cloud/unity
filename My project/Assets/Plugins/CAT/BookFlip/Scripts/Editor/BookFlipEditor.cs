@@ -126,7 +126,6 @@ namespace CAT.BookFlip.Editor
                 el.FindPropertyRelative("_sourceMode").enumValueIndex  = 0; // Direct
                 el.FindPropertyRelative("_sprite").objectReferenceValue      = null;
                 el.FindPropertyRelative("_prefab").objectReferenceValue      = null;
-                el.FindPropertyRelative("_scenePageTemplate").objectReferenceValue = null;
                 el.FindPropertyRelative("_gameObject").objectReferenceValue  = null;
                 el.FindPropertyRelative("_resourcePath").stringValue         = string.Empty;
                 el.FindPropertyRelative("_persistInstance").boolValue        = false;
@@ -170,10 +169,7 @@ namespace CAT.BookFlip.Editor
                         EditorGUI.PropertyField(fieldRect, el.FindPropertyRelative("_sprite"), new GUIContent("Sprite"));
                         break;
                     case BookFlipPage.PageType.Prefab:
-                        EditorGUI.PropertyField(fieldRect, el.FindPropertyRelative("_scenePageTemplate"), new GUIContent("씬 페이지 템플릿 (권장)"));
-                        y += LINE_STEP;
-                        Rect prefabRect = new Rect(rect.x + 15, y, rect.width - 15, LINE_H);
-                        EditorGUI.PropertyField(prefabRect, el.FindPropertyRelative("_prefab"), new GUIContent("Project 프리팹 (폴백)"));
+                        EditorGUI.PropertyField(fieldRect, el.FindPropertyRelative("_prefab"), new GUIContent("Prefab"));
                         break;
                     case BookFlipPage.PageType.GameObject:
                         EditorGUI.PropertyField(fieldRect, el.FindPropertyRelative("_gameObject"), new GUIContent("GameObject"));
@@ -212,10 +208,6 @@ namespace CAT.BookFlip.Editor
 
             // Type + SourceMode + 소스필드 = 3행 (기본)
             int lines = 3;
-
-            // Prefab + Direct: 씬 템플릿 + Project 프리팹 폴백 = 한 줄 추가
-            if (pageType == BookFlipPage.PageType.Prefab && sourceMode == BookFlipPage.SourceMode.Direct)
-                lines++;
 
             // Prefab / GameObject 타입은 PersistInstance 행 추가
             if (pageType == BookFlipPage.PageType.Prefab || pageType == BookFlipPage.PageType.GameObject)

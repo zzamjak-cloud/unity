@@ -77,10 +77,6 @@ namespace CAT.BookFlip
         private RectTransform _rightRT;
         private RectTransform _rightNextRT;
 
-        // 슬롯 CanvasGroup — 전환 시 alpha=0으로 잔상 차단
-        private CanvasGroup _leftNextCG;
-        private CanvasGroup _rightNextCG;
-
         // ─────────────────────────────────────────────
         // 페이지 인스턴스 & 슬롯 추적
         // ─────────────────────────────────────────────
@@ -214,10 +210,6 @@ namespace CAT.BookFlip
             if (_leftNext      != null) _leftNextRT      = _leftNext.GetComponent<RectTransform>();
             if (_right         != null) _rightRT         = _right.GetComponent<RectTransform>();
             if (_rightNext     != null) _rightNextRT     = _rightNext.GetComponent<RectTransform>();
-
-            // 슬롯 CanvasGroup 캐싱 (없으면 추가)
-            _leftNextCG  = EnsureCanvasGroup(_leftNext);
-            _rightNextCG = EnsureCanvasGroup(_rightNext);
         }
 
         private void InitializePages()
@@ -574,10 +566,6 @@ namespace CAT.BookFlip
                 OnFlipStart?.Invoke();
                 DisablePageInteraction();
 
-                // 애니메이션 클리핑 요소 활성화 (Flip/TweenBack 완료 시 비활성화됨)
-                _clippingPlane.gameObject.SetActive(true);
-                _nextPageClip.gameObject.SetActive(true);
-
                 // _rightNext(currentPage)와 _left(currentPage)의 인덱스 충돌 해소
                 // _rightNext를 먼저 정리해야 같은 페이지를 _left에 새 인스턴스로 생성할 수 있음
                 CleanupDisplaySlot(ref _rightNextPageInstance, ref _rightNextDisplayIndex);
@@ -590,20 +578,20 @@ namespace CAT.BookFlip
                 _left.transform.position     = _rightNext.transform.position;
                 _left.transform.eulerAngles  = Vector3.zero;
                 SetupPageDisplay(_left, _leftRT, _currentPage, ref _leftPageInstance, ref _leftDisplayIndex);
+                _left.enabled = true; // Mask용 Image는 항상 활성 유지
                 _left.transform.SetAsFirstSibling();
 
                 _right.gameObject.SetActive(true);
                 _right.transform.position    = _rightNext.transform.position;
                 _right.transform.eulerAngles = Vector3.zero;
                 SetupPageDisplay(_right, _rightRT, _currentPage + 1, ref _rightPageInstance, ref _rightDisplayIndex);
+                _right.enabled = true; // Mask용 Image는 항상 활성 유지
 
                 SetupPageDisplay(_rightNext, _rightNextRT, _currentPage + 2, ref _rightNextPageInstance, ref _rightNextDisplayIndex);
                 _leftNext.transform.SetAsFirstSibling();
 
                 if (_enableShadowEffect)
                     _shadow.gameObject.SetActive(true);
-
-                Canvas.ForceUpdateCanvases();
             }
 
             UpdateBookRTLToPoint(_f);
@@ -623,10 +611,6 @@ namespace CAT.BookFlip
                 OnFlipStart?.Invoke();
                 DisablePageInteraction();
 
-                // 애니메이션 클리핑 요소 활성화 (Flip/TweenBack 완료 시 비활성화됨)
-                _clippingPlane.gameObject.SetActive(true);
-                _nextPageClip.gameObject.SetActive(true);
-
                 // _leftNext(currentPage-1)와 _right(currentPage-1)의 인덱스 충돌 해소
                 // _leftNext를 먼저 정리해야 같은 페이지를 _right에 새 인스턴스로 생성할 수 있음
                 CleanupDisplaySlot(ref _leftNextPageInstance, ref _leftNextDisplayIndex);
@@ -638,6 +622,7 @@ namespace CAT.BookFlip
                 _right.transform.position    = _leftNext.transform.position;
                 _right.transform.eulerAngles = Vector3.zero;
                 SetupPageDisplay(_right, _rightRT, _currentPage - 1, ref _rightPageInstance, ref _rightDisplayIndex);
+                _right.enabled = true; // Mask용 Image는 항상 활성 유지
                 _right.transform.SetAsFirstSibling();
 
                 _left.gameObject.SetActive(true);
@@ -645,14 +630,13 @@ namespace CAT.BookFlip
                 _left.transform.position    = _leftNext.transform.position;
                 _left.transform.eulerAngles = Vector3.zero;
                 SetupPageDisplay(_left, _leftRT, _currentPage - 2, ref _leftPageInstance, ref _leftDisplayIndex);
+                _left.enabled = true; // Mask용 Image는 항상 활성 유지
 
                 SetupPageDisplay(_leftNext, _leftNextRT, _currentPage - 3, ref _leftNextPageInstance, ref _leftNextDisplayIndex);
                 _rightNext.transform.SetAsFirstSibling();
 
                 if (_enableShadowEffect)
                     _shadowLTR.gameObject.SetActive(true);
-
-                Canvas.ForceUpdateCanvases();
             }
 
             UpdateBookLTRToPoint(_f);
@@ -719,7 +703,6 @@ namespace CAT.BookFlip
             {
                 targetImage.sprite  = _background;
                 targetImage.enabled = true;
-                targetImage.SetAllDirty();
                 return;
             }
 
@@ -728,7 +711,6 @@ namespace CAT.BookFlip
             {
                 targetImage.sprite  = _background;
                 targetImage.enabled = true;
-                targetImage.SetAllDirty();
                 return;
             }
 
@@ -743,7 +725,6 @@ namespace CAT.BookFlip
 
                     targetImage.sprite  = page.Sprite;
                     targetImage.enabled = true;
-                    targetImage.SetAllDirty();
                     break;
 
                 case BookFlipPage.PageType.Prefab:
@@ -760,8 +741,6 @@ namespace CAT.BookFlip
                         : page.RuntimeInstance;
 
                     page.SetInteractable(false);
-                    if (pageImage != null)
-                        pageImage.SetAllDirty();
                     break;
             }
         }
@@ -837,50 +816,6 @@ namespace CAT.BookFlip
             rt.sizeDelta        = state.sizeDelta;
         }
 
-        private static CanvasGroup EnsureCanvasGroup(Graphic g)
-        {
-            if (g == null) return null;
-            var cg = g.GetComponent<CanvasGroup>();
-            if (cg == null) cg = g.gameObject.AddComponent<CanvasGroup>();
-            return cg;
-        }
-
-        /// <summary>정적 슬롯(_leftNext, _rightNext)의 alpha를 일괄 설정</summary>
-        private void SetSlotAlpha(float alpha)
-        {
-            if (_leftNextCG  != null) _leftNextCG.alpha  = alpha;
-            if (_rightNextCG != null) _rightNextCG.alpha = alpha;
-        }
-
-        /// <summary>
-        /// targetRT 하위의 "Page_" 이름 자식 중 PersistInstance가 아닌 것을 파괴 (비상용).
-        /// 정상적인 흐름에서는 CleanupDisplaySlot이 처리하므로 호출 불필요.
-        /// </summary>
-        private void CleanupChildPageInstances(RectTransform targetRT)
-        {
-            if (targetRT == null) return;
-
-            for (int i = targetRT.childCount - 1; i >= 0; i--)
-            {
-                Transform child = targetRT.GetChild(i);
-                if (!child.name.StartsWith("Page_")) continue;
-                if (IsPersistInstanceObject(child.gameObject)) continue;
-                Destroy(child.gameObject);
-            }
-        }
-
-        private bool IsPersistInstanceObject(GameObject go)
-        {
-            if (_pages == null) return false;
-            for (int i = 0; i < _pages.Length; i++)
-            {
-                var p = _pages[i];
-                if (p != null && p.PersistInstance && p.RuntimeInstance == go)
-                    return true;
-            }
-            return false;
-        }
-
         // ─────────────────────────────────────────────
         // 애니메이션
         // ─────────────────────────────────────────────
@@ -906,10 +841,7 @@ namespace CAT.BookFlip
 
             _currentCoroutine = StartCoroutine(TweenTo(from, target, _flipDuration, () =>
             {
-                // ── 1. 잔상 차단 ──
-                SetSlotAlpha(0f);
-
-                // ── 2. 애니메이션 슬롯 인스턴스 정리 ──
+                // ── 1. 애니메이션 슬롯 인스턴스 정리 ──
                 CleanupDisplaySlot(ref _leftPageInstance,  ref _leftDisplayIndex);
                 CleanupDisplaySlot(ref _rightPageInstance, ref _rightDisplayIndex);
 
@@ -918,17 +850,14 @@ namespace CAT.BookFlip
                 _right.transform.SetParent(_pageContainer.transform, true);
                 _right.gameObject.SetActive(false);
 
-                // ── 3. 정적 슬롯 복귀 + RT 좌표 복원 ──
+                // ── 2. 정적 슬롯 복귀 + RT 좌표 복원 ──
                 _leftNext.transform.SetParent(_pageContainer.transform, true);
                 RestoreRT(_leftNextRT, _leftNextRTState);
                 _rightNext.transform.SetParent(_pageContainer.transform, true);
                 RestoreRT(_rightNextRT, _rightNextRTState);
 
-                // ── 4. 콘텐츠 재설정 ──
+                // ── 3. 콘텐츠 재설정 ──
                 UpdateSprites();
-
-                // ── 5. 정적 슬롯 다시 보이기 ──
-                SetSlotAlpha(1f);
 
                 _pageDragging = false;
 
@@ -965,21 +894,13 @@ namespace CAT.BookFlip
                 yield return null;
             }
 
-            // 클리핑 요소를 즉시 숨겨 onFinish 슬롯 재배치 중 잔상 방지
-            // (애니메이션 최종 위치의 클리핑 메시가 1프레임 남는 것을 차단)
-            _clippingPlane.gameObject.SetActive(false);
-            _nextPageClip.gameObject.SetActive(false);
-
             onFinish?.Invoke();
             _currentCoroutine = null;
         }
 
         private void Flip()
         {
-            // ── 1. 잔상 차단: 정적 슬롯 즉시 투명 처리 ──
-            SetSlotAlpha(0f);
-
-            // ── 2. 애니메이션 슬롯 인스턴스 정리 ──
+            // ── 1. 애니메이션 슬롯 인스턴스 정리 ──
             CleanupDisplaySlot(ref _leftPageInstance,  ref _leftDisplayIndex);
             CleanupDisplaySlot(ref _rightPageInstance, ref _rightDisplayIndex);
 
@@ -989,22 +910,19 @@ namespace CAT.BookFlip
             _right.gameObject.SetActive(false);
             _right.transform.SetParent(_pageContainer.transform, true);
 
-            // ── 3. 정적 슬롯 복귀 + RT 좌표 복원 ──
+            // ── 2. 정적 슬롯 복귀 + RT 좌표 복원 ──
             _leftNext.transform.SetParent(_pageContainer.transform, true);
             RestoreRT(_leftNextRT, _leftNextRTState);
             _rightNext.transform.SetParent(_pageContainer.transform, true);
             RestoreRT(_rightNextRT, _rightNextRTState);
 
-            // ── 4. 페이지 인덱스 갱신 + 콘텐츠 재설정 ──
+            // ── 3. 페이지 인덱스 갱신 + 콘텐츠 재설정 ──
             if (_mode == FlipMode.RightToLeft)
                 _currentPage += 2;
             else
                 _currentPage -= 2;
 
             UpdateSprites();
-
-            // ── 5. 정적 슬롯 다시 보이기 ──
-            SetSlotAlpha(1f);
 
             _shadow.gameObject.SetActive(false);
             _shadowLTR.gameObject.SetActive(false);
