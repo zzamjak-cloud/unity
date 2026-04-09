@@ -490,6 +490,11 @@ namespace CAT.BookFlip
         {
             if (go == null) return;
             go.SetActive(false);
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                Object.DestroyImmediate(go);
+            else
+#endif
             Object.Destroy(go);
         }
     }

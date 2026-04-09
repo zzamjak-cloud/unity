@@ -32,6 +32,7 @@ namespace CAT.BookFlip.Editor
         private SerializedProperty _nextPageClipProp;
         private SerializedProperty _shadowProp;
         private SerializedProperty _shadowLTRProp;
+        private SerializedProperty _ringOverlayProp;
         private SerializedProperty _leftProp;
         private SerializedProperty _leftNextProp;
         private SerializedProperty _rightProp;
@@ -81,6 +82,7 @@ namespace CAT.BookFlip.Editor
             _nextPageClipProp      = serializedObject.FindProperty("_nextPageClip");
             _shadowProp            = serializedObject.FindProperty("_shadow");
             _shadowLTRProp         = serializedObject.FindProperty("_shadowLTR");
+            _ringOverlayProp       = serializedObject.FindProperty("_ringOverlay");
             _leftProp              = serializedObject.FindProperty("_left");
             _leftNextProp          = serializedObject.FindProperty("_leftNext");
             _rightProp             = serializedObject.FindProperty("_right");
@@ -270,6 +272,7 @@ namespace CAT.BookFlip.Editor
                 EditorGUILayout.PropertyField(_nextPageClipProp,  new GUIContent("Next Page Clip"));
                 EditorGUILayout.PropertyField(_shadowProp,        new GUIContent("Shadow"));
                 EditorGUILayout.PropertyField(_shadowLTRProp,     new GUIContent("Shadow LTR"));
+                EditorGUILayout.PropertyField(_ringOverlayProp,   new GUIContent("Ring Overlay (선택)"));
                 EditorGUILayout.PropertyField(_leftProp,          new GUIContent("Left"));
                 EditorGUILayout.PropertyField(_leftNextProp,      new GUIContent("Left Next"));
                 EditorGUILayout.PropertyField(_rightProp,         new GUIContent("Right"));

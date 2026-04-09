@@ -47,6 +47,8 @@ namespace CAT.BookFlip
         [SerializeField] private Image _nextPageClip;
         [SerializeField] private Image _shadow;
         [SerializeField] private Image _shadowLTR;
+        [Tooltip("수첩 링 등 페이지 위/마스크 아래에 표시되는 오버레이 이미지 (선택사항)")]
+        [SerializeField] private Image _ringOverlay;
         [SerializeField] private Image _left;
         [SerializeField] private Image _leftNext;
         [SerializeField] private Image _right;
@@ -124,6 +126,15 @@ namespace CAT.BookFlip
         private FlipMode _mode;
         private Coroutine _currentCoroutine;
 
+        // Ring 오버레이 페이드용
+        private float _ringOrigAlpha;
+        private CanvasGroup _ringCG;
+        private Coroutine _ringFadeCoroutine;
+
+        // Shadow 페이드용
+        private CanvasGroup _shadowCG;
+        private CanvasGroup _shadowLTRCG;
+
         // ─────────────────────────────────────────────
         // 프로퍼티
         // ─────────────────────────────────────────────
@@ -175,6 +186,26 @@ namespace CAT.BookFlip
             SetupContainerHierarchy();
             SetupHotSpots();
             SaveSlotRTStates(); // 슬롯 RT 초기값 저장 (애니메이션 후 복원용)
+
+            // Shadow CanvasGroup 캐싱 (60%부터 페이드 아웃용)
+            if (_shadow != null)
+            {
+                _shadowCG = _shadow.GetComponent<CanvasGroup>();
+                if (_shadowCG == null) _shadowCG = _shadow.gameObject.AddComponent<CanvasGroup>();
+            }
+            if (_shadowLTR != null)
+            {
+                _shadowLTRCG = _shadowLTR.GetComponent<CanvasGroup>();
+                if (_shadowLTRCG == null) _shadowLTRCG = _shadowLTR.gameObject.AddComponent<CanvasGroup>();
+            }
+
+            // Ring 오버레이 초기화 (CanvasGroup 기반 알파 제어)
+            if (_ringOverlay != null)
+            {
+                _ringCG = _ringOverlay.GetComponent<CanvasGroup>();
+                if (_ringCG == null) _ringCG = _ringOverlay.gameObject.AddComponent<CanvasGroup>();
+                _ringOrigAlpha = _ringCG.alpha;
+            }
         }
 
         private void OnDestroy()
@@ -217,6 +248,7 @@ namespace CAT.BookFlip
             _left.gameObject.SetActive(false);
             _right.gameObject.SetActive(false);
             UpdateSprites();
+            EnablePageInteraction();
         }
 
         private void SetupUIElements()
@@ -391,6 +423,38 @@ namespace CAT.BookFlip
         /// <summary>
         /// 부모가 같을 때 SetParent를 반복 호출하면 Canvas/Graphic이 매 프레임 재빌드되어 스프라이트·UI가 깜빡일 수 있다.
         /// </summary>
+        /// <summary>Ring 오버레이 CanvasGroup 알파값 설정</summary>
+        private void SetRingAlpha(float alpha)
+        {
+            if (_ringCG != null) _ringCG.alpha = alpha;
+        }
+
+        /// <summary>Ring 오버레이를 pageContainer로 복귀 + 페이드 보장</summary>
+        private void RestoreRingOverlay()
+        {
+            if (_ringOverlay == null) return;
+            if (_ringOverlay.transform.parent != _pageContainer)
+                _ringOverlay.transform.SetParent(_pageContainer, false);
+
+            // 80%에서 이미 코루틴이 시작됐으면 그대로 진행, 아니면 여기서 시작
+            if (_ringFadeCoroutine == null)
+                _ringFadeCoroutine = StartCoroutine(RingFadeInCoroutine(0.6f));
+        }
+
+        private IEnumerator RingFadeInCoroutine(float duration)
+        {
+            SetRingAlpha(0f);
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                SetRingAlpha(Mathf.Clamp01(elapsed / duration) * _ringOrigAlpha);
+                yield return null;
+            }
+            SetRingAlpha(_ringOrigAlpha);
+            _ringFadeCoroutine = null;
+        }
+
         private static void SetParentIfDifferent(Transform t, Transform parent, bool worldPositionStays = true)
         {
             if (t == null || parent == null) return;
@@ -434,6 +498,22 @@ namespace CAT.BookFlip
             if (_right.transform.GetSiblingIndex() != 0)
                 _right.transform.SetAsFirstSibling();
 
+            // 진행도 계산 (Shadow 60% 페이드 아웃 + Ring 80% 페이드 인 공용)
+            float ltrTotalDist = Vector2.Distance(_ebl, _ebr);
+            float ltrProgress = ltrTotalDist > 0f ? Mathf.Clamp01(1f - Vector2.Distance(_c, _ebr) / ltrTotalDist) : 1f;
+
+            // Shadow: 60%부터 알파 1→0
+            if (_shadowLTRCG != null)
+                _shadowLTRCG.alpha = ltrProgress < 0.6f ? 1f : Mathf.Clamp01(1f - (ltrProgress - 0.6f) / 0.4f);
+
+            // Ring: Right(0) 위, Left(2+) 아래 → index 1 + 80% 도달 시 페이드 시작
+            if (_ringOverlay != null && _ringOverlay.transform.parent == _clippingPlane.transform)
+            {
+                _ringOverlay.transform.SetSiblingIndex(1);
+                if (_ringFadeCoroutine == null && ltrProgress >= 0.8f)
+                    _ringFadeCoroutine = StartCoroutine(RingFadeInCoroutine(0.6f));
+            }
+
             SetParentIfDifferent(_shadowLTR.rectTransform, _left.rectTransform, true);
         }
 
@@ -474,6 +554,22 @@ namespace CAT.BookFlip
             SetParentIfDifferent(_left.transform, _clippingPlane.transform, true);
             if (_left.transform.GetSiblingIndex() != 0)
                 _left.transform.SetAsFirstSibling();
+
+            // 진행도 계산 (Shadow 60% 페이드 아웃 + Ring 80% 페이드 인 공용)
+            float rtlTotalDist = Vector2.Distance(_ebl, _ebr);
+            float rtlProgress = rtlTotalDist > 0f ? Mathf.Clamp01(1f - Vector2.Distance(_c, _ebl) / rtlTotalDist) : 1f;
+
+            // Shadow: 60%부터 알파 1→0
+            if (_shadowCG != null)
+                _shadowCG.alpha = rtlProgress < 0.6f ? 1f : Mathf.Clamp01(1f - (rtlProgress - 0.6f) / 0.4f);
+
+            // Ring: Left(0) 위, Right(2+) 아래 → index 1 + 80% 도달 시 페이드 시작
+            if (_ringOverlay != null && _ringOverlay.transform.parent == _clippingPlane.transform)
+            {
+                _ringOverlay.transform.SetSiblingIndex(1);
+                if (_ringFadeCoroutine == null && rtlProgress >= 0.8f)
+                    _ringFadeCoroutine = StartCoroutine(RingFadeInCoroutine(0.6f));
+            }
 
             SetParentIfDifferent(_shadow.rectTransform, _right.rectTransform, true);
         }
@@ -591,7 +687,22 @@ namespace CAT.BookFlip
                 _leftNext.transform.SetAsFirstSibling();
 
                 if (_enableShadowEffect)
+                {
                     _shadow.gameObject.SetActive(true);
+                    if (_shadowCG != null) _shadowCG.alpha = 1f;
+                }
+
+                // Ring 오버레이를 클리핑 마스크 자식으로 이동 (알파 원본 유지)
+                if (_ringOverlay != null)
+                {
+                    if (_ringFadeCoroutine != null)
+                    {
+                        StopCoroutine(_ringFadeCoroutine);
+                        _ringFadeCoroutine = null;
+                    }
+                    SetRingAlpha(_ringOrigAlpha);
+                    _ringOverlay.transform.SetParent(_clippingPlane.transform, false);
+                }
             }
 
             UpdateBookRTLToPoint(_f);
@@ -636,7 +747,22 @@ namespace CAT.BookFlip
                 _rightNext.transform.SetAsFirstSibling();
 
                 if (_enableShadowEffect)
+                {
                     _shadowLTR.gameObject.SetActive(true);
+                    if (_shadowLTRCG != null) _shadowLTRCG.alpha = 1f;
+                }
+
+                // Ring 오버레이를 클리핑 마스크 자식으로 이동 (알파 원본 유지)
+                if (_ringOverlay != null)
+                {
+                    if (_ringFadeCoroutine != null)
+                    {
+                        StopCoroutine(_ringFadeCoroutine);
+                        _ringFadeCoroutine = null;
+                    }
+                    SetRingAlpha(_ringOrigAlpha);
+                    _ringOverlay.transform.SetParent(_clippingPlane.transform, false);
+                }
             }
 
             UpdateBookLTRToPoint(_f);
@@ -702,7 +828,7 @@ namespace CAT.BookFlip
             if (pageIndex < 0 || pageIndex >= _pages.Length)
             {
                 targetImage.sprite  = _background;
-                targetImage.enabled = true;
+                targetImage.enabled = _background != null; // 배경 없으면 렌더링 안 함
                 return;
             }
 
@@ -710,7 +836,7 @@ namespace CAT.BookFlip
             if (page == null || !page.IsValid())
             {
                 targetImage.sprite  = _background;
-                targetImage.enabled = true;
+                targetImage.enabled = _background != null;
                 return;
             }
 
@@ -740,7 +866,9 @@ namespace CAT.BookFlip
                         ? pageImage.gameObject
                         : page.RuntimeInstance;
 
-                    page.SetInteractable(false);
+                    // 초기 표시에서는 UI 입력을 유지하고, 실제 넘김 동작 중에만 입력을 잠근다.
+                    if (_pageDragging || _currentCoroutine != null)
+                        page.SetInteractable(false);
                     break;
             }
         }
@@ -764,6 +892,11 @@ namespace CAT.BookFlip
             {
                 // 페이지 인덱스 추적이 없는 경우의 폴백 (인덱스 범위 초과 등)
                 pageInstance.SetActive(false);
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    DestroyImmediate(pageInstance);
+                else
+#endif
                 Destroy(pageInstance);
             }
 
@@ -859,6 +992,10 @@ namespace CAT.BookFlip
                 // ── 3. 콘텐츠 재설정 ──
                 UpdateSprites();
 
+                // Ring 오버레이를 pageContainer로 복귀 (Transform 보존)
+                if (_ringOverlay != null && _ringOverlay.transform.parent != _pageContainer)
+                    _ringOverlay.transform.SetParent(_pageContainer, false);
+
                 _pageDragging = false;
 
                 EnablePageInteraction();
@@ -926,6 +1063,9 @@ namespace CAT.BookFlip
 
             _shadow.gameObject.SetActive(false);
             _shadowLTR.gameObject.SetActive(false);
+
+            // Ring 오버레이: 알파 원복 + pageContainer로 복귀
+            RestoreRingOverlay();
 
             _pageDragging = false;
 
