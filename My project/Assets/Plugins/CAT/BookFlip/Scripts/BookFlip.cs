@@ -6,17 +6,22 @@ using System.Collections;
 namespace CAT.BookFlip
 {
     /// <summary>
-    /// 책넘기기 효과를 제공하는 메인 컨트롤러
-    /// 기존 Book.cs를 개선하여 다양한 페이지 타입 지원
+    /// 책넘기기 효과를 제공하는 메인 컨트롤러.
+    /// 런타임 페이지 관리(SetPages/AddPage/RemovePage/RefreshPage) 및
+    /// AnimationCurve 기반 넘김 애니메이션을 지원한다.
     /// </summary>
     [ExecuteInEditMode]
     public class BookFlip : MonoBehaviour
     {
-        public enum FlipMode
-        {
-            RightToLeft,
-            LeftToRight
-        }
+        // ─────────────────────────────────────────────
+        // Enum
+        // ─────────────────────────────────────────────
+
+        public enum FlipMode { RightToLeft, LeftToRight }
+
+        // ─────────────────────────────────────────────
+        // Inspector 필드
+        // ─────────────────────────────────────────────
 
         [Header("Canvas 설정")]
         [SerializeField] private Canvas _canvas;
@@ -30,6 +35,12 @@ namespace CAT.BookFlip
         [Header("옵션")]
         [SerializeField] private bool _interactable = true;
         [SerializeField] private bool _enableShadowEffect = true;
+
+        [Header("애니메이션 설정")]
+        [Tooltip("페이지 넘김 총 소요 시간 (초)")]
+        [SerializeField] private float _flipDuration = 0.3f;
+        [Tooltip("페이지 넘김 이징 곡선 — x: 시간(0→1), y: 진행도(0→1)")]
+        [SerializeField] private AnimationCurve _flipCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
         [Header("UI 요소")]
         [SerializeField] private Image _clippingPlane;
@@ -53,7 +64,10 @@ namespace CAT.BookFlip
         public UnityEvent OnFlipStart;
         public UnityEvent OnFlipEnd;
 
-        // 캐싱된 Transform들
+        // ─────────────────────────────────────────────
+        // 캐싱된 RectTransform
+        // ─────────────────────────────────────────────
+
         private RectTransform _clippingPlaneRT;
         private RectTransform _nextPageClipRT;
         private RectTransform _shadowRT;
@@ -63,16 +77,45 @@ namespace CAT.BookFlip
         private RectTransform _rightRT;
         private RectTransform _rightNextRT;
 
-        // Prefab/GameObject 페이지 인스턴스 캐싱
+        // 슬롯 CanvasGroup — 전환 시 alpha=0으로 잔상 차단
+        private CanvasGroup _leftNextCG;
+        private CanvasGroup _rightNextCG;
+
+        // ─────────────────────────────────────────────
+        // 페이지 인스턴스 & 슬롯 추적
+        // ─────────────────────────────────────────────
+
+        // 각 표시 슬롯에 현재 띄워진 실제 GameObject 참조
         private GameObject _leftPageInstance;
         private GameObject _leftNextPageInstance;
         private GameObject _rightPageInstance;
         private GameObject _rightNextPageInstance;
 
-        // 현재 페이지 인덱스 (오른쪽 페이지 기준)
+        // 각 슬롯에 표시 중인 _pages 인덱스 (-1 = 비어 있음)
+        // CleanupDisplaySlot에서 page.Release()를 올바르게 호출하기 위해 사용
+        private int _leftDisplayIndex     = -1;
+        private int _leftNextDisplayIndex = -1;
+        private int _rightDisplayIndex    = -1;
+        private int _rightNextDisplayIndex = -1;
+
+        // ─────────────────────────────────────────────
+        // 슬롯 RT 초기 상태 (애니메이션 후 복원용)
+        // ─────────────────────────────────────────────
+
+        // _leftNext / _rightNext 는 애니메이션 중 _nextPageClip 자식으로 이동되어 좌표가 틀어지므로
+        // Start() 에서 초기값을 저장해두고 Flip / TweenBack 완료 시 복원한다
+        private struct SlotRTState
+        {
+            public Vector2 anchorMin, anchorMax, anchoredPosition, sizeDelta;
+        }
+        private SlotRTState _leftNextRTState, _rightNextRTState;
+
+        // ─────────────────────────────────────────────
+        // 곡선 계산 변수
+        // ─────────────────────────────────────────────
+
         [SerializeField] private int _currentPage = 0;
 
-        // 곡선 계산 관련 변수들
         private float _radius1, _radius2;
         private Vector3 _sb; // Spine Bottom
         private Vector3 _st; // Spine Top
@@ -85,7 +128,10 @@ namespace CAT.BookFlip
         private FlipMode _mode;
         private Coroutine _currentCoroutine;
 
+        // ─────────────────────────────────────────────
         // 프로퍼티
+        // ─────────────────────────────────────────────
+
         public int CurrentPage
         {
             get => _currentPage;
@@ -93,7 +139,7 @@ namespace CAT.BookFlip
             {
                 if (_currentPage != value)
                 {
-                    _currentPage = Mathf.Clamp(value, 0, _pages.Length);
+                    _currentPage = Mathf.Clamp(value, 0, Mathf.Max(0, _pages.Length - 1));
                     UpdateSprites();
                     OnPageChanged?.Invoke(_currentPage);
                 }
@@ -102,9 +148,13 @@ namespace CAT.BookFlip
 
         public int TotalPageCount => _pages.Length;
         public bool Interactable { get => _interactable; set => _interactable = value; }
-        public Vector3 EndBottomLeft => _ebl;
+        public Vector3 EndBottomLeft  => _ebl;
         public Vector3 EndBottomRight => _ebr;
-        public float Height => _bookPanel.rect.height;
+        public float   Height         => _bookPanel.rect.height;
+
+        // ─────────────────────────────────────────────
+        // Unity 생명주기
+        // ─────────────────────────────────────────────
 
         private void Awake()
         {
@@ -128,26 +178,48 @@ namespace CAT.BookFlip
             SetupUIElements();
             SetupContainerHierarchy();
             SetupHotSpots();
+            SaveSlotRTStates(); // 슬롯 RT 초기값 저장 (애니메이션 후 복원용)
         }
 
-        /// <summary>
-        /// 컴포넌트 캐싱
-        /// </summary>
+        private void OnDestroy()
+        {
+            // 현재 슬롯에 표시 중인 인스턴스 정리
+            CleanupAllDisplaySlots();
+
+            // 모든 페이지 인스턴스 정리
+            if (_pages != null)
+                for (int i = 0; i < _pages.Length; i++)
+                    _pages[i]?.Destroy();
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (_bookPanel != null)
+                CalcCurlCriticalPoints();
+        }
+#endif
+
+        // ─────────────────────────────────────────────
+        // 초기화
+        // ─────────────────────────────────────────────
+
         private void CacheComponents()
         {
             if (_clippingPlane != null) _clippingPlaneRT = _clippingPlane.GetComponent<RectTransform>();
-            if (_nextPageClip != null) _nextPageClipRT = _nextPageClip.GetComponent<RectTransform>();
-            if (_shadow != null) _shadowRT = _shadow.GetComponent<RectTransform>();
-            if (_shadowLTR != null) _shadowLTRRT = _shadowLTR.GetComponent<RectTransform>();
-            if (_left != null) _leftRT = _left.GetComponent<RectTransform>();
-            if (_leftNext != null) _leftNextRT = _leftNext.GetComponent<RectTransform>();
-            if (_right != null) _rightRT = _right.GetComponent<RectTransform>();
-            if (_rightNext != null) _rightNextRT = _rightNext.GetComponent<RectTransform>();
+            if (_nextPageClip  != null) _nextPageClipRT  = _nextPageClip.GetComponent<RectTransform>();
+            if (_shadow        != null) _shadowRT        = _shadow.GetComponent<RectTransform>();
+            if (_shadowLTR     != null) _shadowLTRRT     = _shadowLTR.GetComponent<RectTransform>();
+            if (_left          != null) _leftRT          = _left.GetComponent<RectTransform>();
+            if (_leftNext      != null) _leftNextRT      = _leftNext.GetComponent<RectTransform>();
+            if (_right         != null) _rightRT         = _right.GetComponent<RectTransform>();
+            if (_rightNext     != null) _rightNextRT     = _rightNext.GetComponent<RectTransform>();
+
+            // 슬롯 CanvasGroup 캐싱 (없으면 추가)
+            _leftNextCG  = EnsureCanvasGroup(_leftNext);
+            _rightNextCG = EnsureCanvasGroup(_rightNext);
         }
 
-        /// <summary>
-        /// 페이지 초기화
-        /// </summary>
         private void InitializePages()
         {
             _left.gameObject.SetActive(false);
@@ -155,87 +227,62 @@ namespace CAT.BookFlip
             UpdateSprites();
         }
 
-        /// <summary>
-        /// UI 요소 설정
-        /// </summary>
         private void SetupUIElements()
         {
-            float pageWidth = _bookPanel.rect.width / 2.0f;
+            float pageWidth  = _bookPanel.rect.width  / 2.0f;
             float pageHeight = _bookPanel.rect.height;
 
-            _nextPageClipRT.sizeDelta = new Vector2(pageWidth, pageHeight + pageHeight * 2);
+            _nextPageClipRT.sizeDelta  = new Vector2(pageWidth, pageHeight + pageHeight * 2);
             _clippingPlaneRT.sizeDelta = new Vector2(pageWidth * 2 + pageHeight, pageHeight + pageHeight * 2);
 
-            // hypotenuse (대각선) 페이지 길이
             float hyp = Mathf.Sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
             float shadowPageHeight = pageWidth / 2 + hyp;
 
-            _shadowRT.sizeDelta = new Vector2(pageWidth, shadowPageHeight);
-            _shadowRT.pivot = new Vector2(1, (pageWidth / 2) / shadowPageHeight);
+            _shadowRT.sizeDelta    = new Vector2(pageWidth, shadowPageHeight);
+            _shadowRT.pivot        = new Vector2(1, (pageWidth / 2) / shadowPageHeight);
 
             _shadowLTRRT.sizeDelta = new Vector2(pageWidth, shadowPageHeight);
-            _shadowLTRRT.pivot = new Vector2(0, (pageWidth / 2) / shadowPageHeight);
+            _shadowLTRRT.pivot     = new Vector2(0, (pageWidth / 2) / shadowPageHeight);
         }
 
-        /// <summary>
-        /// Container 하이어라키 구조 설정
-        /// </summary>
         private void SetupContainerHierarchy()
         {
-            // PageContainer와 HotSpotContainer가 모두 있는 경우에만 설정
-            if (_pageContainer != null && _pageContainer != _bookPanel && _hotSpotContainer != null)
-            {
-                // 모든 페이지 요소를 PageContainer의 자식으로 이동
-                if (_clippingPlane != null && _clippingPlane.transform.parent != _pageContainer)
-                    _clippingPlane.transform.SetParent(_pageContainer, true);
-                if (_nextPageClip != null && _nextPageClip.transform.parent != _pageContainer)
-                    _nextPageClip.transform.SetParent(_pageContainer, true);
-                if (_shadow != null && _shadow.transform.parent != _pageContainer)
-                    _shadow.transform.SetParent(_pageContainer, true);
-                if (_shadowLTR != null && _shadowLTR.transform.parent != _pageContainer)
-                    _shadowLTR.transform.SetParent(_pageContainer, true);
-                if (_left != null && _left.transform.parent != _pageContainer)
-                    _left.transform.SetParent(_pageContainer, true);
-                if (_leftNext != null && _leftNext.transform.parent != _pageContainer)
-                    _leftNext.transform.SetParent(_pageContainer, true);
-                if (_right != null && _right.transform.parent != _pageContainer)
-                    _right.transform.SetParent(_pageContainer, true);
-                if (_rightNext != null && _rightNext.transform.parent != _pageContainer)
-                    _rightNext.transform.SetParent(_pageContainer, true);
+            if (_pageContainer == null || _pageContainer == _bookPanel || _hotSpotContainer == null)
+                return;
 
-                // PageContainer를 BookPanel의 자식으로
-                if (_pageContainer.parent != _bookPanel)
-                    _pageContainer.SetParent(_bookPanel, true);
+            // 모든 페이지 요소를 PageContainer 하위로 이동
+            TryReparent(_clippingPlane?.transform, _pageContainer);
+            TryReparent(_nextPageClip?.transform,  _pageContainer);
+            TryReparent(_shadow?.transform,        _pageContainer);
+            TryReparent(_shadowLTR?.transform,     _pageContainer);
+            TryReparent(_left?.transform,          _pageContainer);
+            TryReparent(_leftNext?.transform,      _pageContainer);
+            TryReparent(_right?.transform,         _pageContainer);
+            TryReparent(_rightNext?.transform,     _pageContainer);
 
-                // HotSpotContainer를 BookPanel의 자식이면서 PageContainer 위로
-                if (_hotSpotContainer.parent != _bookPanel)
-                    _hotSpotContainer.SetParent(_bookPanel, true);
+            if (_pageContainer.parent != _bookPanel)
+                _pageContainer.SetParent(_bookPanel, true);
 
-                // 순서: PageContainer가 먼저, HotSpotContainer가 나중(최상위)
-                _pageContainer.SetSiblingIndex(0);
-                _hotSpotContainer.SetAsLastSibling();
-            }
+            if (_hotSpotContainer.parent != _bookPanel)
+                _hotSpotContainer.SetParent(_bookPanel, true);
+
+            _pageContainer.SetSiblingIndex(0);
+            _hotSpotContainer.SetAsLastSibling();
         }
 
-        /// <summary>
-        /// 핫스팟을 항상 최상위로 설정
-        /// </summary>
+        private static void TryReparent(Transform t, Transform newParent)
+        {
+            if (t != null && t.parent != newParent)
+                t.SetParent(newParent, true);
+        }
+
         private void SetupHotSpots()
         {
-            // HotSpotContainer가 있으면 사용, 없으면 BookPanel 직접 사용
             RectTransform hotSpotParent = _hotSpotContainer != null ? _hotSpotContainer : _bookPanel;
 
-            if (_leftHotSpot != null)
-            {
-                _leftHotSpot.SetParent(hotSpotParent, true);
-            }
+            if (_leftHotSpot  != null) _leftHotSpot.SetParent(hotSpotParent,  true);
+            if (_rightHotSpot != null) _rightHotSpot.SetParent(hotSpotParent, true);
 
-            if (_rightHotSpot != null)
-            {
-                _rightHotSpot.SetParent(hotSpotParent, true);
-            }
-
-            // HotSpotContainer 자체를 BookPanel의 최상위로 설정
             if (_hotSpotContainer != null)
             {
                 _hotSpotContainer.SetParent(_bookPanel, true);
@@ -243,164 +290,102 @@ namespace CAT.BookFlip
             }
             else
             {
-                // Container가 없으면 개별 핫스팟을 최상위로
-                if (_leftHotSpot != null)
-                    _leftHotSpot.SetAsLastSibling();
-                if (_rightHotSpot != null)
-                    _rightHotSpot.SetAsLastSibling();
+                if (_leftHotSpot  != null) _leftHotSpot.SetAsLastSibling();
+                if (_rightHotSpot != null) _rightHotSpot.SetAsLastSibling();
             }
         }
 
-        /// <summary>
-        /// 곡선의 중요 포인트들 계산
-        /// </summary>
         private void CalcCurlCriticalPoints()
         {
-            _sb = new Vector3(0, -_bookPanel.rect.height / 2);
-            _ebr = new Vector3(_bookPanel.rect.width / 2, -_bookPanel.rect.height / 2);
-            _ebl = new Vector3(-_bookPanel.rect.width / 2, -_bookPanel.rect.height / 2);
-            _st = new Vector3(0, _bookPanel.rect.height / 2);
+            _sb   = new Vector3(0, -_bookPanel.rect.height / 2);
+            _ebr  = new Vector3( _bookPanel.rect.width / 2, -_bookPanel.rect.height / 2);
+            _ebl  = new Vector3(-_bookPanel.rect.width / 2, -_bookPanel.rect.height / 2);
+            _st   = new Vector3(0, _bookPanel.rect.height / 2);
             _radius1 = Vector2.Distance(_sb, _ebr);
 
-            float pageWidth = _bookPanel.rect.width / 2.0f;
+            float pageWidth  = _bookPanel.rect.width  / 2.0f;
             float pageHeight = _bookPanel.rect.height;
             _radius2 = Mathf.Sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
         }
 
-        /// <summary>
-        /// 마우스 스크린 좌표를 BookPanel 로컬 좌표로 변환
-        /// </summary>
-        private Vector3 TransformPoint(Vector3 mouseScreenPos)
-        {
-            if (_canvas.renderMode == RenderMode.ScreenSpaceCamera)
-            {
-                Vector3 mouseWorldPos = _canvas.worldCamera.ScreenToWorldPoint(
-                    new Vector3(mouseScreenPos.x, mouseScreenPos.y, _canvas.planeDistance));
-                Vector2 localPos = _bookPanel.InverseTransformPoint(mouseWorldPos);
-                return localPos;
-            }
-            else if (_canvas.renderMode == RenderMode.WorldSpace)
-            {
-                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-                Vector3 globalEBR = transform.TransformPoint(_ebr);
-                Vector3 globalEBL = transform.TransformPoint(_ebl);
-                Vector3 globalSt = transform.TransformPoint(_st);
-                Plane p = new Plane(globalEBR, globalEBL, globalSt);
-
-                if (p.Raycast(ray, out float distance))
-                {
-                    Vector2 localPos = _bookPanel.InverseTransformPoint(ray.GetPoint(distance));
-                    return localPos;
-                }
-                return Vector3.zero;
-            }
-            else
-            {
-                // Screen Space Overlay
-                Vector2 localPos = _bookPanel.InverseTransformPoint(mouseScreenPos);
-                return localPos;
-            }
-        }
+        // ─────────────────────────────────────────────
+        // Update
+        // ─────────────────────────────────────────────
 
         private void Update()
         {
             if (_pageDragging && _interactable)
-            {
                 UpdateBook();
-            }
 
-            // 핫스팟을 매 프레임 최상위로 유지 (페이지 넘김 중 부모 변경에도 대응)
-            EnsureHotSpotsOnTop();
+            // 플립 트윈 중 매 프레임 SetSiblingIndex/SetParent 하면 페이지·핫스팟 순서가 흔들려 깜빡일 수 있음
+            if (_currentCoroutine == null)
+                EnsureHotSpotsOnTop();
         }
 
-        /// <summary>
-        /// 핫스팟이 항상 최상위에 있도록 보장
-        /// </summary>
         private void EnsureHotSpotsOnTop()
         {
-            // PageContainer와 HotSpotContainer 순서 강제
             if (_pageContainer != null && _pageContainer != _bookPanel && _hotSpotContainer != null)
             {
-                // PageContainer가 BookPanel의 자식인지 확인
                 if (_pageContainer.parent != _bookPanel)
                     _pageContainer.SetParent(_bookPanel, true);
 
-                // HotSpotContainer가 BookPanel의 자식인지 확인
                 if (_hotSpotContainer.parent != _bookPanel)
                     _hotSpotContainer.SetParent(_bookPanel, true);
 
-                // PageContainer는 인덱스 0, HotSpotContainer는 마지막
-                int pageContainerIndex = _pageContainer.GetSiblingIndex();
-                int hotSpotContainerIndex = _hotSpotContainer.GetSiblingIndex();
+                int pageIdx    = _pageContainer.GetSiblingIndex();
+                int hotSpotIdx = _hotSpotContainer.GetSiblingIndex();
 
-                // HotSpotContainer가 PageContainer보다 앞에 있으면 재배치
-                if (hotSpotContainerIndex < pageContainerIndex)
+                if (hotSpotIdx < pageIdx)
                 {
-                    _pageContainer.SetSiblingIndex(0);
+                    // 이미 0이면 SetSiblingIndex 호출 생략(매 프레임 dirty 방지)
+                    if (pageIdx != 0)
+                        _pageContainer.SetSiblingIndex(0);
                     _hotSpotContainer.SetAsLastSibling();
                 }
-                else if (hotSpotContainerIndex != _bookPanel.childCount - 1)
+                else if (hotSpotIdx != _bookPanel.childCount - 1)
                 {
-                    // HotSpotContainer가 최상위가 아니면 최상위로
                     _hotSpotContainer.SetAsLastSibling();
                 }
 
-                // Container 내부의 핫스팟 부모 확인
-                if (_leftHotSpot != null && _leftHotSpot.parent != _hotSpotContainer)
-                    _leftHotSpot.SetParent(_hotSpotContainer, true);
-                if (_rightHotSpot != null && _rightHotSpot.parent != _hotSpotContainer)
-                    _rightHotSpot.SetParent(_hotSpotContainer, true);
+                if (_leftHotSpot  != null && _leftHotSpot.parent  != _hotSpotContainer) _leftHotSpot.SetParent(_hotSpotContainer,  true);
+                if (_rightHotSpot != null && _rightHotSpot.parent != _hotSpotContainer) _rightHotSpot.SetParent(_hotSpotContainer, true);
             }
-            // HotSpotContainer만 있는 경우
             else if (_hotSpotContainer != null)
             {
-                // Container가 BookPanel의 자식이 아니거나 최상위가 아니면 재배치
                 if (_hotSpotContainer.parent != _bookPanel)
                     _hotSpotContainer.SetParent(_bookPanel, true);
 
-                int containerIndex = _hotSpotContainer.GetSiblingIndex();
-                int lastIndex = _bookPanel.childCount - 1;
-                if (containerIndex != lastIndex)
+                if (_hotSpotContainer.GetSiblingIndex() != _bookPanel.childCount - 1)
                     _hotSpotContainer.SetAsLastSibling();
 
-                // Container 내부의 핫스팟 부모 확인
-                if (_leftHotSpot != null && _leftHotSpot.parent != _hotSpotContainer)
-                    _leftHotSpot.SetParent(_hotSpotContainer, true);
-                if (_rightHotSpot != null && _rightHotSpot.parent != _hotSpotContainer)
-                    _rightHotSpot.SetParent(_hotSpotContainer, true);
+                if (_leftHotSpot  != null && _leftHotSpot.parent  != _hotSpotContainer) _leftHotSpot.SetParent(_hotSpotContainer,  true);
+                if (_rightHotSpot != null && _rightHotSpot.parent != _hotSpotContainer) _rightHotSpot.SetParent(_hotSpotContainer, true);
             }
-            // Container 없이 개별 핫스팟만 있는 경우
             else
             {
-                RectTransform targetParent = _pageContainer != _bookPanel ? _pageContainer : _bookPanel;
+                RectTransform targetParent = (_pageContainer != null && _pageContainer != _bookPanel) ? _pageContainer : _bookPanel;
+                int lastIndex = targetParent.childCount - 1;
 
                 if (_leftHotSpot != null)
                 {
-                    if (_leftHotSpot.parent != targetParent)
-                        _leftHotSpot.SetParent(targetParent, true);
-
-                    int leftIndex = _leftHotSpot.GetSiblingIndex();
-                    int lastIndex = targetParent.childCount - 1;
-                    if (leftIndex != lastIndex && leftIndex != lastIndex - 1)
-                        _leftHotSpot.SetAsLastSibling();
+                    if (_leftHotSpot.parent != targetParent) _leftHotSpot.SetParent(targetParent, true);
+                    int idx = _leftHotSpot.GetSiblingIndex();
+                    if (idx != lastIndex && idx != lastIndex - 1) _leftHotSpot.SetAsLastSibling();
                 }
 
                 if (_rightHotSpot != null)
                 {
-                    if (_rightHotSpot.parent != targetParent)
-                        _rightHotSpot.SetParent(targetParent, true);
-
-                    int rightIndex = _rightHotSpot.GetSiblingIndex();
-                    int lastIndex = targetParent.childCount - 1;
-                    if (rightIndex != lastIndex && rightIndex != lastIndex - 1)
-                        _rightHotSpot.SetAsLastSibling();
+                    if (_rightHotSpot.parent != targetParent) _rightHotSpot.SetParent(targetParent, true);
+                    int idx = _rightHotSpot.GetSiblingIndex();
+                    if (idx != lastIndex && idx != lastIndex - 1) _rightHotSpot.SetAsLastSibling();
                 }
             }
         }
 
-        /// <summary>
-        /// 책 업데이트 (드래그 중)
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // Book 업데이트 (드래그 중)
+        // ─────────────────────────────────────────────
+
         private void UpdateBook()
         {
             _f = Vector3.Lerp(_f, TransformPoint(Input.mousePosition), Time.deltaTime * 10);
@@ -412,86 +397,125 @@ namespace CAT.BookFlip
         }
 
         /// <summary>
-        /// 왼쪽에서 오른쪽으로 넘김 업데이트
+        /// 부모가 같을 때 SetParent를 반복 호출하면 Canvas/Graphic이 매 프레임 재빌드되어 스프라이트·UI가 깜빡일 수 있다.
         /// </summary>
+        private static void SetParentIfDifferent(Transform t, Transform parent, bool worldPositionStays = true)
+        {
+            if (t == null || parent == null) return;
+            if (t.parent != parent)
+                t.SetParent(parent, worldPositionStays);
+        }
+
         public void UpdateBookLTRToPoint(Vector3 followLocation)
         {
             _mode = FlipMode.LeftToRight;
-            _f = followLocation;
+            _f    = followLocation;
 
-            _shadowLTR.transform.SetParent(_clippingPlane.transform, true);
-            _shadowLTR.transform.localPosition = Vector3.zero;
-            _shadowLTR.transform.localEulerAngles = Vector3.zero;
+            SetParentIfDifferent(_shadowLTR.transform, _clippingPlane.transform, true);
+            if (_shadowLTR.transform.parent == _clippingPlane.transform)
+            {
+                _shadowLTR.transform.localPosition    = Vector3.zero;
+                _shadowLTR.transform.localEulerAngles = Vector3.zero;
+            }
 
-            _left.transform.SetParent(_clippingPlane.transform, true);
-            _right.transform.SetParent(_pageContainer.transform, true);
+            SetParentIfDifferent(_left.transform, _clippingPlane.transform, true);
+            SetParentIfDifferent(_right.transform, _pageContainer.transform, true);
             _right.transform.localEulerAngles = Vector3.zero;
-            _leftNext.transform.SetParent(_pageContainer.transform, true);
+            SetParentIfDifferent(_leftNext.transform, _pageContainer.transform, true);
 
             _c = CalcCPosition(followLocation);
             float clipAngle = CalcClipAngle(_c, _ebl, out Vector3 t1);
             clipAngle = (clipAngle + 180) % 180;
 
             _clippingPlane.transform.localEulerAngles = new Vector3(0, 0, clipAngle - 90);
-            _clippingPlane.transform.position = _bookPanel.TransformPoint(t1);
+            _clippingPlane.transform.position         = _bookPanel.TransformPoint(t1);
 
             _left.transform.position = _bookPanel.TransformPoint(_c);
             float cT1Angle = Mathf.Atan2(t1.y - _c.y, t1.x - _c.x) * Mathf.Rad2Deg;
             _left.transform.localEulerAngles = new Vector3(0, 0, cT1Angle - 90 - clipAngle);
 
             _nextPageClip.transform.localEulerAngles = new Vector3(0, 0, clipAngle - 90);
-            _nextPageClip.transform.position = _bookPanel.TransformPoint(t1);
+            _nextPageClip.transform.position         = _bookPanel.TransformPoint(t1);
 
-            _leftNext.transform.SetParent(_nextPageClip.transform, true);
-            _right.transform.SetParent(_clippingPlane.transform, true);
-            _right.transform.SetAsFirstSibling();
+            SetParentIfDifferent(_leftNext.transform, _nextPageClip.transform, true);
+            SetParentIfDifferent(_right.transform, _clippingPlane.transform, true);
+            if (_right.transform.GetSiblingIndex() != 0)
+                _right.transform.SetAsFirstSibling();
 
-            _shadowLTR.rectTransform.SetParent(_left.rectTransform, true);
+            SetParentIfDifferent(_shadowLTR.rectTransform, _left.rectTransform, true);
         }
 
-        /// <summary>
-        /// 오른쪽에서 왼쪽으로 넘김 업데이트
-        /// </summary>
         public void UpdateBookRTLToPoint(Vector3 followLocation)
         {
             _mode = FlipMode.RightToLeft;
-            _f = followLocation;
+            _f    = followLocation;
 
-            _shadow.transform.SetParent(_clippingPlane.transform, true);
-            _shadow.transform.localPosition = Vector3.zero;
-            _shadow.transform.localEulerAngles = Vector3.zero;
+            SetParentIfDifferent(_shadow.transform, _clippingPlane.transform, true);
+            if (_shadow.transform.parent == _clippingPlane.transform)
+            {
+                _shadow.transform.localPosition    = Vector3.zero;
+                _shadow.transform.localEulerAngles = Vector3.zero;
+            }
 
-            _right.transform.SetParent(_clippingPlane.transform, true);
-            _left.transform.SetParent(_pageContainer.transform, true);
+            SetParentIfDifferent(_right.transform, _clippingPlane.transform, true);
+            SetParentIfDifferent(_left.transform, _pageContainer.transform, true);
             _left.transform.localEulerAngles = Vector3.zero;
-            _rightNext.transform.SetParent(_pageContainer.transform, true);
+            SetParentIfDifferent(_rightNext.transform, _pageContainer.transform, true);
 
             _c = CalcCPosition(followLocation);
             float clipAngle = CalcClipAngle(_c, _ebr, out Vector3 t1);
 
             if (clipAngle > -90) clipAngle += 180;
 
-            _clippingPlaneRT.pivot = new Vector2(1, 0.35f);
+            _clippingPlaneRT.pivot                    = new Vector2(1, 0.35f);
             _clippingPlane.transform.localEulerAngles = new Vector3(0, 0, clipAngle + 90);
-            _clippingPlane.transform.position = _bookPanel.TransformPoint(t1);
+            _clippingPlane.transform.position         = _bookPanel.TransformPoint(t1);
 
             _right.transform.position = _bookPanel.TransformPoint(_c);
             float cT1Angle = Mathf.Atan2(t1.y - _c.y, t1.x - _c.x) * Mathf.Rad2Deg;
             _right.transform.localEulerAngles = new Vector3(0, 0, cT1Angle - (clipAngle + 90));
 
             _nextPageClip.transform.localEulerAngles = new Vector3(0, 0, clipAngle + 90);
-            _nextPageClip.transform.position = _bookPanel.TransformPoint(t1);
+            _nextPageClip.transform.position         = _bookPanel.TransformPoint(t1);
 
-            _rightNext.transform.SetParent(_nextPageClip.transform, true);
-            _left.transform.SetParent(_clippingPlane.transform, true);
-            _left.transform.SetAsFirstSibling();
+            SetParentIfDifferent(_rightNext.transform, _nextPageClip.transform, true);
+            SetParentIfDifferent(_left.transform, _clippingPlane.transform, true);
+            if (_left.transform.GetSiblingIndex() != 0)
+                _left.transform.SetAsFirstSibling();
 
-            _shadow.rectTransform.SetParent(_right.rectTransform, true);
+            SetParentIfDifferent(_shadow.rectTransform, _right.rectTransform, true);
         }
 
-        /// <summary>
-        /// 클리핑 각도 계산
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // 수학 유틸
+        // ─────────────────────────────────────────────
+
+        private Vector3 TransformPoint(Vector3 mouseScreenPos)
+        {
+            if (_canvas.renderMode == RenderMode.ScreenSpaceCamera)
+            {
+                Vector3 mouseWorldPos = _canvas.worldCamera.ScreenToWorldPoint(
+                    new Vector3(mouseScreenPos.x, mouseScreenPos.y, _canvas.planeDistance));
+                return _bookPanel.InverseTransformPoint(mouseWorldPos);
+            }
+            else if (_canvas.renderMode == RenderMode.WorldSpace)
+            {
+                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                Vector3 globalEBR = transform.TransformPoint(_ebr);
+                Vector3 globalEBL = transform.TransformPoint(_ebl);
+                Vector3 globalSt  = transform.TransformPoint(_st);
+                Plane p = new Plane(globalEBR, globalEBL, globalSt);
+
+                if (p.Raycast(ray, out float distance))
+                    return _bookPanel.InverseTransformPoint(ray.GetPoint(distance));
+                return Vector3.zero;
+            }
+            else
+            {
+                return _bookPanel.InverseTransformPoint(mouseScreenPos);
+            }
+        }
+
         private float CalcClipAngle(Vector3 c, Vector3 bookCorner, out Vector3 t1)
         {
             Vector3 t0 = (c + bookCorner) / 2;
@@ -499,35 +523,25 @@ namespace CAT.BookFlip
 
             float t1X = t0.x - (bookCorner.y - t0.y) * Mathf.Tan(t0CornerAngle);
             t1X = NormalizeT1X(t1X, bookCorner, _sb);
-            t1 = new Vector3(t1X, _sb.y, 0);
+            t1  = new Vector3(t1X, _sb.y, 0);
 
-            float t0T1Angle = Mathf.Atan2(t1.y - t0.y, t1.x - t0.x) * Mathf.Rad2Deg;
-            return t0T1Angle;
+            return Mathf.Atan2(t1.y - t0.y, t1.x - t0.x) * Mathf.Rad2Deg;
         }
 
-        /// <summary>
-        /// T1 X 좌표 정규화
-        /// </summary>
         private float NormalizeT1X(float t1, Vector3 corner, Vector3 sb)
         {
-            if (t1 > sb.x && sb.x > corner.x)
-                return sb.x;
-            if (t1 < sb.x && sb.x < corner.x)
-                return sb.x;
+            if (t1 > sb.x && sb.x > corner.x) return sb.x;
+            if (t1 < sb.x && sb.x < corner.x) return sb.x;
             return t1;
         }
 
-        /// <summary>
-        /// C 위치 계산
-        /// </summary>
         private Vector3 CalcCPosition(Vector3 followLocation)
         {
             _f = followLocation;
             float fSbAngle = Mathf.Atan2(_f.y - _sb.y, _f.x - _sb.x);
             Vector3 r1 = new Vector3(
                 _radius1 * Mathf.Cos(fSbAngle),
-                _radius1 * Mathf.Sin(fSbAngle),
-                0) + _sb;
+                _radius1 * Mathf.Sin(fSbAngle), 0) + _sb;
 
             float fSbDistance = Vector2.Distance(_f, _sb);
             Vector3 c = fSbDistance < _radius1 ? _f : r1;
@@ -535,135 +549,137 @@ namespace CAT.BookFlip
             float fStAngle = Mathf.Atan2(c.y - _st.y, c.x - _st.x);
             Vector3 r2 = new Vector3(
                 _radius2 * Mathf.Cos(fStAngle),
-                _radius2 * Mathf.Sin(fStAngle),
-                0) + _st;
+                _radius2 * Mathf.Sin(fStAngle), 0) + _st;
 
-            float cStDistance = Vector2.Distance(c, _st);
-            if (cStDistance > _radius2)
-                c = r2;
-
+            if (Vector2.Distance(c, _st) > _radius2) c = r2;
             return c;
         }
 
-        /// <summary>
-        /// 오른쪽 페이지를 특정 지점으로 드래그
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // 드래그 / 릴리즈
+        // ─────────────────────────────────────────────
+
         public void DragRightPageToPoint(Vector3 point)
         {
             if (_currentPage >= _pages.Length) return;
 
-            _pageDragging = true;
-            _mode = FlipMode.RightToLeft;
             _f = point;
 
-            OnFlipStart?.Invoke();
-            DisablePageInteraction();
+            // 드래그 제스처당 1회만 슬롯을 재구성한다. 매 프레임 호출 시 Cleanup/Setup 반복으로 스프라이트·프리팹 모두 깜빡임이 난다.
+            if (!_pageDragging)
+            {
+                _pageDragging = true;
+                _mode = FlipMode.RightToLeft;
 
-            _nextPageClipRT.pivot = new Vector2(0, 0.12f);
-            _clippingPlaneRT.pivot = new Vector2(1, 0.35f);
+                OnFlipStart?.Invoke();
+                DisablePageInteraction();
 
-            // Left 페이지 설정
-            _left.gameObject.SetActive(true);
-            _leftRT.pivot = new Vector2(0, 0);
-            _left.transform.position = _rightNext.transform.position;
-            _left.transform.eulerAngles = Vector3.zero;
-            SetupPageDisplay(_left, _leftRT, _currentPage, ref _leftPageInstance);
-            _left.transform.SetAsFirstSibling();
+                // 애니메이션 클리핑 요소 활성화 (Flip/TweenBack 완료 시 비활성화됨)
+                _clippingPlane.gameObject.SetActive(true);
+                _nextPageClip.gameObject.SetActive(true);
 
-            // Right 페이지 설정
-            _right.gameObject.SetActive(true);
-            _right.transform.position = _rightNext.transform.position;
-            _right.transform.eulerAngles = Vector3.zero;
-            SetupPageDisplay(_right, _rightRT, _currentPage + 1, ref _rightPageInstance);
+                // _rightNext(currentPage)와 _left(currentPage)의 인덱스 충돌 해소
+                // _rightNext를 먼저 정리해야 같은 페이지를 _left에 새 인스턴스로 생성할 수 있음
+                CleanupDisplaySlot(ref _rightNextPageInstance, ref _rightNextDisplayIndex);
 
-            // RightNext 페이지 설정
-            SetupPageDisplay(_rightNext, _rightNextRT, _currentPage + 2, ref _rightNextPageInstance);
-            _leftNext.transform.SetAsFirstSibling();
+                _nextPageClipRT.pivot  = new Vector2(0, 0.12f);
+                _clippingPlaneRT.pivot = new Vector2(1, 0.35f);
 
-            if (_enableShadowEffect)
-                _shadow.gameObject.SetActive(true);
+                _left.gameObject.SetActive(true);
+                _leftRT.pivot = new Vector2(0, 0);
+                _left.transform.position     = _rightNext.transform.position;
+                _left.transform.eulerAngles  = Vector3.zero;
+                SetupPageDisplay(_left, _leftRT, _currentPage, ref _leftPageInstance, ref _leftDisplayIndex);
+                _left.transform.SetAsFirstSibling();
+
+                _right.gameObject.SetActive(true);
+                _right.transform.position    = _rightNext.transform.position;
+                _right.transform.eulerAngles = Vector3.zero;
+                SetupPageDisplay(_right, _rightRT, _currentPage + 1, ref _rightPageInstance, ref _rightDisplayIndex);
+
+                SetupPageDisplay(_rightNext, _rightNextRT, _currentPage + 2, ref _rightNextPageInstance, ref _rightNextDisplayIndex);
+                _leftNext.transform.SetAsFirstSibling();
+
+                if (_enableShadowEffect)
+                    _shadow.gameObject.SetActive(true);
+
+                Canvas.ForceUpdateCanvases();
+            }
 
             UpdateBookRTLToPoint(_f);
         }
 
-        /// <summary>
-        /// 왼쪽 페이지를 특정 지점으로 드래그
-        /// </summary>
         public void DragLeftPageToPoint(Vector3 point)
         {
             if (_currentPage <= 0) return;
 
-            _pageDragging = true;
-            _mode = FlipMode.LeftToRight;
             _f = point;
 
-            OnFlipStart?.Invoke();
-            DisablePageInteraction();
+            if (!_pageDragging)
+            {
+                _pageDragging = true;
+                _mode = FlipMode.LeftToRight;
 
-            _nextPageClipRT.pivot = new Vector2(1, 0.12f);
-            _clippingPlaneRT.pivot = new Vector2(0, 0.35f);
+                OnFlipStart?.Invoke();
+                DisablePageInteraction();
 
-            // Right 페이지 설정
-            _right.gameObject.SetActive(true);
-            _right.transform.position = _leftNext.transform.position;
-            _right.transform.eulerAngles = Vector3.zero;
-            SetupPageDisplay(_right, _rightRT, _currentPage - 1, ref _rightPageInstance);
-            _right.transform.SetAsFirstSibling();
+                // 애니메이션 클리핑 요소 활성화 (Flip/TweenBack 완료 시 비활성화됨)
+                _clippingPlane.gameObject.SetActive(true);
+                _nextPageClip.gameObject.SetActive(true);
 
-            // Left 페이지 설정
-            _left.gameObject.SetActive(true);
-            _leftRT.pivot = new Vector2(1, 0);
-            _left.transform.position = _leftNext.transform.position;
-            _left.transform.eulerAngles = Vector3.zero;
-            SetupPageDisplay(_left, _leftRT, _currentPage - 2, ref _leftPageInstance);
+                // _leftNext(currentPage-1)와 _right(currentPage-1)의 인덱스 충돌 해소
+                // _leftNext를 먼저 정리해야 같은 페이지를 _right에 새 인스턴스로 생성할 수 있음
+                CleanupDisplaySlot(ref _leftNextPageInstance, ref _leftNextDisplayIndex);
 
-            // LeftNext 페이지 설정
-            SetupPageDisplay(_leftNext, _leftNextRT, _currentPage - 3, ref _leftNextPageInstance);
-            _rightNext.transform.SetAsFirstSibling();
+                _nextPageClipRT.pivot  = new Vector2(1, 0.12f);
+                _clippingPlaneRT.pivot = new Vector2(0, 0.35f);
 
-            if (_enableShadowEffect)
-                _shadowLTR.gameObject.SetActive(true);
+                _right.gameObject.SetActive(true);
+                _right.transform.position    = _leftNext.transform.position;
+                _right.transform.eulerAngles = Vector3.zero;
+                SetupPageDisplay(_right, _rightRT, _currentPage - 1, ref _rightPageInstance, ref _rightDisplayIndex);
+                _right.transform.SetAsFirstSibling();
+
+                _left.gameObject.SetActive(true);
+                _leftRT.pivot = new Vector2(1, 0);
+                _left.transform.position    = _leftNext.transform.position;
+                _left.transform.eulerAngles = Vector3.zero;
+                SetupPageDisplay(_left, _leftRT, _currentPage - 2, ref _leftPageInstance, ref _leftDisplayIndex);
+
+                SetupPageDisplay(_leftNext, _leftNextRT, _currentPage - 3, ref _leftNextPageInstance, ref _leftNextDisplayIndex);
+                _rightNext.transform.SetAsFirstSibling();
+
+                if (_enableShadowEffect)
+                    _shadowLTR.gameObject.SetActive(true);
+
+                Canvas.ForceUpdateCanvases();
+            }
 
             UpdateBookLTRToPoint(_f);
         }
 
-        /// <summary>
-        /// 마우스 드래그 - 오른쪽 페이지
-        /// </summary>
         public void OnMouseDragRightPage()
         {
-            if (_interactable)
-                DragRightPageToPoint(TransformPoint(Input.mousePosition));
+            if (_interactable) DragRightPageToPoint(TransformPoint(Input.mousePosition));
         }
 
-        /// <summary>
-        /// 마우스 드래그 - 왼쪽 페이지
-        /// </summary>
         public void OnMouseDragLeftPage()
         {
-            if (_interactable)
-                DragLeftPageToPoint(TransformPoint(Input.mousePosition));
+            if (_interactable) DragLeftPageToPoint(TransformPoint(Input.mousePosition));
         }
 
-        /// <summary>
-        /// 마우스 릴리즈
-        /// </summary>
         public void OnMouseRelease()
         {
-            if (_interactable)
-                ReleasePage();
+            if (_interactable) ReleasePage();
         }
 
-        /// <summary>
-        /// 페이지 릴리즈 (드래그 종료)
-        /// </summary>
         public void ReleasePage()
         {
             if (!_pageDragging) return;
 
             _pageDragging = false;
 
-            float distanceToLeft = Vector2.Distance(_c, _ebl);
+            float distanceToLeft  = Vector2.Distance(_c, _ebl);
             float distanceToRight = Vector2.Distance(_c, _ebr);
 
             if (distanceToRight < distanceToLeft && _mode == FlipMode.RightToLeft)
@@ -674,172 +690,328 @@ namespace CAT.BookFlip
                 TweenForward();
         }
 
-        /// <summary>
-        /// 스프라이트 업데이트
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // 페이지 표시 설정
+        // ─────────────────────────────────────────────
+
         private void UpdateSprites()
         {
-            SetupPageDisplay(_leftNext, _leftNextRT, _currentPage - 1, ref _leftNextPageInstance);
-            SetupPageDisplay(_rightNext, _rightNextRT, _currentPage, ref _rightNextPageInstance);
+            SetupPageDisplay(_leftNext,  _leftNextRT,  _currentPage - 1, ref _leftNextPageInstance,  ref _leftNextDisplayIndex);
+            SetupPageDisplay(_rightNext, _rightNextRT, _currentPage,     ref _rightNextPageInstance, ref _rightNextDisplayIndex);
+            // 슬롯 스프라이트/자식 UI 교체 직후 이전 메시가 1프레임 잔상으로 남는 것을 방지
+            Canvas.ForceUpdateCanvases();
         }
 
         /// <summary>
-        /// 페이지 인스턴스 정리 헬퍼 메서드
+        /// 지정 슬롯에 pageIndex 페이지를 표시한다.
+        /// 기존 슬롯 내용은 CleanupDisplaySlot으로 정리한다.
         /// </summary>
-        private void CleanupPageInstance(ref GameObject pageInstance)
+        private void SetupPageDisplay(
+            Image targetImage, RectTransform targetRT,
+            int pageIndex,
+            ref GameObject pageInstance, ref int displayIndex)
         {
-            if (pageInstance != null)
-            {
-                Destroy(pageInstance);
-                pageInstance = null;
-            }
-        }
-
-        /// <summary>
-        /// 페이지 디스플레이 설정 (Sprite/Prefab/GameObject 모두 지원)
-        /// </summary>
-        private void SetupPageDisplay(Image targetImage, RectTransform targetRT, int pageIndex, ref GameObject pageInstance)
-        {
-            // 기존 인스턴스 정리
-            CleanupPageInstance(ref pageInstance);
-
-            // targetRT 하위의 모든 페이지 인스턴스 정리 (중복 방지)
-            CleanupChildPageInstances(targetRT);
+            // 기존 슬롯 정리 (PersistInstance → Release로 비활성화, 아닌 경우 → 파괴)
+            CleanupDisplaySlot(ref pageInstance, ref displayIndex);
 
             // 범위 체크
             if (pageIndex < 0 || pageIndex >= _pages.Length)
             {
-                targetImage.sprite = _background;
+                targetImage.sprite  = _background;
                 targetImage.enabled = true;
+                targetImage.SetAllDirty();
                 return;
             }
 
             BookFlipPage page = _pages[pageIndex];
             if (page == null || !page.IsValid())
             {
-                targetImage.sprite = _background;
+                targetImage.sprite  = _background;
                 targetImage.enabled = true;
+                targetImage.SetAllDirty();
                 return;
             }
 
-            // 페이지 타입에 따라 처리
+            displayIndex = pageIndex;
+
             switch (page.Type)
             {
                 case BookFlipPage.PageType.Sprite:
-                    // Sprite 타입: Image의 sprite만 변경
-                    targetImage.sprite = page.Sprite;
+                    // ResourcesPath 모드: Sprite가 없는 경우에만 동기 로드 (Unity Resources 캐시 활용)
+                    if (page.Source == BookFlipPage.SourceMode.ResourcesPath && page.Sprite == null)
+                        page.LoadFromResources();
+
+                    targetImage.sprite  = page.Sprite;
                     targetImage.enabled = true;
+                    targetImage.SetAllDirty();
                     break;
 
                 case BookFlipPage.PageType.Prefab:
                 case BookFlipPage.PageType.GameObject:
-                    // Prefab/GameObject 타입: 실제 GameObject 인스턴스 생성
-                    targetImage.enabled = false; // Image 숨김
+                    // 두 타입 모두 GetOrCreateImage → Instantiate(씬 템플릿 또는 참조) 동일.
+                    // Prefab 전용으로 LayoutRebuilder/ForceUpdateCanvases를 넣으면 오히려 한 프레임 깜빡임이 날 수 있어 GameObject와 동일 경로만 사용한다.
+                    targetImage.enabled = false;
 
-                    // BookFlipPage를 통해 인스턴스 생성
                     Image pageImage = page.GetOrCreateImage(targetRT, $"Page_{pageIndex}");
+
+                    // pageImage가 없어도 RuntimeInstance가 생성됐을 수 있음 (루트에 Image 없는 경우)
+                    pageInstance = pageImage != null
+                        ? pageImage.gameObject
+                        : page.RuntimeInstance;
+
+                    page.SetInteractable(false);
                     if (pageImage != null)
-                    {
-                        pageInstance = pageImage.gameObject;
-
-                        // RectTransform 설정
-                        RectTransform pageRT = pageInstance.GetComponent<RectTransform>();
-                        if (pageRT != null)
-                        {
-                            pageRT.anchorMin = Vector2.zero;
-                            pageRT.anchorMax = Vector2.one;
-                            pageRT.sizeDelta = Vector2.zero;
-                            pageRT.anchoredPosition = Vector2.zero;
-                            pageRT.localScale = Vector3.one;
-                        }
-
-                        // 인터랙션 초기 비활성화
-                        page.SetInteractable(false);
-                    }
+                        pageImage.SetAllDirty();
                     break;
             }
         }
 
+        // ─────────────────────────────────────────────
+        // 슬롯 정리
+        // ─────────────────────────────────────────────
+
         /// <summary>
-        /// targetRT 하위의 모든 페이지 인스턴스 정리
+        /// 특정 슬롯의 페이지 인스턴스를 정리한다.
+        /// PersistInstance 페이지는 Release()로 비활성화, 아닌 경우 Destroy.
+        /// </summary>
+        private void CleanupDisplaySlot(ref GameObject pageInstance, ref int displayIndex)
+        {
+            if (displayIndex >= 0 && displayIndex < _pages.Length && _pages[displayIndex] != null)
+            {
+                // _pageContainer를 풀(pool) 부모로 사용 — 비활성화된 PersistInstance가 다른 슬롯 정리에 영향받지 않도록
+                _pages[displayIndex].Release(_pageContainer);
+            }
+            else if (pageInstance != null)
+            {
+                // 페이지 인덱스 추적이 없는 경우의 폴백 (인덱스 범위 초과 등)
+                pageInstance.SetActive(false);
+                Destroy(pageInstance);
+            }
+
+            pageInstance = null;
+            displayIndex = -1;
+        }
+
+        /// <summary>모든 슬롯을 정리한다</summary>
+        private void CleanupAllDisplaySlots()
+        {
+            CleanupDisplaySlot(ref _leftPageInstance,     ref _leftDisplayIndex);
+            CleanupDisplaySlot(ref _rightPageInstance,    ref _rightDisplayIndex);
+            CleanupDisplaySlot(ref _leftNextPageInstance, ref _leftNextDisplayIndex);
+            CleanupDisplaySlot(ref _rightNextPageInstance, ref _rightNextDisplayIndex);
+        }
+
+        // ─────────────────────────────────────────────
+        // 슬롯 RT 복원
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// _leftNext / _rightNext 슬롯의 RectTransform 초기값을 저장한다.
+        /// 애니메이션 중 _nextPageClip 자식으로 재부모 → 좌표가 틀어지므로
+        /// Flip / TweenBack 완료 시 SaveSlotRTStates 값으로 복원해야 한다.
+        /// </summary>
+        private void SaveSlotRTStates()
+        {
+            _leftNextRTState  = CaptureRTState(_leftNextRT);
+            _rightNextRTState = CaptureRTState(_rightNextRT);
+        }
+
+        private SlotRTState CaptureRTState(RectTransform rt)
+        {
+            if (rt == null) return default;
+            return new SlotRTState
+            {
+                anchorMin        = rt.anchorMin,
+                anchorMax        = rt.anchorMax,
+                anchoredPosition = rt.anchoredPosition,
+                sizeDelta        = rt.sizeDelta,
+            };
+        }
+
+        private void RestoreRT(RectTransform rt, SlotRTState state)
+        {
+            if (rt == null) return;
+            rt.anchorMin        = state.anchorMin;
+            rt.anchorMax        = state.anchorMax;
+            rt.anchoredPosition = state.anchoredPosition;
+            rt.sizeDelta        = state.sizeDelta;
+        }
+
+        private static CanvasGroup EnsureCanvasGroup(Graphic g)
+        {
+            if (g == null) return null;
+            var cg = g.GetComponent<CanvasGroup>();
+            if (cg == null) cg = g.gameObject.AddComponent<CanvasGroup>();
+            return cg;
+        }
+
+        /// <summary>정적 슬롯(_leftNext, _rightNext)의 alpha를 일괄 설정</summary>
+        private void SetSlotAlpha(float alpha)
+        {
+            if (_leftNextCG  != null) _leftNextCG.alpha  = alpha;
+            if (_rightNextCG != null) _rightNextCG.alpha = alpha;
+        }
+
+        /// <summary>
+        /// targetRT 하위의 "Page_" 이름 자식 중 PersistInstance가 아닌 것을 파괴 (비상용).
+        /// 정상적인 흐름에서는 CleanupDisplaySlot이 처리하므로 호출 불필요.
         /// </summary>
         private void CleanupChildPageInstances(RectTransform targetRT)
         {
             if (targetRT == null) return;
 
-            // "Page_" 로 시작하는 자식 오브젝트 모두 파괴
             for (int i = targetRT.childCount - 1; i >= 0; i--)
             {
                 Transform child = targetRT.GetChild(i);
-                if (child.name.StartsWith("Page_"))
-                {
-                    Destroy(child.gameObject);
-                }
+                if (!child.name.StartsWith("Page_")) continue;
+                if (IsPersistInstanceObject(child.gameObject)) continue;
+                Destroy(child.gameObject);
             }
         }
 
-        /// <summary>
-        /// 페이지 인덱스에 해당하는 스프라이트 가져오기 (Sprite 타입 전용)
-        /// </summary>
-        private Sprite GetPageSprite(int index)
+        private bool IsPersistInstanceObject(GameObject go)
         {
-            if (index < 0 || index >= _pages.Length)
-                return _background;
-
-            if (_pages[index] == null || !_pages[index].IsValid())
-                return _background;
-
-            // Sprite 타입만 직접 스프라이트 반환
-            if (_pages[index].Type == BookFlipPage.PageType.Sprite)
-                return _pages[index].Sprite;
-
-            // Prefab/GameObject 타입은 null 반환 (SetupPageDisplay에서 처리)
-            return null;
+            if (_pages == null) return false;
+            for (int i = 0; i < _pages.Length; i++)
+            {
+                var p = _pages[i];
+                if (p != null && p.PersistInstance && p.RuntimeInstance == go)
+                    return true;
+            }
+            return false;
         }
 
-        /// <summary>
-        /// 앞으로 넘기기
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // 애니메이션
+        // ─────────────────────────────────────────────
+
         public void TweenForward()
         {
             Vector3 target = _mode == FlipMode.RightToLeft ? _ebl : _ebr;
+            Vector3 from   = _f;
 
             if (_currentCoroutine != null)
                 StopCoroutine(_currentCoroutine);
 
-            _currentCoroutine = StartCoroutine(TweenTo(target, 0.15f, () => { Flip(); }));
+            _currentCoroutine = StartCoroutine(TweenTo(from, target, _flipDuration, Flip));
+        }
+
+        public void TweenBack()
+        {
+            if (_currentCoroutine != null)
+                StopCoroutine(_currentCoroutine);
+
+            Vector3 from   = _f;
+            Vector3 target = _mode == FlipMode.RightToLeft ? _ebr : _ebl;
+
+            _currentCoroutine = StartCoroutine(TweenTo(from, target, _flipDuration, () =>
+            {
+                // ── 1. 잔상 차단 ──
+                SetSlotAlpha(0f);
+
+                // ── 2. 애니메이션 슬롯 인스턴스 정리 ──
+                CleanupDisplaySlot(ref _leftPageInstance,  ref _leftDisplayIndex);
+                CleanupDisplaySlot(ref _rightPageInstance, ref _rightDisplayIndex);
+
+                _left.transform.SetParent(_pageContainer.transform, true);
+                _left.gameObject.SetActive(false);
+                _right.transform.SetParent(_pageContainer.transform, true);
+                _right.gameObject.SetActive(false);
+
+                // ── 3. 정적 슬롯 복귀 + RT 좌표 복원 ──
+                _leftNext.transform.SetParent(_pageContainer.transform, true);
+                RestoreRT(_leftNextRT, _leftNextRTState);
+                _rightNext.transform.SetParent(_pageContainer.transform, true);
+                RestoreRT(_rightNextRT, _rightNextRTState);
+
+                // ── 4. 콘텐츠 재설정 ──
+                UpdateSprites();
+
+                // ── 5. 정적 슬롯 다시 보이기 ──
+                SetSlotAlpha(1f);
+
+                _pageDragging = false;
+
+                EnablePageInteraction();
+                SetupHotSpots();
+                OnFlipEnd?.Invoke();
+            }));
         }
 
         /// <summary>
-        /// 페이지 넘김 완료
+        /// AnimationCurve 기반 트윈.
+        /// Time.deltaTime 사용 → 프레임레이트 독립적.
         /// </summary>
+        private IEnumerator TweenTo(Vector3 from, Vector3 to, float duration, System.Action onFinish)
+        {
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t   = _flipCurve.Evaluate(Mathf.Clamp01(elapsed / duration));
+                Vector3 pos = Vector3.LerpUnclamped(from, to, t);
+
+                if (_mode == FlipMode.RightToLeft)
+                    UpdateBookRTLToPoint(pos);
+                else
+                    UpdateBookLTRToPoint(pos);
+
+                // 최종 위치 도달 시 렌더링하지 않고 즉시 완료 처리로 직행
+                // (yield 하면 "클리핑 애니메이션 상태"가 1프레임 보인 뒤 정착 상태로 전환되어 잔상 발생)
+                if (elapsed >= duration)
+                    break;
+
+                yield return null;
+            }
+
+            // 클리핑 요소를 즉시 숨겨 onFinish 슬롯 재배치 중 잔상 방지
+            // (애니메이션 최종 위치의 클리핑 메시가 1프레임 남는 것을 차단)
+            _clippingPlane.gameObject.SetActive(false);
+            _nextPageClip.gameObject.SetActive(false);
+
+            onFinish?.Invoke();
+            _currentCoroutine = null;
+        }
+
         private void Flip()
         {
+            // ── 1. 잔상 차단: 정적 슬롯 즉시 투명 처리 ──
+            SetSlotAlpha(0f);
+
+            // ── 2. 애니메이션 슬롯 인스턴스 정리 ──
+            CleanupDisplaySlot(ref _leftPageInstance,  ref _leftDisplayIndex);
+            CleanupDisplaySlot(ref _rightPageInstance, ref _rightDisplayIndex);
+
+            // 애니메이션 슬롯 복귀 (_clippingPlane 자식 → 회전 상태이므로 worldPositionStays=true 필수)
+            _left.transform.SetParent(_pageContainer.transform, true);
+            _left.gameObject.SetActive(false);
+            _right.gameObject.SetActive(false);
+            _right.transform.SetParent(_pageContainer.transform, true);
+
+            // ── 3. 정적 슬롯 복귀 + RT 좌표 복원 ──
+            _leftNext.transform.SetParent(_pageContainer.transform, true);
+            RestoreRT(_leftNextRT, _leftNextRTState);
+            _rightNext.transform.SetParent(_pageContainer.transform, true);
+            RestoreRT(_rightNextRT, _rightNextRTState);
+
+            // ── 4. 페이지 인덱스 갱신 + 콘텐츠 재설정 ──
             if (_mode == FlipMode.RightToLeft)
                 _currentPage += 2;
             else
                 _currentPage -= 2;
 
-            // Left/Right 페이지 인스턴스 정리
-            CleanupPageInstance(ref _leftPageInstance);
-            CleanupPageInstance(ref _rightPageInstance);
-
-            _leftNext.transform.SetParent(_pageContainer.transform, true);
-            _left.transform.SetParent(_pageContainer.transform, true);
-            _left.gameObject.SetActive(false);
-
-            _right.gameObject.SetActive(false);
-            _right.transform.SetParent(_pageContainer.transform, true);
-            _rightNext.transform.SetParent(_pageContainer.transform, true);
-
             UpdateSprites();
+
+            // ── 5. 정적 슬롯 다시 보이기 ──
+            SetSlotAlpha(1f);
 
             _shadow.gameObject.SetActive(false);
             _shadowLTR.gameObject.SetActive(false);
 
-            EnablePageInteraction();
+            _pageDragging = false;
 
-            // 핫스팟을 최상위로 다시 설정
+            EnablePageInteraction();
             SetupHotSpots();
 
             OnFlip?.Invoke();
@@ -847,112 +1019,32 @@ namespace CAT.BookFlip
             OnFlipEnd?.Invoke();
         }
 
-        /// <summary>
-        /// 뒤로 되돌리기
-        /// </summary>
-        public void TweenBack()
-        {
-            if (_currentCoroutine != null)
-                StopCoroutine(_currentCoroutine);
+        // ─────────────────────────────────────────────
+        // 인터랙션 제어
+        // ─────────────────────────────────────────────
 
-            if (_mode == FlipMode.RightToLeft)
-            {
-                _currentCoroutine = StartCoroutine(TweenTo(_ebr, 0.15f, () =>
-                {
-                    // Left/Right 페이지 인스턴스 정리
-                    CleanupPageInstance(ref _leftPageInstance);
-                    CleanupPageInstance(ref _rightPageInstance);
-
-                    UpdateSprites();
-                    _rightNext.transform.SetParent(_pageContainer.transform);
-                    _right.transform.SetParent(_pageContainer.transform);
-                    _left.gameObject.SetActive(false);
-                    _right.gameObject.SetActive(false);
-                    _pageDragging = false;
-
-                    EnablePageInteraction();
-
-                    // 핫스팟을 최상위로 다시 설정
-                    SetupHotSpots();
-
-                    OnFlipEnd?.Invoke();
-                }));
-            }
-            else
-            {
-                _currentCoroutine = StartCoroutine(TweenTo(_ebl, 0.15f, () =>
-                {
-                    // Left/Right 페이지 인스턴스 정리
-                    CleanupPageInstance(ref _leftPageInstance);
-                    CleanupPageInstance(ref _rightPageInstance);
-
-                    UpdateSprites();
-                    _leftNext.transform.SetParent(_pageContainer.transform);
-                    _left.transform.SetParent(_pageContainer.transform);
-                    _left.gameObject.SetActive(false);
-                    _right.gameObject.SetActive(false);
-                    _pageDragging = false;
-
-                    EnablePageInteraction();
-
-                    // 핫스팟을 최상위로 다시 설정
-                    SetupHotSpots();
-
-                    OnFlipEnd?.Invoke();
-                }));
-            }
-        }
-
-        /// <summary>
-        /// 특정 지점으로 트윈
-        /// </summary>
-        private IEnumerator TweenTo(Vector3 to, float duration, System.Action onFinish)
-        {
-            int steps = (int)(duration / 0.025f);
-            Vector3 displacement = (to - _f) / steps;
-
-            for (int i = 0; i < steps - 1; i++)
-            {
-                if (_mode == FlipMode.RightToLeft)
-                    UpdateBookRTLToPoint(_f + displacement);
-                else
-                    UpdateBookLTRToPoint(_f + displacement);
-
-                yield return new WaitForSeconds(0.025f);
-            }
-
-            onFinish?.Invoke();
-        }
-
-        /// <summary>
-        /// 페이지 인터랙션 비활성화
-        /// </summary>
         private void DisablePageInteraction()
         {
-            // TODO: BookFlipPage의 SetInteractable 활용
+            if (_pages == null) return;
             for (int i = 0; i < _pages.Length; i++)
-            {
-                if (_pages[i] != null)
-                    _pages[i].SetInteractable(false);
-            }
+                _pages[i]?.SetInteractable(false);
         }
 
-        /// <summary>
-        /// 페이지 인터랙션 활성화
-        /// </summary>
         private void EnablePageInteraction()
         {
-            // 현재 보이는 페이지만 활성화
-            if (_currentPage - 1 >= 0 && _currentPage - 1 < _pages.Length && _pages[_currentPage - 1] != null)
-                _pages[_currentPage - 1].SetInteractable(true);
+            // 현재 보이는 두 페이지만 활성화
+            int leftIdx  = _currentPage - 1;
+            int rightIdx = _currentPage;
 
-            if (_currentPage >= 0 && _currentPage < _pages.Length && _pages[_currentPage] != null)
-                _pages[_currentPage].SetInteractable(true);
+            if (leftIdx  >= 0 && leftIdx  < _pages.Length && _pages[leftIdx]  != null) _pages[leftIdx].SetInteractable(true);
+            if (rightIdx >= 0 && rightIdx < _pages.Length && _pages[rightIdx] != null) _pages[rightIdx].SetInteractable(true);
         }
 
-        /// <summary>
-        /// 다음 페이지로 이동
-        /// </summary>
+        // ─────────────────────────────────────────────
+        // 공개 API — 페이지 이동
+        // ─────────────────────────────────────────────
+
+        /// <summary>다음 페이지로 이동</summary>
         public void NextPage()
         {
             if (_currentPage < _pages.Length - 1)
@@ -962,9 +1054,7 @@ namespace CAT.BookFlip
             }
         }
 
-        /// <summary>
-        /// 이전 페이지로 이동
-        /// </summary>
+        /// <summary>이전 페이지로 이동</summary>
         public void PreviousPage()
         {
             if (_currentPage > 0)
@@ -974,9 +1064,7 @@ namespace CAT.BookFlip
             }
         }
 
-        /// <summary>
-        /// 특정 페이지로 이동
-        /// </summary>
+        /// <summary>특정 페이지로 즉시 이동 (애니메이션 없음)</summary>
         public void GoToPage(int pageIndex)
         {
             if (pageIndex < 0 || pageIndex >= _pages.Length)
@@ -990,33 +1078,120 @@ namespace CAT.BookFlip
             OnPageChanged?.Invoke(_currentPage);
         }
 
-        private void OnDestroy()
-        {
-            // 현재 사용 중인 페이지 인스턴스들 정리
-            if (_leftPageInstance != null) Destroy(_leftPageInstance);
-            if (_leftNextPageInstance != null) Destroy(_leftNextPageInstance);
-            if (_rightPageInstance != null) Destroy(_rightPageInstance);
-            if (_rightNextPageInstance != null) Destroy(_rightNextPageInstance);
+        // ─────────────────────────────────────────────
+        // 공개 API — 런타임 페이지 목록 관리
+        // ─────────────────────────────────────────────
 
-            // 런타임에 생성된 페이지들 정리
+        /// <summary>
+        /// 페이지 목록 전체를 교체한다 (런타임에서 호출).
+        /// 기존 페이지 인스턴스는 모두 정리되고, 현재 페이지는 0으로 리셋된다.
+        /// </summary>
+        public void SetPages(BookFlipPage[] pages)
+        {
+            CleanupAllDisplaySlots();
+
+            // 기존 페이지 인스턴스 완전 파괴
             if (_pages != null)
-            {
                 for (int i = 0; i < _pages.Length; i++)
-                {
                     _pages[i]?.Destroy();
-                }
-            }
+
+            _pages = pages ?? new BookFlipPage[0];
+            _currentPage = Mathf.Clamp(_currentPage, 0, Mathf.Max(0, _pages.Length - 1));
+
+            UpdateSprites();
+            OnPageChanged?.Invoke(_currentPage);
         }
 
-#if UNITY_EDITOR
-        private void OnValidate()
+        /// <summary>페이지를 끝에 추가한다</summary>
+        public void AddPage(BookFlipPage page)
         {
-            // 에디터에서 변경사항 반영
-            if (_bookPanel != null)
-            {
-                CalcCurlCriticalPoints();
-            }
+            if (page == null) return;
+            var newPages = new BookFlipPage[_pages.Length + 1];
+            System.Array.Copy(_pages, newPages, _pages.Length);
+            newPages[_pages.Length] = page;
+            _pages = newPages;
+            UpdateSprites();
         }
-#endif
+
+        /// <summary>지정 인덱스 위치에 페이지를 삽입한다</summary>
+        public void InsertPage(int index, BookFlipPage page)
+        {
+            if (page == null) return;
+            index = Mathf.Clamp(index, 0, _pages.Length);
+
+            var newPages = new BookFlipPage[_pages.Length + 1];
+            for (int i = 0; i < index; i++)               newPages[i]     = _pages[i];
+            newPages[index] = page;
+            for (int i = index; i < _pages.Length; i++)   newPages[i + 1] = _pages[i];
+
+            _pages = newPages;
+
+            // 삽입 위치 이전에 현재 페이지가 있으면 인덱스 보정
+            if (_currentPage >= index) _currentPage++;
+
+            UpdateSprites();
+        }
+
+        /// <summary>지정 인덱스 페이지를 제거한다</summary>
+        public void RemovePage(int index)
+        {
+            if (index < 0 || index >= _pages.Length) return;
+
+            _pages[index]?.Destroy();
+
+            var newPages = new BookFlipPage[_pages.Length - 1];
+            for (int i = 0; i < index; i++)               newPages[i]     = _pages[i];
+            for (int i = index + 1; i < _pages.Length; i++) newPages[i - 1] = _pages[i];
+
+            _pages = newPages;
+            _currentPage = Mathf.Clamp(_currentPage, 0, Mathf.Max(0, _pages.Length - 1));
+
+            UpdateSprites();
+        }
+
+        /// <summary>
+        /// 특정 페이지의 인스턴스를 새로 생성하도록 표시한다.
+        /// 소스(Sprite/Prefab/GameObject) 변경 후 호출하면 다음 표시 시 반영된다.
+        /// 현재 화면에 표시 중인 페이지라면 즉시 갱신된다.
+        /// </summary>
+        public void RefreshPage(int pageIndex)
+        {
+            if (pageIndex < 0 || pageIndex >= _pages.Length || _pages[pageIndex] == null)
+                return;
+
+            _pages[pageIndex].RefreshInstance();
+
+            // 현재 표시 중인 슬롯이면 즉시 갱신
+            bool isVisible = (pageIndex == _leftNextDisplayIndex  ||
+                              pageIndex == _rightNextDisplayIndex ||
+                              pageIndex == _leftDisplayIndex      ||
+                              pageIndex == _rightDisplayIndex);
+
+            if (isVisible) UpdateSprites();
+        }
+
+        /// <summary>
+        /// 모든 페이지 인스턴스를 새로 생성하도록 표시한다.
+        /// 복수의 소스 변경 후 호출한다.
+        /// </summary>
+        public void RefreshAllPages()
+        {
+            if (_pages == null) return;
+            for (int i = 0; i < _pages.Length; i++)
+                _pages[i]?.RefreshInstance();
+            UpdateSprites();
+        }
+
+        // ─────────────────────────────────────────────
+        // 내부 유틸
+        // ─────────────────────────────────────────────
+
+        private Sprite GetPageSprite(int index)
+        {
+            if (index < 0 || index >= _pages.Length) return _background;
+            if (_pages[index] == null || !_pages[index].IsValid()) return _background;
+            if (_pages[index].Type == BookFlipPage.PageType.Sprite) return _pages[index].Sprite;
+            return null;
+        }
     }
 }
