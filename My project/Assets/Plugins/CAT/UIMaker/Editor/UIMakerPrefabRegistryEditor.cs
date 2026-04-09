@@ -26,7 +26,7 @@ namespace CAT.Utility
         /// <summary>
         /// 메뉴에서 레지스트리 에셋을 선택한다.
         /// </summary>
-        [MenuItem("CAT/UI/Prefab Registry")]
+        [MenuItem("LCUP/UI/Prefab Registry")]
         static void SelectRegistry()
         {
             var registry = UIMakerPrefabRegistry.GetOrCreateInstance();

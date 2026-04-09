@@ -61,7 +61,7 @@ namespace CAT.BookFlip
                     break;
 
                 case PageType.GameObject:
-                    _runtimeInstance = _gameObject;
+                    _runtimeInstance = CreateGameObjectInstance(parent, name);
                     break;
             }
 
@@ -93,6 +93,35 @@ namespace CAT.BookFlip
             img.raycastTarget = false; // 기본적으로 raycast 비활성화
 
             return go;
+        }
+
+        /// <summary>
+        /// GameObject 타입 페이지 인스턴스 생성 (씬의 GameObject를 Prefab처럼 복제)
+        /// 원본 오브젝트는 씬에 그대로 유지되며, 복제본만 페이지로 사용됨
+        /// </summary>
+        private GameObject CreateGameObjectInstance(Transform parent, string name)
+        {
+            if (_gameObject == null)
+            {
+                Debug.LogError($"[BookFlipPage] GameObject가 null입니다: {name}");
+                return null;
+            }
+
+            GameObject instance = Object.Instantiate(_gameObject, parent);
+            instance.name = name;
+            instance.hideFlags = HideFlags.DontSave;
+
+            // RectTransform 설정
+            RectTransform rt = instance.GetComponent<RectTransform>();
+            if (rt != null)
+            {
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.sizeDelta = Vector2.zero;
+                rt.anchoredPosition = Vector2.zero;
+            }
+
+            return instance;
         }
 
         /// <summary>
@@ -199,11 +228,13 @@ namespace CAT.BookFlip
 
         /// <summary>
         /// 페이지 인스턴스 파괴
+        /// GameObject 타입은 복제본을 파괴하며, 원본 씬 오브젝트는 유지됨
         /// </summary>
         public void Destroy()
         {
-            // Sprite와 Prefab 타입만 파괴 (GameObject 타입은 씬에 원래 있던 것이므로 유지)
-            if (_type != PageType.GameObject && _runtimeInstance != null)
+            // 모든 타입의 런타임 인스턴스를 파괴
+            // (GameObject 타입도 Instantiate로 복제하므로 복제본을 파괴해야 함. 원본은 _gameObject 필드에 유지됨)
+            if (_runtimeInstance != null)
             {
                 Object.Destroy(_runtimeInstance);
             }

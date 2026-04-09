@@ -167,6 +167,7 @@ namespace CAT.UI
         }
 
         // 에디터에서 값이 변경될 때 컷 수 제한 적용
+#if UNITY_EDITOR
         protected override void OnValidate()
         {
             base.OnValidate();
@@ -189,6 +190,7 @@ namespace CAT.UI
                 SetVerticesDirty();
             }
         }
+#endif
 
         // 렌더링 데이터를 준비하고 캐싱합니다
         protected override void OnPopulateMesh(VertexHelper vh)

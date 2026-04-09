@@ -78,7 +78,7 @@ namespace CAT.Utility
         private GUIStyle _selectedStyle;
 
         // ── 메뉴 및 단축키 ────────────────────────────────────────────────
-        [MenuItem("CAT/UI/UI Preview Window %#u")]
+        [MenuItem("LCUP/UI/UI Preview Window %#u")]
         public static void ShowWindow()
         {
             var window = GetWindow<UIPreviewWindow>(false, "UI Preview", true);
