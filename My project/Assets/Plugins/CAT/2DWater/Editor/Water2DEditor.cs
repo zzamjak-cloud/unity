@@ -185,6 +185,7 @@ namespace CAT.Water2D
         private void DrawEventsSection()
         {
             EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("이벤트", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(_onSplashProp);
         }
 

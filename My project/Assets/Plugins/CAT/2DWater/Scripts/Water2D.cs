@@ -44,18 +44,15 @@ namespace CAT.Water2D
     {
         #region 직렬화 필드
 
-        [Header("크기 (로컬)")]
         [SerializeField, Tooltip("물 본체 가로 폭")]
         private float _width = 4f;
 
         [SerializeField, Tooltip("물 본체 세로 깊이 (상단=0, 하단=-depth)")]
         private float _depth = 2f;
 
-        [Header("메시")]
         [SerializeField, Range(8, 128), Tooltip("표면 포인트 수. 많을수록 부드러우나 연산 증가")]
         private int _pointCount = 24;
 
-        [Header("스프링 물리 (60fps 튜닝)")]
         [SerializeField, Range(0.001f, 0.2f), Tooltip("복원력 강도 (k). 클수록 빠르게 평형으로 돌아옴")]
         private float _springConstant = 0.025f;
 
@@ -65,7 +62,6 @@ namespace CAT.Water2D
         [SerializeField, Range(0f, 0.5f), Tooltip("좌·우 이웃 전파율. 클수록 파동이 멀리 퍼짐")]
         private float _spread = 0.25f;
 
-        [Header("상호작용")]
         [SerializeField, Tooltip("진입 속도(Y)에 대한 impulse 계수")]
         private float _velocityMultiplier = 0.1f;
 
@@ -75,7 +71,6 @@ namespace CAT.Water2D
         [SerializeField, Min(0f), Tooltip("단일 진입당 최대 impulse 절댓값 (클램프)")]
         private float _maxImpulse = 5f;
 
-        [Header("부력 (Buoyancy)")]
         [SerializeField, Tooltip("부력 시스템 활성화. 물에 잠긴 Rigidbody2D 에 매 FixedUpdate 로 힘을 가한다.")]
         private bool _buoyancyEnabled = false;
 
@@ -88,14 +83,12 @@ namespace CAT.Water2D
         [SerializeField, Range(0f, 20f), Tooltip("수중 각속도 감쇠(초당).")]
         private float _angularDrag = 1f;
 
-        [Header("렌더링")]
         [SerializeField, Tooltip("MeshRenderer 의 Sorting Layer ID (SpriteRenderer 와 공유).")]
         private int _sortingLayerID = 0;
 
         [SerializeField, Tooltip("MeshRenderer 의 Order in Layer. SpriteRenderer 와 같은 레이어 내에서 앞뒤 정렬.")]
         private int _sortingOrder = 0;
 
-        [Header("이벤트")]
         [SerializeField, Tooltip("Splash 발생 시 호출: (world position, 적용된 force)")]
         private Water2DSplashEvent _onSplash = new Water2DSplashEvent();
 
@@ -171,7 +164,7 @@ namespace CAT.Water2D
         /// 임의 위치에 파동을 주입한다.
         /// </summary>
         /// <param name="localX">-width/2 ~ +width/2 범위의 로컬 X 좌표</param>
-        /// <param name="force">수직 impulse. 양수면 아래 방향으로 튐 (velocity 에 가산됨).</param>
+        /// <param name="force">표면 포인트 수직 속도에 가산되는 impulse. 양수는 표면이 위로 솟는 방향, 음수는 아래로 찍히는 방향.</param>
         public void Splash(float localX, float force)
         {
             if (_points == null || _points.Length == 0) return;

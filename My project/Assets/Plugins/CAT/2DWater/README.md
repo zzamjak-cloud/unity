@@ -19,7 +19,6 @@ Assets/Plugins/CAT/2DWater/
 │   └── WaterPoint.cs     # 포인트 구조체
 ├── Editor/
 │   └── Water2DEditor.cs  # 커스텀 인스펙터 + Scene 기즈모
-├── Samples/              # (선택) 샘플 프리팹 저장 위치
 └── README.md
 ```
 
@@ -30,9 +29,12 @@ Assets/Plugins/CAT/2DWater/
 | 버텍스 웨이브 | 8~128개 포인트의 스프링 시뮬레이션 |
 | 이웃 파동 전파 | `_spread` 로 제어되는 좌·우 전파 (2-pass) |
 | Rigidbody2D 자동 감지 | Trigger 진입 시 impulse 자동 계산 |
-| 공개 Splash API | `water.Splash(localX, force)` |
+| 공개 Splash API | `water.Splash(localX, force)` (`force` 는 표면 포인트 `Velocity` 에 가산. **음수**는 아래로 찍히는 파동, **양수**는 위로 솟는 파동) |
+| 표면 높이 샘플링 | `water.SampleSurfaceHeight(localX)` — 부력·외부 연출용 |
+| 표면 리셋 | `water.ResetSurface()` — 높이·속도를 평형으로 |
+| 부력 (옵션) | `Buoyancy Enabled` 시 잠긴 `Rigidbody2D` 에 `FixedUpdate` 로 부력·수중 드래그 |
 | UnityEvent 훅 | `OnSplash(Vector2 worldPos, float force)` |
-| 에디터 프리뷰 | `ExecuteAlways` + `EditorApplication.update` |
+| 에디터 프리뷰 | `ExecuteAlways` + 에디터에서만 `EditorApplication.update` (`_editorPreview` 가 켜진 경우) |
 | Scene 기즈모 | bounds + 표면 라인 + 포인트 도트 |
 
 ## 인스펙터 프로퍼티
@@ -54,7 +56,9 @@ Assets/Plugins/CAT/2DWater/
 | 부력 | Angular Drag | 1 | 수중 각속도 감쇠(초당) |
 | 렌더링 | Sorting Layer | Default | SpriteRenderer 와 공유되는 정렬 레이어 |
 | 렌더링 | Order in Layer | 0 | 같은 레이어 내 앞뒤 정렬 |
-| 이벤트 | On Splash | - | UnityEvent<Vector2, float> |
+| 이벤트 | On Splash | - | `Water2DSplashEvent` (`UnityEvent<Vector2, float>`) |
+
+커스텀 인스펙터(`Water2DEditor`)에서 **크기·메시·스프링 물리·상호작용·부력·렌더링·이벤트** 섹션으로 그룹 표시된다. (`[Header]` 는 사용하지 않음 — 중복 라벨 방지.)
 
 ### Sorting Layer / Order in Layer
 
@@ -98,7 +102,7 @@ Vector3 world = water.transform.TransformPoint(new Vector3(localX, surfaceY, 0))
 ## 아키텍처
 
 ```
-[Update / EditorTick]
+[Update] (Play) / [EditorTick] (에디터 프리뷰 ON, 비플레이)
         │
         ▼
 [StepSimulation(dt)]                ← 1/60s 어큐뮬레이터
@@ -115,7 +119,13 @@ Vector3 world = water.transform.TransformPoint(new Vector3(localX, surfaceY, 0))
 [MeshFilter.sharedMesh]
 
 [OnTriggerEnter2D] ─► Rigidbody2D 조회 ─► localX·impulse 계산 ─► Splash()
+                        │
+                        └─ (Buoyancy Enabled) ─► _submergedBodies 에 등록
+
+[FixedUpdate] (Play + Buoyancy Enabled) ─► 잠긴 바디마다 ApplyBuoyancy
 ```
+
+`OnTriggerExit2D` 에서는 `_submergedBodies` 에서 해당 `Rigidbody2D` 를 제거한다.
 
 정점 레이아웃 (pointCount = N):
 ```
@@ -150,11 +160,14 @@ public class SplashOnClick : MonoBehaviour
         {
             Vector3 wp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             float lx = water.transform.InverseTransformPoint(wp).x;
-            water.Splash(lx, -3f);   // 음수 = 아래 방향
+            // 음수: 표면이 아래로 찍히는 impulse. 양수면 위로 솟는 방향.
+            water.Splash(lx, -3f);
         }
     }
 }
 ```
+
+읽기 전용 상태: `water.Width`, `water.Depth`, `water.PointCount`, `water.OnSplash`. 정렬: `water.SortingLayerID`, `water.SortingOrder` (setter 시 `MeshRenderer` 에 반영).
 
 ### 3. UnityEvent 로 파티클 연결
 
@@ -165,7 +178,8 @@ public class SplashOnClick : MonoBehaviour
 ### 4. 에디터 프리뷰
 
 - 인스펙터 하단 `에디터 프리뷰` → `Play 없이 시뮬레이션` 토글 ON
-- `🌊 Random Splash` 버튼으로 파동 테스트
+- `🌊 Random Splash` 버튼으로 파동 테스트 (내부적으로 음수 `force` 범위 사용)
+- `⏹ Reset Surface` 로 표면을 평형 상태로 되돌림 (`ResetSurface()` 와 동일)
 - 끄려면 토글 OFF
 
 ## 성능 특성
@@ -174,12 +188,12 @@ public class SplashOnClick : MonoBehaviour
 |------|------------------------|
 | 정점 수 | 48 |
 | 삼각형 수 | 46 |
-| Update 비용 | < 0.1ms (모바일 중급 기기) |
-| GC Alloc | 0 (정상 운용 시) |
+| Update 비용 | pointCount·기기에 따라 상이 (경량 목표로 설계) |
+| GC Alloc | 0 지향 (런타임 `Update`/`FixedUpdate` 경로에서 할당 없음) |
 | Mesh 재할당 | pointCount 변경 시 1회 |
 
 튜닝 팁:
-- 작은 물컵: pointCount 12~16
+- 작은 물컵: pointCount 8~16 (최소 8)
 - 일반 어항: 24 (기본값)
 - 넓은 호수: 48~64
 - 64 초과는 모바일 비권장 (에디터 경고 표시)
@@ -204,7 +218,7 @@ public class SplashOnClick : MonoBehaviour
 ## 향후 확장 후보
 
 - UI(Canvas) 모드 (`MaskableGraphic.OnPopulateMesh`)
-- Buoyancy 통합
+- 부력 고도화 (부분 잠김·표면 경계 처리, Effector2D 와의 조합 등)
 - 물 전용 셰이더 (굴절·언더워터·노멀맵)
 - Splash 파티클 프리셋 프리팹
 - 다중 소스 2D wave equation
