@@ -375,9 +375,15 @@ namespace CAT.Utility
             set
             {
                 _isLoop = value;
-                _transformDirty = true;
+                MarkDirty();
             }
         }
+
+        /// <summary>
+        /// 경로 데이터가 변경될 때마다 증가하는 버전 번호.
+        /// PathRibbon 등 외부 구독자가 단순 int 비교로 변경 감지 가능(GC 없음).
+        /// </summary>
+        public int PathVersion { get; private set; }
 
         /// <summary>포인트 리스트를 복사본으로 교체한다.</summary>
         /// <param name="points">새 포인트 리스트 (path 좌표 기준)</param>
@@ -1225,6 +1231,8 @@ namespace CAT.Utility
         private void MarkDirty()
         {
             _transformDirty = true;
+            // 외부 구독자(PathRibbon 등)가 감지할 수 있도록 버전 증가
+            unchecked { PathVersion++; }
         }
 
         /// <summary>타이머 경계값 처리 및 루프 이벤트 발생</summary>
