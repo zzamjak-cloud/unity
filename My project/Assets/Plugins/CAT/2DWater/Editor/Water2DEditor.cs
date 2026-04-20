@@ -20,6 +20,10 @@ namespace CAT.Water2D
         private SerializedProperty _velocityMultiplierProp;
         private SerializedProperty _massMultiplierProp;
         private SerializedProperty _maxImpulseProp;
+        private SerializedProperty _buoyancyEnabledProp;
+        private SerializedProperty _buoyancyForceProp;
+        private SerializedProperty _linearDragProp;
+        private SerializedProperty _angularDragProp;
         private SerializedProperty _sortingLayerIDProp;
         private SerializedProperty _sortingOrderProp;
         private SerializedProperty _onSplashProp;
@@ -41,6 +45,10 @@ namespace CAT.Water2D
             _velocityMultiplierProp = serializedObject.FindProperty("_velocityMultiplier");
             _massMultiplierProp = serializedObject.FindProperty("_massMultiplier");
             _maxImpulseProp = serializedObject.FindProperty("_maxImpulse");
+            _buoyancyEnabledProp = serializedObject.FindProperty("_buoyancyEnabled");
+            _buoyancyForceProp = serializedObject.FindProperty("_buoyancyForce");
+            _linearDragProp = serializedObject.FindProperty("_linearDrag");
+            _angularDragProp = serializedObject.FindProperty("_angularDrag");
             _sortingLayerIDProp = serializedObject.FindProperty("_sortingLayerID");
             _sortingOrderProp = serializedObject.FindProperty("_sortingOrder");
             _onSplashProp = serializedObject.FindProperty("_onSplash");
@@ -58,6 +66,7 @@ namespace CAT.Water2D
             DrawMeshSection();
             DrawSpringSection();
             DrawInteractionSection();
+            DrawBuoyancySection();
             DrawRenderingSection();
             DrawEventsSection();
 
@@ -123,6 +132,26 @@ namespace CAT.Water2D
             EditorGUILayout.PropertyField(_velocityMultiplierProp);
             EditorGUILayout.PropertyField(_massMultiplierProp);
             EditorGUILayout.PropertyField(_maxImpulseProp);
+        }
+
+        private void DrawBuoyancySection()
+        {
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("부력 (Buoyancy)", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(_buoyancyEnabledProp);
+            using (new EditorGUI.DisabledScope(!_buoyancyEnabledProp.boolValue))
+            {
+                EditorGUILayout.PropertyField(_buoyancyForceProp);
+                EditorGUILayout.PropertyField(_linearDragProp);
+                EditorGUILayout.PropertyField(_angularDragProp);
+            }
+            if (_buoyancyEnabledProp.boolValue)
+            {
+                EditorGUILayout.HelpBox(
+                    "물에 잠긴 Rigidbody2D 는 매 FixedUpdate 에서 자동으로 부력·드래그를 받습니다.\n" +
+                    "가라앉게 하려면 바디의 mass 증가 또는 Buoyancy Force 감소.",
+                    MessageType.Info);
+            }
         }
 
         private void DrawRenderingSection()

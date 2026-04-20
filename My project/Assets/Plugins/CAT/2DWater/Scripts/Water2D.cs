@@ -75,6 +75,19 @@ namespace CAT.Water2D
         [SerializeField, Min(0f), Tooltip("단일 진입당 최대 impulse 절댓값 (클램프)")]
         private float _maxImpulse = 5f;
 
+        [Header("부력 (Buoyancy)")]
+        [SerializeField, Tooltip("부력 시스템 활성화. 물에 잠긴 Rigidbody2D 에 매 FixedUpdate 로 힘을 가한다.")]
+        private bool _buoyancyEnabled = false;
+
+        [SerializeField, Min(0f), Tooltip("단위 잠김 깊이 × 질량당 위 방향 힘. 기본값 30 은 일반 2D 씬 중력(-9.81)에서 자연스러운 부유.")]
+        private float _buoyancyForce = 30f;
+
+        [SerializeField, Range(0f, 20f), Tooltip("수중 선형 감쇠(초당). 수직·수평 속도에 적용되어 물 속에서 천천히 감속.")]
+        private float _linearDrag = 3f;
+
+        [SerializeField, Range(0f, 20f), Tooltip("수중 각속도 감쇠(초당).")]
+        private float _angularDrag = 1f;
+
         [Header("렌더링")]
         [SerializeField, Tooltip("MeshRenderer 의 Sorting Layer ID (SpriteRenderer 와 공유).")]
         private int _sortingLayerID = 0;
@@ -112,6 +125,10 @@ namespace CAT.Water2D
         // 고정 스텝 시뮬레이션 어큐뮬레이터
         private float _simAccumulator;
         private const float SimStepSeconds = 1f / 60f;
+
+        // 물 속에 잠긴 Rigidbody2D 추적 (부력 적용 대상)
+        private readonly System.Collections.Generic.HashSet<Rigidbody2D> _submergedBodies
+            = new System.Collections.Generic.HashSet<Rigidbody2D>();
 
         // 메시 업데이트 플래그 (모바일 최적화)
         private const MeshUpdateFlags MeshFlags =
@@ -483,6 +500,70 @@ namespace CAT.Water2D
             impulse = Mathf.Clamp(impulse, -_maxImpulse, _maxImpulse);
 
             Splash(localX, impulse);
+
+            if (_buoyancyEnabled) _submergedBodies.Add(rb);
+        }
+
+        private void OnTriggerExit2D(Collider2D other)
+        {
+            Rigidbody2D rb = other.attachedRigidbody;
+            if (rb == null) return;
+            _submergedBodies.Remove(rb);
+        }
+
+        private void FixedUpdate()
+        {
+            if (!Application.isPlaying || !_buoyancyEnabled) return;
+            if (_submergedBodies.Count == 0) return;
+
+            float dt = Time.fixedDeltaTime;
+
+            // Destroy 된 Rigidbody2D 참조 제거 (프레임당 1회)
+            _submergedBodies.RemoveWhere(r => r == null);
+
+            foreach (Rigidbody2D rb in _submergedBodies)
+            {
+                if (rb == null || !rb.simulated) continue;
+                ApplyBuoyancy(rb, dt);
+            }
+        }
+
+        private void ApplyBuoyancy(Rigidbody2D rb, float dt)
+        {
+            // 바디 위치를 로컬로 변환해 표면 높이와 비교
+            Vector3 localPos = transform.InverseTransformPoint(rb.position);
+            float surfaceLocalY = SampleSurfaceHeight(localPos.x);
+            float submergedDepth = surfaceLocalY - localPos.y;
+
+            if (submergedDepth <= 0f) return;
+
+            // 부력: 잠김 깊이 × 질량 × 힘 계수 (위 방향)
+            float buoyMag = _buoyancyForce * submergedDepth * rb.mass;
+            rb.AddForce(new Vector2(0f, buoyMag), ForceMode2D.Force);
+
+            // 수중 드래그 (선형·각속도)
+            float linearFactor = Mathf.Max(0f, 1f - _linearDrag * dt);
+            float angularFactor = Mathf.Max(0f, 1f - _angularDrag * dt);
+            rb.linearVelocity *= linearFactor;
+            rb.angularVelocity *= angularFactor;
+        }
+
+        /// <summary>
+        /// 로컬 X 좌표의 표면 높이(로컬 Y)를 이웃 포인트 선형 보간으로 반환.
+        /// 부력 계산 외에도 외부 스크립트에서 수면 높이 샘플링에 사용 가능.
+        /// </summary>
+        public float SampleSurfaceHeight(float localX)
+        {
+            if (_points == null || _points.Length < 2) return 0f;
+
+            int n = _points.Length;
+            float halfW = _width * 0.5f;
+            float t = Mathf.Clamp01((localX + halfW) / Mathf.Max(0.0001f, _width));
+            float fIdx = t * (n - 1);
+            int i0 = Mathf.FloorToInt(fIdx);
+            int i1 = Mathf.Min(i0 + 1, n - 1);
+            float frac = fIdx - i0;
+            return Mathf.Lerp(_points[i0].Height, _points[i1].Height, frac);
         }
 
         #endregion

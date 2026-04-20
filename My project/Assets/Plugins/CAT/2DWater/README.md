@@ -48,6 +48,10 @@ Assets/Plugins/CAT/2DWater/
 | 상호작용 | Velocity Multiplier | 0.1 | 진입 Y속도 계수 |
 | 상호작용 | Mass Multiplier | 0.05 | 질량 계수 |
 | 상호작용 | Max Impulse | 5 | 단일 진입 impulse 상한 |
+| 부력 | Buoyancy Enabled | false | 부력 시스템 on/off |
+| 부력 | Buoyancy Force | 30 | 단위 잠김 깊이 × 질량당 힘 |
+| 부력 | Linear Drag | 3 | 수중 선형 감쇠(초당) |
+| 부력 | Angular Drag | 1 | 수중 각속도 감쇠(초당) |
 | 렌더링 | Sorting Layer | Default | SpriteRenderer 와 공유되는 정렬 레이어 |
 | 렌더링 | Order in Layer | 0 | 같은 레이어 내 앞뒤 정렬 |
 | 이벤트 | On Splash | - | UnityEvent<Vector2, float> |
@@ -65,6 +69,30 @@ Assets/Plugins/CAT/2DWater/
 ```csharp
 water.SortingLayerID = SortingLayer.NameToID("Foreground");
 water.SortingOrder = 10;
+```
+
+### 부력 (Buoyancy)
+
+물에 잠긴 `Rigidbody2D` 에 매 FixedUpdate 마다 부력·드래그를 자동 적용한다. Unity 내장 `BuoyancyEffector2D` 와 달리 **출렁이는 표면 높이(`SampleSurfaceHeight`)를 직접 샘플링**하므로 파도에 따라 뜨는 물체가 자연스럽게 흔들린다.
+
+**동작 원리**:
+- `OnTriggerEnter2D` 시 내부 HashSet 에 추가, `OnTriggerExit2D` 시 제거
+- `FixedUpdate` 에서 각 바디의 위치를 로컬로 변환 → `SampleSurfaceHeight(localX)` 로 해당 X 의 표면 Y 조회
+- `submergedDepth = surfaceY - bodyY` (양수일 때만 부력 적용)
+- 부력: `Vector2.up * (BuoyancyForce × submergedDepth × rb.mass)`
+- 드래그: `linearVelocity *= 1 - LinearDrag × dt`, `angularVelocity` 동일
+
+**튜닝 팁**:
+- 가벼운 코르크 느낌: `BuoyancyForce = 50`, `LinearDrag = 5`
+- 무거운 돌 (가라앉음): 바디 `mass` 증가 + `BuoyancyForce = 15`
+- 흔들리며 천천히 뜨는 오리 인형: `LinearDrag = 1.5`, `AngularDrag = 0.5`
+
+**표면 높이 외부 샘플링**:
+```csharp
+float localX = water.transform.InverseTransformPoint(fish.position).x;
+float surfaceY = water.SampleSurfaceHeight(localX);
+Vector3 world = water.transform.TransformPoint(new Vector3(localX, surfaceY, 0));
+// world.y 가 해당 위치의 수면 높이
 ```
 
 ## 아키텍처
@@ -159,7 +187,6 @@ public class SplashOnClick : MonoBehaviour
 ## 제한 사항
 
 - **UI(Canvas) 미지원**: World-space 전용. UI 모드는 향후 `MaskableGraphic` 파생으로 확장 가능.
-- **Buoyancy 미포함**: 물체가 물에 뜨는 물리는 Unity 내장 `Buoyancy Effector 2D` 별도 사용.
 - **굴절·언더워터 틴트 없음**: 시각 효과는 머티리얼/셰이더로 별도 구현.
 - **1D 파동**: 표면은 수평 방향으로만 파동 전파. 2D wave equation 은 미지원.
 - **Splash 파티클 내장 없음**: `OnSplash` 이벤트로 사용자가 직접 연결.
