@@ -10,7 +10,20 @@ namespace CAT.UI
         /// <summary>Unity 9-slice와 동일: 타일링 없이 셀당 1쿼드 스트레치. 쿼드 수 = (1+vCuts)×(1+hCuts).</summary>
         Sliced,
         /// <summary>조건부: 목표 크기 >= 원본이면 타일링, 아니면 스트레치.</summary>
-        Tiled
+        Tiled,
+        /// <summary>
+        /// Stepwise: 타일의 일부만 늘려 채우지 않고,
+        /// 타일 1개 크기가 확보될 때만 타일을 추가로 렌더링합니다.
+        /// </summary>
+        TiledFilled
+    }
+
+    public enum FillOrigin
+    {
+        Left,
+        Right,
+        Bottom,
+        Top
     }
 
     /// <summary>
@@ -24,7 +37,7 @@ namespace CAT.UI
     /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
     /// - Maskable: MaskableGraphic 상속으로 자동 지원
     /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
-    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링)
+    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링) / TiledFilled (타일 단위 stepwise 확장)
     ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
@@ -62,6 +75,61 @@ namespace CAT.UI
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private bool m_PreserveAspect = false;
         [SerializeField] private ImageType m_ImageType = ImageType.Sliced;
+        [SerializeField] private float m_FillAmount = 1f;
+        [SerializeField] private FillOrigin m_FillOrigin = FillOrigin.Left;
+        [SerializeField] private bool m_UseFilledMask = false;
+
+        /// <summary>
+        /// TiledFilled에서 0~1 사이로 채움 진행값입니다.
+        /// (Unity Image Filled의 fillAmount처럼 보이되, 현재 구현은 표시 영역을 줄이는 방식입니다.)
+        /// </summary>
+        public float fillAmount
+        {
+            get => m_FillAmount;
+            set
+            {
+                float v = Mathf.Clamp01(value);
+                if (Mathf.Abs(m_FillAmount - v) > 0.0001f)
+                {
+                    m_FillAmount = v;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        public FillOrigin fillOrigin
+        {
+            get => m_FillOrigin;
+            set
+            {
+                if (m_FillOrigin != value)
+                {
+                    m_FillOrigin = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tiled에서 전체 타일링으로 메쉬를 만든 뒤, fill 영역으로만 쿼드를 클리핑해서 Filled처럼 보이게 합니다.
+        /// (즉, rect 자체를 줄이지 않고 "마스킹"만 추가)
+        /// </summary>
+        public bool useFilledMask
+        {
+            get => m_UseFilledMask;
+            set
+            {
+                if (m_UseFilledMask != value)
+                {
+                    m_UseFilledMask = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        // OnPopulateMesh 동안 채워지는 렌더 마스크 정보
+        private bool _filledMaskActive;
+        private Rect _filledMaskRect;
 
         // 0.0 ~ 1.0 정규화된 좌표값 (최대 4개)
         public List<float> verticalCuts = new List<float>();
@@ -202,7 +270,24 @@ namespace CAT.UI
                 return;
             }
 
+            _filledMaskActive = false;
+            _filledMaskRect = Rect.zero;
+
             Rect rect = PrepareRenderRect();
+            if (m_ImageType == ImageType.TiledFilled)
+            {
+                // TiledFilled는 "사이즈 재계산"으로 구현하지 않고,
+                // 전체 메쉬를 만든 뒤 Fill 영역만 클립합니다.
+                // (이렇게 해야 Left/Right/Top/Bottom 방향이 타일 경계와 함께 자연스럽게 유지됩니다.)
+                _filledMaskRect = GetFilledMaskRect(rect, m_FillAmount, m_FillOrigin);
+                _filledMaskActive = m_FillAmount < 0.999f;
+            }
+            else if (m_UseFilledMask && m_FillAmount < 0.999f)
+            {
+                // "타일링으로 사이즈를 잡고" render 결과를 fill 영역으로만 클립합니다.
+                _filledMaskActive = true;
+                _filledMaskRect = GetFilledMaskRect(rect, m_FillAmount, m_FillOrigin);
+            }
             RenderData renderData = PrepareRenderData(rect);
 
             RenderCells(vh, rect, renderData);
@@ -238,6 +323,62 @@ namespace CAT.UI
                 }
             }
 
+            return rect;
+        }
+
+        private Rect ApplyFillRect(Rect rect)
+        {
+            float fill = Mathf.Clamp01(m_FillAmount);
+            if (fill >= 0.999f) return rect;
+
+            switch (m_FillOrigin)
+            {
+                case FillOrigin.Left:
+                    rect.width *= fill;
+                    break;
+                case FillOrigin.Right:
+                    float oldW = rect.width;
+                    rect.width = oldW * fill;
+                    rect.x += oldW - rect.width;
+                    break;
+                case FillOrigin.Bottom:
+                    rect.height *= fill;
+                    break;
+                case FillOrigin.Top:
+                    float oldH = rect.height;
+                    rect.height = oldH * fill;
+                    rect.y += oldH - rect.height;
+                    break;
+            }
+
+            // 안전: 음수 방지
+            if (rect.width < 0f) rect.width = 0f;
+            if (rect.height < 0f) rect.height = 0f;
+            return rect;
+        }
+
+        private Rect GetFilledMaskRect(Rect rect, float fillAmount, FillOrigin origin)
+        {
+            float fill = Mathf.Clamp01(fillAmount);
+            if (fill >= 0.999f) return rect;
+
+            switch (origin)
+            {
+                case FillOrigin.Left:
+                    rect.width = rect.width * fill;
+                    return rect;
+                case FillOrigin.Right:
+                    rect.x += rect.width * (1f - fill);
+                    rect.width = rect.width * fill;
+                    return rect;
+                case FillOrigin.Bottom:
+                    rect.height = rect.height * fill;
+                    return rect;
+                case FillOrigin.Top:
+                    rect.y += rect.height * (1f - fill);
+                    rect.height = rect.height * fill;
+                    return rect;
+            }
             return rect;
         }
 
@@ -293,7 +434,7 @@ namespace CAT.UI
             float[] vSizesSrc, vSizesDst;
             float[] hSizesSrc, hSizesDst;
 
-            bool useTiled = (m_ImageType == ImageType.Tiled);
+            bool useTiled = (m_ImageType == ImageType.Tiled || m_ImageType == ImageType.TiledFilled);
             CalculateSizes(vStops, rect.width, cachedSpriteW, out vSizesSrc, out vSizesDst, ref cachedVSizesSrc, ref cachedVSizesDst, useTiled);
             CalculateSizes(hStops, rect.height, cachedSpriteH, out hSizesSrc, out hSizesDst, ref cachedHSizesSrc, ref cachedHSizesDst, useTiled);
 
@@ -386,8 +527,10 @@ namespace CAT.UI
                                        float baseUvLeft, float baseUvRight, float baseUvBottom, float baseUvTop,
                                        bool isFlexibleCol, bool isFlexibleRow)
         {
-            if (m_ImageType == ImageType.Tiled)
+            if (m_ImageType == ImageType.Tiled || m_ImageType == ImageType.TiledFilled)
             {
+                bool stepwiseTiling = (m_ImageType == ImageType.TiledFilled);
+
                 // Tiled 모드: 타일링만 사용 (stretch 없음)
                 bool shouldTileX = false;
                 bool shouldTileY = false;
@@ -407,11 +550,19 @@ namespace CAT.UI
                     // 타일링: 모든 공간을 타일로 채움 (마지막 타일은 필요한 만큼 늘림)
                     RenderTiled(vh, pos, colWidth, rowHeight, srcColWidth, srcRowHeight,
                                baseUvLeft, baseUvRight, baseUvBottom, baseUvTop,
-                               shouldTileX, shouldTileY);
+                               shouldTileX, shouldTileY,
+                               stepwiseTiling);
                 }
                 else
                 {
                     // Stretch: 원본 크기보다 작으면 stretch 사용
+                    if (stepwiseTiling)
+                    {
+                        // Stepwise 모드에서는 타일 단위로만 확장되므로,
+                        // 아직 타일 1개를 그릴 만큼 공간이 없으면 렌더를 생략합니다.
+                        return;
+                    }
+
                     RenderStretched(vh, pos, colWidth, rowHeight,
                                    baseUvLeft, baseUvRight, baseUvBottom, baseUvTop);
                 }
@@ -786,15 +937,129 @@ namespace CAT.UI
             float srcHeight,
             float uvLeft, float uvRight,
             float uvBottom, float uvTop,
-            bool tileX, bool tileY)
+            bool tileX, bool tileY,
+            bool stepwiseTiling)
         {
             // 타일 크기 (픽셀 단위) - 확장 영역의 원본 크기 사용
             float baseTileW = tileX ? srcWidth : totalWidth;
             float baseTileH = tileY ? srcHeight : totalHeight;
 
-            // 타일 개수 계산 (모든 공간을 채우기 위해 ceil 사용)
-            int tilesX = tileX ? Mathf.CeilToInt(totalWidth / baseTileW) : 1;
-            int tilesY = tileY ? Mathf.CeilToInt(totalHeight / baseTileH) : 1;
+            if (baseTileW <= 0f || baseTileH <= 0f)
+            {
+                return;
+            }
+
+            float uvWidth = uvRight - uvLeft;
+            float uvHeight = uvTop - uvBottom;
+            float invBaseTileW = 1f / baseTileW;
+            float invBaseTileH = 1f / baseTileH;
+
+            const float EPS = 0.0001f;
+            const float EPS_FULL = 0.0005f;
+
+            // stepwiseTiling이 true인 경우:
+            // - FillOrigin에 해당하는 축에서만 "완전한 타일"만 렌더링
+            // - 다른 축은 일반 Tiled처럼 stretch 포함(ceil로 타일 계획)
+            bool stepX = stepwiseTiling && tileX && (m_FillOrigin == FillOrigin.Left || m_FillOrigin == FillOrigin.Right);
+            bool stepY = stepwiseTiling && tileY && (m_FillOrigin == FillOrigin.Bottom || m_FillOrigin == FillOrigin.Top);
+
+            float tileOriginX = startPos.x;
+            float tileOriginY = startPos.y;
+            bool exactStepX = false; // step 축에서만 부분 타일을 제외
+            bool exactStepY = false;
+
+            int tilesX = 1;
+            int tilesY = 1;
+
+            // X axis tiles
+            if (tileX)
+            {
+                if (stepX)
+                {
+                    float cellLeft = startPos.x;
+                    float cellRight = startPos.x + totalWidth;
+
+                    float maskLeft = _filledMaskRect.x;
+                    float maskRight = _filledMaskRect.x + _filledMaskRect.width;
+
+                    float visLeft = Mathf.Max(cellLeft, maskLeft);
+                    float visRight = Mathf.Min(cellRight, maskRight);
+                    float visibleWidth = visRight - visLeft;
+
+                    if (visibleWidth <= EPS_FULL)
+                    {
+                        tilesX = 0;
+                    }
+                    else
+                    {
+                        bool fullVisibleX = visibleWidth >= totalWidth - EPS_FULL;
+                        if (fullVisibleX)
+                        {
+                            tilesX = Mathf.CeilToInt(totalWidth / baseTileW);
+                        }
+                        else
+                        {
+                            tilesX = Mathf.FloorToInt((visibleWidth / baseTileW) + EPS);
+                            tilesX = Mathf.Max(0, tilesX);
+                            exactStepX = true;
+                            tileOriginX = (m_FillOrigin == FillOrigin.Left)
+                                ? cellLeft
+                                : (cellRight - tilesX * baseTileW);
+                        }
+                    }
+                }
+                else
+                {
+                    tilesX = Mathf.CeilToInt(totalWidth / baseTileW);
+                }
+            }
+
+            // Y axis tiles
+            if (tileY)
+            {
+                if (stepY)
+                {
+                    float cellBottom = startPos.y;
+                    float cellTop = startPos.y + totalHeight;
+
+                    float maskBottom = _filledMaskRect.y;
+                    float maskTop = _filledMaskRect.y + _filledMaskRect.height;
+
+                    float visBottom = Mathf.Max(cellBottom, maskBottom);
+                    float visTop = Mathf.Min(cellTop, maskTop);
+                    float visibleHeight = visTop - visBottom;
+
+                    if (visibleHeight <= EPS_FULL)
+                    {
+                        tilesY = 0;
+                    }
+                    else
+                    {
+                        bool fullVisibleY = visibleHeight >= totalHeight - EPS_FULL;
+                        if (fullVisibleY)
+                        {
+                            tilesY = Mathf.CeilToInt(totalHeight / baseTileH);
+                        }
+                        else
+                        {
+                            tilesY = Mathf.FloorToInt((visibleHeight / baseTileH) + EPS);
+                            tilesY = Mathf.Max(0, tilesY);
+                            exactStepY = true;
+                            tileOriginY = (m_FillOrigin == FillOrigin.Bottom)
+                                ? cellBottom
+                                : (cellTop - tilesY * baseTileH);
+                        }
+                    }
+                }
+                else
+                {
+                    tilesY = Mathf.CeilToInt(totalHeight / baseTileH);
+                }
+            }
+
+            if (tilesX <= 0 || tilesY <= 0)
+                return;
+
             int plannedQuads = tilesX * tilesY;
             int remainingQuads = (MAX_MESH_VERTICES - vh.currentVertCount) / 4;
 
@@ -807,22 +1072,17 @@ namespace CAT.UI
                 return;
             }
 
-            float uvWidth = uvRight - uvLeft;
-            float uvHeight = uvTop - uvBottom;
-            float invBaseTileW = 1f / baseTileW;
-            float invBaseTileH = 1f / baseTileH;
-
             // 타일링 (셀당 최대 MAX_QUADS_PER_SECTION 쿼드, 모바일 안전)
             int quadsAdded = 0;
             for (int ty = 0; ty < tilesY && quadsAdded < MAX_QUADS_PER_SECTION; ty++)
             {
-                float currentY = startPos.y + ty * baseTileH;
-                float actualH = Mathf.Min(baseTileH, startPos.y + totalHeight - currentY);
+                float currentY = tileOriginY + ty * baseTileH;
+                float actualH = exactStepY ? baseTileH : Mathf.Min(baseTileH, startPos.y + totalHeight - currentY);
 
                 for (int tx = 0; tx < tilesX && quadsAdded < MAX_QUADS_PER_SECTION; tx++)
                 {
-                    float currentX = startPos.x + tx * baseTileW;
-                    float actualW = Mathf.Min(baseTileW, startPos.x + totalWidth - currentX);
+                    float currentX = tileOriginX + tx * baseTileW;
+                    float actualW = exactStepX ? baseTileW : Mathf.Min(baseTileW, startPos.x + totalWidth - currentX);
 
                     tempRect.x = currentX;
                     tempRect.y = currentY;
@@ -859,6 +1119,49 @@ namespace CAT.UI
         // 쿼드를 추가합니다 (최적화: 구조체 재사용)
         private void AddQuad(VertexHelper vh, Rect posRect, Rect uvRect)
         {
+            if (_filledMaskActive)
+            {
+                // posRect와 uvRect는 같은 축 스케일로 매핑되므로,
+                // posRect를 마스크 영역과 교차 클리핑한 만큼 uvRect도 비례로 잘라줍니다.
+                float originalX = posRect.x;
+                float originalY = posRect.y;
+                float originalW = posRect.width;
+                float originalH = posRect.height;
+
+                float maskLeft = _filledMaskRect.x;
+                float maskRight = _filledMaskRect.x + _filledMaskRect.width;
+                float maskBottom = _filledMaskRect.y;
+                float maskTop = _filledMaskRect.y + _filledMaskRect.height;
+
+                float left = Mathf.Max(originalX, maskLeft);
+                float right = Mathf.Min(originalX + originalW, maskRight);
+                float bottom = Mathf.Max(originalY, maskBottom);
+                float top = Mathf.Min(originalY + originalH, maskTop);
+
+                if (right <= left || top <= bottom || originalW <= 0f || originalH <= 0f)
+                    return;
+
+                // posRect 클립
+                float clippedW = right - left;
+                float clippedH = top - bottom;
+                posRect.x = left;
+                posRect.y = bottom;
+                posRect.width = clippedW;
+                posRect.height = clippedH;
+
+                // uvRect 클립 (posRect 비율만큼)
+                float uLeftRatio = (left - originalX) / originalW;
+                float uRightRatio = (right - originalX) / originalW;
+                float vBottomRatio = (bottom - originalY) / originalH;
+                float vTopRatio = (top - originalY) / originalH;
+
+                uvRect.x = uvRect.x + uvRect.width * uLeftRatio;
+                uvRect.width = uvRect.width * (uRightRatio - uLeftRatio);
+
+                uvRect.y = uvRect.y + uvRect.height * vBottomRatio;
+                uvRect.height = uvRect.height * (vTopRatio - vBottomRatio);
+            }
+
             int i = vh.currentVertCount;
             UIVertex v = UIVertex.simpleVert;
             v.color = color;

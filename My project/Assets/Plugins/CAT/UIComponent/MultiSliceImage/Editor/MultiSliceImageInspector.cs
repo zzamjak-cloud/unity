@@ -15,6 +15,9 @@ public class MultiSliceImageInspector : GraphicEditor
     SerializedProperty m_ImageType;
     SerializedProperty m_VerticalCuts;
     SerializedProperty m_HorizontalCuts;
+    SerializedProperty m_FillAmount;
+    SerializedProperty m_FillOrigin;
+    SerializedProperty m_UseFilledMask;
 
     protected override void OnEnable()
     {
@@ -24,6 +27,9 @@ public class MultiSliceImageInspector : GraphicEditor
         m_ImageType = serializedObject.FindProperty("m_ImageType");
         m_VerticalCuts = serializedObject.FindProperty("verticalCuts");
         m_HorizontalCuts = serializedObject.FindProperty("horizontalCuts");
+        m_FillAmount = serializedObject.FindProperty("m_FillAmount");
+        m_FillOrigin = serializedObject.FindProperty("m_FillOrigin");
+        m_UseFilledMask = serializedObject.FindProperty("m_UseFilledMask");
     }
 
     public override void OnInspectorGUI()
@@ -52,7 +58,7 @@ public class MultiSliceImageInspector : GraphicEditor
         EditorGUI.BeginChangeCheck();
         MultiSliceImage targetImg = (MultiSliceImage)target;
         ImageType newImageType = (ImageType)EditorGUILayout.EnumPopup(
-            new GUIContent("Image Type", "Sliced: 9-slice처럼 셀당 1쿼드 고정 | Tiled: 조건부 타일링"),
+            new GUIContent("Image Type", "Sliced: 9-slice처럼 셀당 1쿼드 고정 | Tiled: 조건부 타일링 | TiledFilled: 타일 단위로 stepwise 확장"),
             targetImg.imageType
         );
         bool imageTypeChanged = EditorGUI.EndChangeCheck();
@@ -72,11 +78,49 @@ public class MultiSliceImageInspector : GraphicEditor
         // Preserve Aspect 표시
         EditorGUILayout.PropertyField(m_PreserveAspect, new GUIContent("Preserve Aspect", "종횡비 유지"));
 
+        MultiSliceImage targetImage = (MultiSliceImage)target;
+
+        // Tiled: 체크박스로 Filled 마스킹 클립을 추가합니다.
+        if (targetImage.imageType == ImageType.Tiled)
+        {
+            EditorGUI.BeginChangeCheck();
+            bool newUseFilledMask = EditorGUILayout.Toggle("Filled Mask (클립)", targetImage.useFilledMask);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(targetImage, "Change Filled Mask");
+                targetImage.useFilledMask = newUseFilledMask;
+                EditorUtility.SetDirty(targetImage);
+                UpdateImageImmediately(targetImage);
+            }
+        }
+
+        bool showFillSettings = targetImage.imageType == ImageType.TiledFilled
+            || (targetImage.imageType == ImageType.Tiled && targetImage.useFilledMask);
+
+        // TiledFilled / Filled Mask: 진행값 (Unity Filled의 fillAmount 느낌)
+        if (showFillSettings)
+        {
+            EditorGUI.BeginChangeCheck();
+
+            float newFill = EditorGUILayout.Slider("Fill Amount", targetImage.fillAmount, 0f, 1f);
+            FillOrigin newOrigin = (FillOrigin)EditorGUILayout.EnumPopup("Fill Origin", targetImage.fillOrigin);
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(targetImage, "Change TiledFilled Fill");
+
+                targetImage.fillAmount = newFill;
+                targetImage.fillOrigin = newOrigin;
+
+                // setter에서 SetVerticesDirty()를 호출하지만, Undo/씬 반영용으로 한 번 더 처리
+                EditorUtility.SetDirty(targetImage);
+                UpdateImageImmediately(targetImage);
+            }
+        }
+
         // Vertical, Horizontal Cuts는 Inspector에서 숨김 (Editor Window에서만 수정 가능)
         // EditorGUILayout.PropertyField(m_VerticalCuts, new GUIContent("Vertical Cuts", "최대 4개까지 가능"), true);
         // EditorGUILayout.PropertyField(m_HorizontalCuts, new GUIContent("Horizontal Cuts", "최대 4개까지 가능"), true);
-
-        MultiSliceImage targetImage = (MultiSliceImage)target;
 
         EditorGUILayout.Space(5);
 
