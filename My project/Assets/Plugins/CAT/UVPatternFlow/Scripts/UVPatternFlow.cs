@@ -103,7 +103,11 @@ namespace CAT.Effects
         private void ApplyOffset()
         {
             if (_rawImage == null) return;
-            _rawImage.uvRect = new Rect(_offset, Vector2.one);
+            // 오프셋(x, y)만 갱신하고 타일링 크기(w, h)는 인스펙터 설정값을 유지
+            Rect rect = _rawImage.uvRect;
+            rect.x = _offset.x;
+            rect.y = _offset.y;
+            _rawImage.uvRect = rect;
         }
 
 #if UNITY_EDITOR

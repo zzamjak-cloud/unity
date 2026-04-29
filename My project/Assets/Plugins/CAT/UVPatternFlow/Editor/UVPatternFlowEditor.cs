@@ -116,6 +116,8 @@ namespace CAT.Effects
             _editorPreviewLastTime = now;
 
             flow.EditorAdvance(dt);
+            // 편집 모드에서 캔버스 dirty 플래그를 즉시 처리하여 uvRect 변경이 씬에 반영되도록 강제
+            Canvas.ForceUpdateCanvases();
             SceneView.RepaintAll();
             Repaint();
         }

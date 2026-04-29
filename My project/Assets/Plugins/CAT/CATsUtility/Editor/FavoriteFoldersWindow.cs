@@ -76,13 +76,13 @@ namespace CAT.Utility
 
         private void OnEnable()
         {
-            LoadFromPlayerPrefs();
+            LoadFromEditorPrefs();
             RegisterProjectWindowCallback();
         }
 
         private void OnDisable()
         {
-            SaveToPlayerPrefs();
+            SaveToEditorPrefs();
         }
 
         // Project View 콜백 등록
@@ -157,17 +157,17 @@ namespace CAT.Utility
             }
         }
 
-        private void LoadFromPlayerPrefs()
+        private void LoadFromEditorPrefs()
         {
             _favoriteFolders.Clear();
             _folderColors.Clear();
             _includeChildren.Clear();
 
-            if (!PlayerPrefs.HasKey(PREFS_KEY)) return;
+            if (!EditorPrefs.HasKey(PREFS_KEY)) return;
 
             try
             {
-                string json = PlayerPrefs.GetString(PREFS_KEY);
+                string json = EditorPrefs.GetString(PREFS_KEY);
                 var jsonData = JsonUtility.FromJson<FavoriteFoldersJsonData>(json);
                 if (jsonData == null) return;
 
@@ -217,7 +217,7 @@ namespace CAT.Utility
             RebuildGuidColorCache();
         }
 
-        private void SaveToPlayerPrefs()
+        private void SaveToEditorPrefs()
         {
             try
             {
@@ -241,12 +241,11 @@ namespace CAT.Utility
                 }
 
                 string json = JsonUtility.ToJson(jsonData, true);
-                PlayerPrefs.SetString(PREFS_KEY, json);
-                PlayerPrefs.Save();
+                EditorPrefs.SetString(PREFS_KEY, json);
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Favorite 폴더 데이터 저장 실패 (PlayerPrefs): {e.Message}");
+                Debug.LogError($"Favorite 폴더 데이터 저장 실패 (EditorPrefs): {e.Message}");
             }
         }
 
@@ -256,7 +255,7 @@ namespace CAT.Utility
             if (index < 0 || index >= _folderColors.Count) return;
             _folderColors[index] = color;
             RebuildGuidColorCache();
-            SaveToPlayerPrefs();
+            SaveToEditorPrefs();
             Repaint();
         }
 
@@ -331,7 +330,7 @@ namespace CAT.Utility
                 _showUIElements = newShowUIElements;
                 if (!_showUIElements)
                 {
-                    SaveToPlayerPrefs();
+                    SaveToEditorPrefs();
                 }
                 Repaint();
             }
@@ -400,7 +399,7 @@ namespace CAT.Utility
                     {
                         _includeChildren[i] = newInclude;
                         RebuildGuidColorCache();
-                        SaveToPlayerPrefs();
+                        SaveToEditorPrefs();
                     }
                     GUILayout.Space(2);
 

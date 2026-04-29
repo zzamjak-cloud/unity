@@ -92,6 +92,15 @@ namespace CAT.Water2D
         [SerializeField, Tooltip("Splash 발생 시 호출: (world position, 적용된 force)")]
         private Water2DSplashEvent _onSplash = new Water2DSplashEvent();
 
+        [SerializeField, Tooltip("물 표면 라인 렌더링 활성화")]
+        private bool _surfaceLineEnabled = true;
+
+        [SerializeField, Min(0f), Tooltip("물 표면 라인 두께(로컬 단위)")]
+        private float _surfaceLineThickness = 0.06f;
+
+        [SerializeField, Tooltip("물 표면 라인 색상")]
+        private Color _surfaceLineColor = Color.white;
+
         #endregion
 
         #region 런타임 상태
@@ -111,9 +120,12 @@ namespace CAT.Water2D
         private MeshFilter _meshFilter;
         private MeshRenderer _meshRenderer;
         private BoxCollider2D _collider;
+        private LineRenderer _surfaceLineRenderer;
+        private Material _surfaceLineMaterial;
 
         // 재할당 플래그
         private int _allocatedPointCount = -1;
+        private Vector3[] _surfaceLinePositions = System.Array.Empty<Vector3>();
 
         // 고정 스텝 시뮬레이션 어큐뮬레이터
         private float _simAccumulator;
@@ -249,6 +261,13 @@ namespace CAT.Water2D
                 else DestroyImmediate(_mesh);
                 _mesh = null;
             }
+
+            if (_surfaceLineMaterial != null)
+            {
+                if (Application.isPlaying) Destroy(_surfaceLineMaterial);
+                else DestroyImmediate(_surfaceLineMaterial);
+                _surfaceLineMaterial = null;
+            }
         }
 
         private void OnValidate()
@@ -256,6 +275,7 @@ namespace CAT.Water2D
             if (_width < 0.01f) _width = 0.01f;
             if (_depth < 0.01f) _depth = 0.01f;
             _pointCount = Mathf.Clamp(_pointCount, 8, 128);
+            if (_surfaceLineThickness < 0f) _surfaceLineThickness = 0f;
             _rebuildRequested = true;
         }
 
@@ -286,6 +306,8 @@ namespace CAT.Water2D
             if (_meshFilter == null) _meshFilter = GetComponent<MeshFilter>();
             if (_meshRenderer == null) _meshRenderer = GetComponent<MeshRenderer>();
             if (_collider == null) _collider = GetComponent<BoxCollider2D>();
+            if (_surfaceLineRenderer == null) _surfaceLineRenderer = GetComponent<LineRenderer>();
+            if (_surfaceLineRenderer == null) _surfaceLineRenderer = gameObject.AddComponent<LineRenderer>();
 
             if (_mesh == null)
             {
@@ -297,6 +319,21 @@ namespace CAT.Water2D
                 _mesh.MarkDynamic();
                 _meshFilter.sharedMesh = _mesh;
             }
+
+            if (_surfaceLineMaterial == null)
+            {
+                Shader lineShader = Shader.Find("Sprites/Default");
+                if (lineShader != null)
+                {
+                    _surfaceLineMaterial = new Material(lineShader)
+                    {
+                        name = "Water2D Surface Line",
+                        hideFlags = HideFlags.DontSave
+                    };
+                }
+            }
+
+            ConfigureSurfaceLineRenderer();
         }
 
         private void EnsureAllocated()
@@ -318,6 +355,7 @@ namespace CAT.Water2D
             _vertices = new Vector3[vcount];
             _uvs = new Vector2[vcount];
             _triangles = new int[(n - 1) * 6];
+            _surfaceLinePositions = new Vector3[n];
             _allocatedPointCount = n;
         }
 
@@ -389,6 +427,8 @@ namespace CAT.Water2D
             _mesh.bounds = new Bounds(
                 new Vector3(0f, -_depth * 0.5f, 0f),
                 new Vector3(_width, _depth + 2f, 0.1f));
+
+            UpdateSurfaceLinePositions();
         }
 
         private void SetupCollider()
@@ -412,6 +452,66 @@ namespace CAT.Water2D
             }
             _meshRenderer.sortingLayerID = _sortingLayerID;
             _meshRenderer.sortingOrder = _sortingOrder;
+            ApplySortingToSurfaceLine();
+        }
+
+        private void ConfigureSurfaceLineRenderer()
+        {
+            if (_surfaceLineRenderer == null) return;
+
+            _surfaceLineRenderer.useWorldSpace = false;
+            _surfaceLineRenderer.loop = false;
+            _surfaceLineRenderer.textureMode = LineTextureMode.Stretch;
+            _surfaceLineRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            _surfaceLineRenderer.receiveShadows = false;
+            _surfaceLineRenderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+            _surfaceLineRenderer.generateLightingData = false;
+            _surfaceLineRenderer.alignment = LineAlignment.TransformZ;
+
+            float clampedThickness = Mathf.Max(0f, _surfaceLineThickness);
+            _surfaceLineRenderer.startWidth = clampedThickness;
+            _surfaceLineRenderer.endWidth = clampedThickness;
+            _surfaceLineRenderer.startColor = _surfaceLineColor;
+            _surfaceLineRenderer.endColor = _surfaceLineColor;
+            _surfaceLineRenderer.positionCount = _points != null ? _points.Length : 0;
+            _surfaceLineRenderer.enabled = _surfaceLineEnabled;
+
+            if (_surfaceLineMaterial != null)
+            {
+                _surfaceLineRenderer.sharedMaterial = _surfaceLineMaterial;
+            }
+
+            ApplySortingToSurfaceLine();
+        }
+
+        private void ApplySortingToSurfaceLine()
+        {
+            if (_surfaceLineRenderer == null) return;
+            _surfaceLineRenderer.sortingLayerID = _sortingLayerID;
+            _surfaceLineRenderer.sortingOrder = _sortingOrder + 1;
+        }
+
+        private void UpdateSurfaceLinePositions()
+        {
+            if (_surfaceLineRenderer == null || _points == null) return;
+
+            ConfigureSurfaceLineRenderer();
+            if (!_surfaceLineEnabled) return;
+
+            int n = _points.Length;
+            if (_surfaceLinePositions == null || _surfaceLinePositions.Length != n) return;
+
+            float halfW = _width * 0.5f;
+            float dx = _width / (n - 1);
+
+            for (int i = 0; i < n; i++)
+            {
+                float x = -halfW + i * dx;
+                _surfaceLinePositions[i] = new Vector3(x, _points[i].Height, 0f);
+            }
+
+            _surfaceLineRenderer.positionCount = n;
+            _surfaceLineRenderer.SetPositions(_surfaceLinePositions);
         }
 
         #endregion
