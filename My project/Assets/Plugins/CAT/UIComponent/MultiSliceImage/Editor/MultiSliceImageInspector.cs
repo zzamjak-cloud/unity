@@ -17,7 +17,6 @@ public class MultiSliceImageInspector : GraphicEditor
     SerializedProperty m_HorizontalCuts;
     SerializedProperty m_FillAmount;
     SerializedProperty m_FillOrigin;
-    SerializedProperty m_UseFilledMask;
 
     protected override void OnEnable()
     {
@@ -29,7 +28,6 @@ public class MultiSliceImageInspector : GraphicEditor
         m_HorizontalCuts = serializedObject.FindProperty("horizontalCuts");
         m_FillAmount = serializedObject.FindProperty("m_FillAmount");
         m_FillOrigin = serializedObject.FindProperty("m_FillOrigin");
-        m_UseFilledMask = serializedObject.FindProperty("m_UseFilledMask");
     }
 
     public override void OnInspectorGUI()
@@ -58,7 +56,7 @@ public class MultiSliceImageInspector : GraphicEditor
         EditorGUI.BeginChangeCheck();
         MultiSliceImage targetImg = (MultiSliceImage)target;
         ImageType newImageType = (ImageType)EditorGUILayout.EnumPopup(
-            new GUIContent("Image Type", "Sliced: 9-slice처럼 셀당 1쿼드 고정 | Tiled: 조건부 타일링 | TiledFilled: 타일 단위로 stepwise 확장"),
+            new GUIContent("Image Type", "Sliced | Tiled | TiledFilled(스텝 와이즈) | TiledFilledMask(마스크 클리핑)"),
             targetImg.imageType
         );
         bool imageTypeChanged = EditorGUI.EndChangeCheck();
@@ -80,22 +78,8 @@ public class MultiSliceImageInspector : GraphicEditor
 
         MultiSliceImage targetImage = (MultiSliceImage)target;
 
-        // Tiled: 체크박스로 Filled 마스킹 클립을 추가합니다.
-        if (targetImage.imageType == ImageType.Tiled)
-        {
-            EditorGUI.BeginChangeCheck();
-            bool newUseFilledMask = EditorGUILayout.Toggle("Filled Mask (클립)", targetImage.useFilledMask);
-            if (EditorGUI.EndChangeCheck())
-            {
-                Undo.RecordObject(targetImage, "Change Filled Mask");
-                targetImage.useFilledMask = newUseFilledMask;
-                EditorUtility.SetDirty(targetImage);
-                UpdateImageImmediately(targetImage);
-            }
-        }
-
         bool showFillSettings = targetImage.imageType == ImageType.TiledFilled
-            || (targetImage.imageType == ImageType.Tiled && targetImage.useFilledMask);
+            || targetImage.imageType == ImageType.TiledFilledMask;
 
         // TiledFilled / Filled Mask: 진행값 (Unity Filled의 fillAmount 느낌)
         if (showFillSettings)

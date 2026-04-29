@@ -15,7 +15,12 @@ namespace CAT.UI
         /// Stepwise: 타일의 일부만 늘려 채우지 않고,
         /// 타일 1개 크기가 확보될 때만 타일을 추가로 렌더링합니다.
         /// </summary>
-        TiledFilled
+        TiledFilled,
+        /// <summary>
+        /// Tiled + Filled Mask 조합 모드.
+        /// 타일링은 일반 Tiled와 동일하게 처리하고, 최종 렌더만 Fill Rect로 클리핑합니다.
+        /// </summary>
+        TiledFilledMask
     }
 
     public enum FillOrigin
@@ -37,7 +42,7 @@ namespace CAT.UI
     /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
     /// - Maskable: MaskableGraphic 상속으로 자동 지원
     /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
-    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링) / TiledFilled (타일 단위 stepwise 확장)
+    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링) / TiledFilled (타일 단위 stepwise 확장) / TiledFilledMask (타일링 + 마스크 클리핑)
     ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
@@ -77,6 +82,7 @@ namespace CAT.UI
         [SerializeField] private ImageType m_ImageType = ImageType.Sliced;
         [SerializeField] private float m_FillAmount = 1f;
         [SerializeField] private FillOrigin m_FillOrigin = FillOrigin.Left;
+        // 레거시 호환용: 기존 Inspector 체크박스 데이터 마이그레이션을 위해 유지합니다.
         [SerializeField] private bool m_UseFilledMask = false;
 
         /// <summary>
@@ -129,6 +135,7 @@ namespace CAT.UI
 
         // OnPopulateMesh 동안 채워지는 렌더 마스크 정보
         private bool _filledMaskActive;
+        private bool _filledMaskStepwiseQuad;
         private Rect _filledMaskRect;
 
         // 0.0 ~ 1.0 정규화된 좌표값 (최대 4개)
@@ -252,6 +259,16 @@ namespace CAT.UI
                 changed = true;
             }
 
+            // 레거시 데이터 호환:
+            // 과거에는 Tiled + m_UseFilledMask 조합으로 "Tiled Filled Mask"를 표현했습니다.
+            // 새 enum 모드로 자동 마이그레이션합니다.
+            if (m_ImageType == ImageType.Tiled && m_UseFilledMask)
+            {
+                m_ImageType = ImageType.TiledFilledMask;
+                m_UseFilledMask = false;
+                changed = true;
+            }
+
             if (changed)
             {
                 stopsDirty = true;
@@ -271,16 +288,17 @@ namespace CAT.UI
             }
 
             _filledMaskActive = false;
+            _filledMaskStepwiseQuad = false;
             _filledMaskRect = Rect.zero;
 
             Rect rect = PrepareRenderRect();
-            if (m_ImageType == ImageType.TiledFilled)
+            if (m_ImageType == ImageType.TiledFilled || m_ImageType == ImageType.TiledFilledMask)
             {
-                // TiledFilled는 "사이즈 재계산"으로 구현하지 않고,
+                // Filled 계열은 "사이즈 재계산" 대신,
                 // 전체 메쉬를 만든 뒤 Fill 영역만 클립합니다.
-                // (이렇게 해야 Left/Right/Top/Bottom 방향이 타일 경계와 함께 자연스럽게 유지됩니다.)
                 _filledMaskRect = GetFilledMaskRect(rect, m_FillAmount, m_FillOrigin);
                 _filledMaskActive = m_FillAmount < 0.999f;
+                _filledMaskStepwiseQuad = (m_ImageType == ImageType.TiledFilled);
             }
             else if (m_UseFilledMask && m_FillAmount < 0.999f)
             {
@@ -434,7 +452,9 @@ namespace CAT.UI
             float[] vSizesSrc, vSizesDst;
             float[] hSizesSrc, hSizesDst;
 
-            bool useTiled = (m_ImageType == ImageType.Tiled || m_ImageType == ImageType.TiledFilled);
+            bool useTiled = m_ImageType == ImageType.Tiled
+                || m_ImageType == ImageType.TiledFilled
+                || m_ImageType == ImageType.TiledFilledMask;
             CalculateSizes(vStops, rect.width, cachedSpriteW, out vSizesSrc, out vSizesDst, ref cachedVSizesSrc, ref cachedVSizesDst, useTiled);
             CalculateSizes(hStops, rect.height, cachedSpriteH, out hSizesSrc, out hSizesDst, ref cachedHSizesSrc, ref cachedHSizesDst, useTiled);
 
@@ -527,7 +547,7 @@ namespace CAT.UI
                                        float baseUvLeft, float baseUvRight, float baseUvBottom, float baseUvTop,
                                        bool isFlexibleCol, bool isFlexibleRow)
         {
-            if (m_ImageType == ImageType.Tiled || m_ImageType == ImageType.TiledFilled)
+            if (m_ImageType == ImageType.Tiled || m_ImageType == ImageType.TiledFilled || m_ImageType == ImageType.TiledFilledMask)
             {
                 bool stepwiseTiling = (m_ImageType == ImageType.TiledFilled);
 
@@ -1121,8 +1141,6 @@ namespace CAT.UI
         {
             if (_filledMaskActive)
             {
-                // posRect와 uvRect는 같은 축 스케일로 매핑되므로,
-                // posRect를 마스크 영역과 교차 클리핑한 만큼 uvRect도 비례로 잘라줍니다.
                 float originalX = posRect.x;
                 float originalY = posRect.y;
                 float originalW = posRect.width;
@@ -1141,6 +1159,18 @@ namespace CAT.UI
                 if (right <= left || top <= bottom || originalW <= 0f || originalH <= 0f)
                     return;
 
+                if (_filledMaskStepwiseQuad)
+                {
+                    const float CLIP_EPS = 0.0001f;
+                    bool fullyVisibleX = left <= originalX + CLIP_EPS && right >= originalX + originalW - CLIP_EPS;
+                    bool fullyVisibleY = bottom <= originalY + CLIP_EPS && top >= originalY + originalH - CLIP_EPS;
+                    // TiledFilled는 메쉬(쿼드) 단위 표시를 유지해야 하므로
+                    // 부분 교차 쿼드는 렌더하지 않습니다.
+                    if (!fullyVisibleX || !fullyVisibleY)
+                        return;
+                }
+
+                // TiledFilledMask/레거시 FilledMask는 기존처럼 부분 클리핑을 허용합니다.
                 // posRect 클립
                 float clippedW = right - left;
                 float clippedH = top - bottom;
