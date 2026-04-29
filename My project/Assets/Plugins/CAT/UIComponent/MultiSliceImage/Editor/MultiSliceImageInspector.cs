@@ -56,7 +56,7 @@ public class MultiSliceImageInspector : GraphicEditor
         EditorGUI.BeginChangeCheck();
         MultiSliceImage targetImg = (MultiSliceImage)target;
         ImageType newImageType = (ImageType)EditorGUILayout.EnumPopup(
-            new GUIContent("Image Type", "Sliced | Tiled | TiledFilled(스텝 와이즈) | TiledFilledMask(마스크 클리핑)"),
+            new GUIContent("Image Type", "Sliced | Tiled | Mixed(축별 혼합) | TiledFilled | TiledFilledMask"),
             targetImg.imageType
         );
         bool imageTypeChanged = EditorGUI.EndChangeCheck();
@@ -66,6 +66,24 @@ public class MultiSliceImageInspector : GraphicEditor
             Undo.RecordObject(targetImg, "Change Image Type");
             targetImg.imageType = newImageType;
             EditorUtility.SetDirty(targetImg);
+        }
+
+        if (targetImg.imageType == ImageType.Mixed)
+        {
+            EditorGUI.BeginChangeCheck();
+            MixedAxisMode newMixedAxis = (MixedAxisMode)EditorGUILayout.EnumPopup(
+                new GUIContent(
+                    "Mixed Axis",
+                    "가로=열(column)·세로=행(row). 한 축만 Tiled로 두고 나머지는 스트레치합니다."),
+                targetImg.mixedAxisMode
+            );
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(targetImg, "Change Mixed Axis Mode");
+                targetImg.mixedAxisMode = newMixedAxis;
+                EditorUtility.SetDirty(targetImg);
+                UpdateImageImmediately(targetImg);
+            }
         }
 
         // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)

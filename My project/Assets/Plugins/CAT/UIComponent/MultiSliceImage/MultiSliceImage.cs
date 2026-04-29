@@ -8,19 +8,35 @@ namespace CAT.UI
     public enum ImageType
     {
         /// <summary>Unity 9-slice와 동일: 타일링 없이 셀당 1쿼드 스트레치. 쿼드 수 = (1+vCuts)×(1+hCuts).</summary>
-        Sliced,
+        Sliced = 0,
         /// <summary>조건부: 목표 크기 >= 원본이면 타일링, 아니면 스트레치.</summary>
-        Tiled,
+        Tiled = 1,
+        /// <summary>
+        /// 한 축은 Tiled, 다른 축은 Sliced(스트레치)로 혼합.
+        /// 축 조합은 <see cref="MixedAxisMode"/>로 지정합니다.
+        /// </summary>
+        Mixed = 4,
         /// <summary>
         /// Stepwise: 타일의 일부만 늘려 채우지 않고,
         /// 타일 1개 크기가 확보될 때만 타일을 추가로 렌더링합니다.
         /// </summary>
-        TiledFilled,
+        TiledFilled = 2,
         /// <summary>
         /// Tiled + Filled Mask 조합 모드.
         /// 타일링은 일반 Tiled와 동일하게 처리하고, 최종 렌더만 Fill Rect로 클리핑합니다.
         /// </summary>
-        TiledFilledMask
+        TiledFilledMask = 3
+    }
+
+    /// <summary>
+    /// <see cref="ImageType.Mixed"/>에서 가로(열·column) / 세로(행·row) 중 어느 축에 Tiled를 쓸지 지정합니다.
+    /// </summary>
+    public enum MixedAxisMode
+    {
+        /// <summary>가로(열)는 Tiled, 세로(행)는 Sliced(스트레치).</summary>
+        HorizontalTiled_VerticalSliced,
+        /// <summary>가로(열)는 Sliced(스트레치), 세로(행)는 Tiled.</summary>
+        HorizontalSliced_VerticalTiled,
     }
 
     public enum FillOrigin
@@ -42,7 +58,7 @@ namespace CAT.UI
     /// - Raycast Padding: Graphic의 raycastPadding 프로퍼티 사용
     /// - Maskable: MaskableGraphic 상속으로 자동 지원
     /// - Preserve Aspect: 종횡비 유지 옵션 (렌더링만 조정, Raycast는 전체 Rect 사용)
-    /// - Image Type: Sliced (9-slice 동일, 셀당 1쿼드) / Tiled (조건부 타일링) / TiledFilled (타일 단위 stepwise 확장) / TiledFilledMask (타일링 + 마스크 클리핑)
+    /// - Image Type: Sliced / Tiled / Mixed (축별 Tiled+Sliced) / TiledFilled / TiledFilledMask
     ///
     /// 성능 최적화:
     /// - 배열 캐싱: 매 프레임 배열 할당 대신 캐시 재사용 (GC 압박 감소)
@@ -54,7 +70,7 @@ namespace CAT.UI
     ///
     /// 모바일 정점 폭발 방지 (필수):
     /// - Sliced: 타일링 없음. 쿼드 수 = (1+vCuts)×(1+hCuts). Unity 9-slice와 동일.
-    /// - Tiled: 확장 셀당 타일링 1번, 셀당 최대 256 쿼드. 섹션당 256, 전체 65000 미만 유지.
+    /// - Tiled / Mixed: 확장 셀당 타일링 1번, 셀당 최대 256 쿼드. 섹션당 256, 전체 65000 미만 유지.
     /// </summary>
     [RequireComponent(typeof(CanvasRenderer))]
     public class MultiSliceImage : MaskableGraphic
@@ -80,6 +96,7 @@ namespace CAT.UI
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private bool m_PreserveAspect = false;
         [SerializeField] private ImageType m_ImageType = ImageType.Sliced;
+        [SerializeField] private MixedAxisMode m_MixedAxisMode = MixedAxisMode.HorizontalTiled_VerticalSliced;
         [SerializeField] private float m_FillAmount = 1f;
         [SerializeField] private FillOrigin m_FillOrigin = FillOrigin.Left;
         // 레거시 호환용: 기존 Inspector 체크박스 데이터 마이그레이션을 위해 유지합니다.
@@ -224,6 +241,20 @@ namespace CAT.UI
                 if (m_ImageType != value)
                 {
                     m_ImageType = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary><see cref="ImageType.Mixed"/>일 때만 사용: 열/행 중 Tiled를 적용할 축.</summary>
+        public MixedAxisMode mixedAxisMode
+        {
+            get => m_MixedAxisMode;
+            set
+            {
+                if (m_MixedAxisMode != value)
+                {
+                    m_MixedAxisMode = value;
                     SetVerticesDirty();
                 }
             }
@@ -453,6 +484,7 @@ namespace CAT.UI
             float[] hSizesSrc, hSizesDst;
 
             bool useTiled = m_ImageType == ImageType.Tiled
+                || m_ImageType == ImageType.Mixed
                 || m_ImageType == ImageType.TiledFilled
                 || m_ImageType == ImageType.TiledFilledMask;
             CalculateSizes(vStops, rect.width, cachedSpriteW, out vSizesSrc, out vSizesDst, ref cachedVSizesSrc, ref cachedVSizesDst, useTiled);
@@ -518,6 +550,24 @@ namespace CAT.UI
                         Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
                         AddQuad(vh, tempRect, uvRect);
                     }
+                    else if (m_ImageType == ImageType.Mixed)
+                    {
+                        if (isFlexibleCol || isFlexibleRow)
+                        {
+                            RenderMixedFlexibleCell(vh, tempPos, colWidth, rowHeight, srcColWidth, srcRowHeight,
+                                baseUvLeft, baseUvRight, baseUvBottom, baseUvTop,
+                                isFlexibleCol, isFlexibleRow);
+                        }
+                        else
+                        {
+                            tempRect.x = tempPos.x;
+                            tempRect.y = tempPos.y;
+                            tempRect.width = colWidth;
+                            tempRect.height = rowHeight;
+                            Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
+                            AddQuad(vh, tempRect, uvRect);
+                        }
+                    }
                     else if (isFlexibleCol || isFlexibleRow)
                     {
                         RenderFlexibleCell(vh, tempPos, colWidth, rowHeight, srcColWidth, srcRowHeight,
@@ -538,6 +588,37 @@ namespace CAT.UI
                     tempPos.x += colWidth;
                 }
                 tempPos.y += rowHeight;
+            }
+        }
+
+        // Mixed: 한 축만 Tiled(목표>=원본일 때), 다른 축은 Sliced와 동일하게 스트레치.
+        private void RenderMixedFlexibleCell(VertexHelper vh, Vector2 pos, float colWidth, float rowHeight,
+            float srcColWidth, float srcRowHeight,
+            float baseUvLeft, float baseUvRight, float baseUvBottom, float baseUvTop,
+            bool isFlexibleCol, bool isFlexibleRow)
+        {
+            bool horizontalAxisTiled = (m_MixedAxisMode == MixedAxisMode.HorizontalTiled_VerticalSliced);
+            bool verticalAxisTiled = (m_MixedAxisMode == MixedAxisMode.HorizontalSliced_VerticalTiled);
+
+            bool shouldTileX = false;
+            bool shouldTileY = false;
+
+            if (isFlexibleCol && horizontalAxisTiled && srcColWidth > 0f && colWidth >= srcColWidth)
+                shouldTileX = true;
+            if (isFlexibleRow && verticalAxisTiled && srcRowHeight > 0f && rowHeight >= srcRowHeight)
+                shouldTileY = true;
+
+            if (shouldTileX || shouldTileY)
+            {
+                RenderTiled(vh, pos, colWidth, rowHeight, srcColWidth, srcRowHeight,
+                    baseUvLeft, baseUvRight, baseUvBottom, baseUvTop,
+                    shouldTileX, shouldTileY,
+                    false);
+            }
+            else
+            {
+                RenderStretched(vh, pos, colWidth, rowHeight,
+                    baseUvLeft, baseUvRight, baseUvBottom, baseUvTop);
             }
         }
 
