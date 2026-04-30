@@ -56,6 +56,7 @@ public class MirrorSliceImageEditor : GraphicEditor
     }
     SerializedProperty m_Sprite;
     SerializedProperty m_MirrorMode;
+    SerializedProperty m_PixelsPerUnitMultiplier;
     SerializedProperty m_IsGradient;
     SerializedProperty m_GradientDirection;
     SerializedProperty m_GradientColorA;
@@ -67,6 +68,7 @@ public class MirrorSliceImageEditor : GraphicEditor
         base.OnEnable();
         m_Sprite = serializedObject.FindProperty("m_Sprite");
         m_MirrorMode = serializedObject.FindProperty("mirrorMode");
+        m_PixelsPerUnitMultiplier = serializedObject.FindProperty("m_PixelsPerUnitMultiplier");
         m_IsGradient = serializedObject.FindProperty("m_IsGradient");
         m_GradientDirection = serializedObject.FindProperty("m_GradientDirection");
         m_GradientColorA = serializedObject.FindProperty("m_GradientColorA");
@@ -98,6 +100,52 @@ public class MirrorSliceImageEditor : GraphicEditor
         
         // GraphicEditor의 기본 기능들 표시 (Color, Material, Raycast Target 등)
         base.OnInspectorGUI();
+
+        EditorGUILayout.Space(3);
+
+        // Pixels Per Unit Multiplier — 변경 시 RectTransform width/height을 multiplier 변경 비율만큼 함께 스케일.
+        // 이렇게 하면 9-Slice 영역이 rect에 대해 같은 비율로 유지되어 메쉬 변형 없이 자연스럽게 확대/축소됩니다.
+        // 사용자가 커스텀한 width/height 비율(가로/세로 늘림 등)도 그대로 보존됩니다.
+        float oldPpuMultiplier = m_PixelsPerUnitMultiplier.floatValue;
+
+        EditorGUI.BeginChangeCheck();
+        EditorGUILayout.PropertyField(
+            m_PixelsPerUnitMultiplier,
+            new GUIContent("Pixels Per Unit Multiplier", "Unity Image와 동일한 PPU 배율. 1보다 작으면 더 크게 렌더링됩니다. 변경 시 width/height이 비율에 맞춰 자동 스케일됩니다.")
+        );
+        bool ppuMultiplierChanged = EditorGUI.EndChangeCheck();
+        if (ppuMultiplierChanged)
+        {
+            // 최소값 보정
+            float newPpuMultiplier = Mathf.Max(0.01f, m_PixelsPerUnitMultiplier.floatValue);
+            m_PixelsPerUnitMultiplier.floatValue = newPpuMultiplier;
+
+            // 변경된 값을 즉시 객체에 반영
+            serializedObject.ApplyModifiedProperties();
+
+            // multiplier가 작아지면 자연 크기가 커지므로(이미지 확대), rect도 같은 비율로 확대.
+            // 비율 = oldMultiplier / newMultiplier (예: 1 → 0.5 이면 비율 2 → rect 2배)
+            float sizeScale = (oldPpuMultiplier > 0.0001f) ? (oldPpuMultiplier / newPpuMultiplier) : 1f;
+            bool shouldScale = Mathf.Abs(sizeScale - 1f) > 0.0001f;
+
+            foreach (Object t in targets)
+            {
+                MirrorSliceImage img = t as MirrorSliceImage;
+                if (img == null) continue;
+
+                if (shouldScale)
+                {
+                    RectTransform rt = img.GetComponent<RectTransform>();
+                    if (rt != null)
+                    {
+                        Undo.RecordObject(rt, "Pixels Per Unit Multiplier (Scale Size)");
+                        rt.sizeDelta = rt.sizeDelta * sizeScale;
+                    }
+                }
+                EditorUtility.SetDirty(img);
+                UpdateImageImmediately(img);
+            }
+        }
 
         EditorGUILayout.Space(3);
 
@@ -139,7 +187,7 @@ public class MirrorSliceImageEditor : GraphicEditor
         m_MirrorMode.enumValueIndex = selected;
         bool mirrorModeChanged = EditorGUI.EndChangeCheck();
 
-        bool propertyChanged = spriteChanged || mirrorModeChanged || gradientChanged;
+        bool propertyChanged = spriteChanged || mirrorModeChanged || gradientChanged || ppuMultiplierChanged;
 
         MirrorSliceImage targetImage = (MirrorSliceImage)target;
 

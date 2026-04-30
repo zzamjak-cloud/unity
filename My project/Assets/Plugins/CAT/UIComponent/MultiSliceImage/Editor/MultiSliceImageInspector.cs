@@ -15,6 +15,7 @@ public class MultiSliceImageInspector : GraphicEditor
     SerializedProperty m_ImageType;
     SerializedProperty m_VerticalCuts;
     SerializedProperty m_HorizontalCuts;
+    SerializedProperty m_PixelsPerUnitMultiplier;
     SerializedProperty m_FillAmount;
     SerializedProperty m_FillOrigin;
 
@@ -26,6 +27,7 @@ public class MultiSliceImageInspector : GraphicEditor
         m_ImageType = serializedObject.FindProperty("m_ImageType");
         m_VerticalCuts = serializedObject.FindProperty("verticalCuts");
         m_HorizontalCuts = serializedObject.FindProperty("horizontalCuts");
+        m_PixelsPerUnitMultiplier = serializedObject.FindProperty("m_PixelsPerUnitMultiplier");
         m_FillAmount = serializedObject.FindProperty("m_FillAmount");
         m_FillOrigin = serializedObject.FindProperty("m_FillOrigin");
     }
@@ -93,6 +95,50 @@ public class MultiSliceImageInspector : GraphicEditor
 
         // Preserve Aspect 표시
         EditorGUILayout.PropertyField(m_PreserveAspect, new GUIContent("Preserve Aspect", "종횡비 유지"));
+
+        // Pixels Per Unit Multiplier — 변경 시 RectTransform width/height을 multiplier 변경 비율만큼 함께 스케일.
+        // 이렇게 하면 타일/슬라이스 영역이 rect에 대해 같은 비율로 유지되어, 정점 폭발이나 메쉬 변형이 발생하지 않습니다.
+        // 또한 사용자가 커스텀한 width/height 비율(가로/세로 늘림 등)도 그대로 보존됩니다.
+        float oldPpuMultiplier = m_PixelsPerUnitMultiplier.floatValue;
+
+        EditorGUI.BeginChangeCheck();
+        EditorGUILayout.PropertyField(
+            m_PixelsPerUnitMultiplier,
+            new GUIContent("Pixels Per Unit Multiplier", "Unity Image와 동일한 PPU 배율. 1보다 작으면 더 크게 렌더링됩니다. 변경 시 width/height이 비율에 맞춰 자동 스케일됩니다.")
+        );
+        bool ppuMultiplierChanged = EditorGUI.EndChangeCheck();
+        if (ppuMultiplierChanged)
+        {
+            // 음수/0 보정 (런타임 안전)
+            float newPpuMultiplier = Mathf.Max(0.01f, m_PixelsPerUnitMultiplier.floatValue);
+            m_PixelsPerUnitMultiplier.floatValue = newPpuMultiplier;
+
+            // 변경된 값을 즉시 객체에 반영
+            serializedObject.ApplyModifiedProperties();
+
+            // multiplier가 작아지면 자연 크기가 커지므로(이미지 확대), rect도 같은 비율로 확대.
+            // 비율 = oldMultiplier / newMultiplier (예: 1 → 0.5 이면 비율 2 → rect 2배)
+            float sizeScale = (oldPpuMultiplier > 0.0001f) ? (oldPpuMultiplier / newPpuMultiplier) : 1f;
+            bool shouldScale = Mathf.Abs(sizeScale - 1f) > 0.0001f;
+
+            foreach (Object t in targets)
+            {
+                MultiSliceImage img = t as MultiSliceImage;
+                if (img == null) continue;
+
+                if (shouldScale)
+                {
+                    RectTransform rt = img.GetComponent<RectTransform>();
+                    if (rt != null)
+                    {
+                        Undo.RecordObject(rt, "Pixels Per Unit Multiplier (Scale Size)");
+                        rt.sizeDelta = rt.sizeDelta * sizeScale;
+                    }
+                }
+                EditorUtility.SetDirty(img);
+                UpdateImageImmediately(img);
+            }
+        }
 
         MultiSliceImage targetImage = (MultiSliceImage)target;
 

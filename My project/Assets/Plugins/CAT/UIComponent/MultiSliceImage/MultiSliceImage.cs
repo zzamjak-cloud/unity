@@ -97,6 +97,7 @@ namespace CAT.UI
         [SerializeField] private bool m_PreserveAspect = false;
         [SerializeField] private ImageType m_ImageType = ImageType.Sliced;
         [SerializeField] private MixedAxisMode m_MixedAxisMode = MixedAxisMode.HorizontalTiled_VerticalSliced;
+        [SerializeField] private float m_PixelsPerUnitMultiplier = 1f;
         [SerializeField] private float m_FillAmount = 1f;
         [SerializeField] private FillOrigin m_FillOrigin = FillOrigin.Left;
         // 레거시 호환용: 기존 Inspector 체크박스 데이터 마이그레이션을 위해 유지합니다.
@@ -128,6 +129,26 @@ namespace CAT.UI
                 if (m_FillOrigin != value)
                 {
                     m_FillOrigin = value;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Unity Image와 동일한 Pixels Per Unit Multiplier.
+        /// 1보다 작으면 더 크게, 1보다 크면 더 작게 렌더링됩니다.
+        /// </summary>
+        public float pixelsPerUnitMultiplier
+        {
+            get => m_PixelsPerUnitMultiplier;
+            set
+            {
+                float clamped = Mathf.Max(0.01f, value);
+                if (Mathf.Abs(m_PixelsPerUnitMultiplier - clamped) > 0.0001f)
+                {
+                    m_PixelsPerUnitMultiplier = clamped;
+                    stopsDirty = true;
+                    uvDataDirty = true;
                     SetVerticesDirty();
                 }
             }
@@ -168,6 +189,8 @@ namespace CAT.UI
         private Canvas cachedCanvas;
         private int cachedVCutsHash = 0;
         private int cachedHCutsHash = 0;
+        // PixelsPerUnitMultiplier 변경 감지 (Inspector 편집은 setter를 거치지 않으므로 별도 캐싱)
+        private float cachedPixelsPerUnitMultiplier = 1f;
 
         // 성능 최적화: 배열 캐싱 (GC 할당 최소화)
         private float[] cachedVSizesSrc;
@@ -267,7 +290,7 @@ namespace CAT.UI
             if (rectTransform == null) return;
 
             rectTransform.anchorMax = rectTransform.anchorMin;
-            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas);
+            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas) * Mathf.Max(0.01f, m_PixelsPerUnitMultiplier);
             rectTransform.sizeDelta = m_Sprite.rect.size / ppu;
             SetVerticesDirty();
         }
@@ -278,16 +301,13 @@ namespace CAT.UI
         {
             base.OnValidate();
 
-            bool changed = false;
             if (verticalCuts.Count > MAX_CUTS)
             {
                 verticalCuts.RemoveRange(MAX_CUTS, verticalCuts.Count - MAX_CUTS);
-                changed = true;
             }
             if (horizontalCuts.Count > MAX_CUTS)
             {
                 horizontalCuts.RemoveRange(MAX_CUTS, horizontalCuts.Count - MAX_CUTS);
-                changed = true;
             }
 
             // 레거시 데이터 호환:
@@ -297,14 +317,19 @@ namespace CAT.UI
             {
                 m_ImageType = ImageType.TiledFilledMask;
                 m_UseFilledMask = false;
-                changed = true;
             }
 
-            if (changed)
+            // 0 또는 음수가 되면 division-by-zero가 발생하므로 최소값 보정
+            if (m_PixelsPerUnitMultiplier < 0.01f)
             {
-                stopsDirty = true;
-                SetVerticesDirty();
+                m_PixelsPerUnitMultiplier = 0.01f;
             }
+
+            // 인스펙터에서 어떤 필드든 변경되면 항상 캐시 무효화 + 메시 재빌드.
+            // (이전 구현: 변경 플래그가 false면 multiplier 변경 시 캐시가 갱신되지 않아 렌더링이 정지된 채로 유지되었음)
+            stopsDirty = true;
+            uvDataDirty = true;
+            SetVerticesDirty();
         }
 #endif
 
@@ -328,10 +353,10 @@ namespace CAT.UI
                 // Filled 계열은 "사이즈 재계산" 대신,
                 // 전체 메쉬를 만든 뒤 Fill 영역만 클립합니다.
                 _filledMaskRect = GetFilledMaskRect(rect, m_FillAmount, m_FillOrigin);
-                _filledMaskActive = m_FillAmount < 0.999f;
+                _filledMaskActive = m_FillAmount < 0.99999f;
                 _filledMaskStepwiseQuad = (m_ImageType == ImageType.TiledFilled);
             }
-            else if (m_UseFilledMask && m_FillAmount < 0.999f)
+            else if (m_UseFilledMask && m_FillAmount < 0.99999f)
             {
                 // "타일링으로 사이즈를 잡고" render 결과를 fill 영역으로만 클립합니다.
                 _filledMaskActive = true;
@@ -439,9 +464,10 @@ namespace CAT.UI
             int currentHCutsHash = GetListHash(horizontalCuts);
             bool cutsChanged = currentVCutsHash != cachedVCutsHash || currentHCutsHash != cachedHCutsHash;
             
-            // 변경 감지: 스프라이트, 크기, Canvas, 또는 컷 리스트가 변경되었는지 확인
+            // 변경 감지: 스프라이트, 크기, Canvas, 컷 리스트, 또는 PixelsPerUnitMultiplier 변경 확인
             Canvas currentCanvas = canvas;
-            bool needsUpdate = stopsDirty || cachedSprite != m_Sprite || cachedRect != rect || cutsChanged || cachedCanvas != currentCanvas;
+            bool ppuMultiplierChanged = !Mathf.Approximately(cachedPixelsPerUnitMultiplier, m_PixelsPerUnitMultiplier);
+            bool needsUpdate = stopsDirty || cachedSprite != m_Sprite || cachedRect != rect || cutsChanged || cachedCanvas != currentCanvas || ppuMultiplierChanged;
 
             if (needsUpdate)
             {
@@ -450,7 +476,13 @@ namespace CAT.UI
                 cachedCanvas = currentCanvas;
                 cachedVCutsHash = currentVCutsHash;
                 cachedHCutsHash = currentHCutsHash;
+                cachedPixelsPerUnitMultiplier = m_PixelsPerUnitMultiplier;
                 stopsDirty = false;
+                // multiplier가 변경되면 cachedSpriteW/H도 다시 계산해야 하므로 UV 데이터도 갱신
+                if (ppuMultiplierChanged)
+                {
+                    uvDataDirty = true;
+                }
             }
 
             // UV 데이터 캐싱
@@ -463,15 +495,17 @@ namespace CAT.UI
                 cachedUvMin.y = cachedOuterUV.y;
                 
                 // Pixel Per Unit 적용: 스프라이트 크기를 UI 좌표 단위로 변환
-                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, cachedCanvas);
+                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, cachedCanvas) * Mathf.Max(0.01f, m_PixelsPerUnitMultiplier);
                 cachedSpriteW = m_Sprite.rect.width / ppu;
                 cachedSpriteH = m_Sprite.rect.height / ppu;
 
-                // 나눗셈을 곱셈으로 최적화 (역수 캐싱)
-                float invSpriteW = 1f / cachedSpriteW;
-                float invSpriteH = 1f / cachedSpriteH;
-                cachedTexelWidth = cachedUvWidth * invSpriteW;
-                cachedTexelHeight = cachedUvHeight * invSpriteH;
+                // cachedTexelWidth/Height: 소스 1픽셀에 해당하는 UV 길이.
+                // PixelsPerUnitMultiplier와 무관하게 원본 스프라이트 픽셀 기준으로 계산해야
+                // Sliced 모드의 1픽셀 엣지 UV 샘플링이 정확합니다(서브픽셀 보간 방지).
+                float spritePixelW = m_Sprite.rect.width;
+                float spritePixelH = m_Sprite.rect.height;
+                cachedTexelWidth = spritePixelW > 0f ? cachedUvWidth / spritePixelW : 0f;
+                cachedTexelHeight = spritePixelH > 0f ? cachedUvHeight / spritePixelH : 0f;
                 
                 uvDataDirty = false;
             }
@@ -490,6 +524,18 @@ namespace CAT.UI
             CalculateSizes(vStops, rect.width, cachedSpriteW, out vSizesSrc, out vSizesDst, ref cachedVSizesSrc, ref cachedVSizesDst, useTiled);
             CalculateSizes(hStops, rect.height, cachedSpriteH, out hSizesSrc, out hSizesDst, ref cachedHSizesSrc, ref cachedHSizesDst, useTiled);
 
+            // float ratio·곱셈 누적 오차로 인접 셀 경계가 sub-pixel로 어긋나면 anti-aliased 렌더링에서
+            // 1픽셀 구멍이 나타날 수 있습니다. dst와 src 사이즈를 동일한 픽셀 그리드에 스냅하고
+            // 마지막 셀이 정확히 끝에 도달하도록 잔차를 흡수시켜 누적 오차를 제거합니다.
+            // src도 함께 스냅하는 이유: tilesX = ceil(colWidth / baseTileW) 계산에서
+            // dst만 정수이고 src가 float이면 비율이 정수 경계를 넘나들 때 타일 개수가 1↔2로 토글되어
+            // 드래그 중 쿼드가 사라졌다 나타나는 깜빡임이 발생합니다. 둘 다 정수면 비율이 안정됩니다.
+            // (Set Native Size에서는 dst == src가 되어 tilesX = 1로 고정 → 셀당 1쿼드 안정 유지)
+            SnapDstSizesToPixels(0f, cachedSpriteW, vSizesSrc);
+            SnapDstSizesToPixels(0f, cachedSpriteH, hSizesSrc);
+            SnapDstSizesToPixels(rect.x, rect.width, vSizesDst, vSizesSrc);
+            SnapDstSizesToPixels(rect.y, rect.height, hSizesDst, hSizesSrc);
+
             return new RenderData
             {
                 vStops = vStops,
@@ -499,6 +545,51 @@ namespace CAT.UI
                 hSizesSrc = hSizesSrc,
                 hSizesDst = hSizesDst
             };
+        }
+
+        // dst 사이즈 배열의 경계를 정수 픽셀에 스냅합니다.
+        // 누적 오차로 인한 sub-pixel 갭을 제거하고, 마지막 셀이 rect 끝에 정확히 일치하도록 보정합니다.
+        // srcSizes가 제공되면 src가 0이 아닌 셀의 dst 최소값을 1px로 보장하여
+        // 드래그 시 0px과 1px 사이로 깜빡이는 양자화 토글을 방지합니다.
+        private static void SnapDstSizesToPixels(float startPos, float totalSize, float[] sizes, float[] srcSizes = null)
+        {
+            if (sizes == null) return;
+            int n = sizes.Length;
+            if (n == 0) return;
+            if (n == 1)
+            {
+                sizes[0] = totalSize;
+                return;
+            }
+
+            const float CONTENT_EPS = 0.001f;
+            float prev = startPos;
+            float endPos = startPos + totalSize;
+            for (int i = 0; i < n - 1; i++)
+            {
+                float boundary = prev + sizes[i];
+                // rect 시작점 기준 정수 픽셀 오프셋으로 스냅
+                float snapped = Mathf.Round(boundary - startPos) + startPos;
+
+                // src가 0이 아닌데 스냅 결과 0px 셀이 되는 경우 최소 1px 보장.
+                // (드래그 중 src가 0.4 ↔ 0.6 변동 시 dst가 0 ↔ 1로 토글되는 깜빡임 방지)
+                bool hasContent = (srcSizes != null && i < srcSizes.Length)
+                    ? srcSizes[i] > CONTENT_EPS
+                    : sizes[i] > CONTENT_EPS;
+                if (hasContent && snapped <= prev + 0.0001f)
+                {
+                    snapped = prev + 1f;
+                }
+
+                // 단조 증가 보장 + 영역 초과 방지
+                if (snapped < prev) snapped = prev;
+                if (snapped > endPos) snapped = endPos;
+                sizes[i] = snapped - prev;
+                prev = snapped;
+            }
+            // 마지막 셀: 잔차를 모두 흡수해 sum == totalSize 보장
+            sizes[n - 1] = endPos - prev;
+            if (sizes[n - 1] < 0f) sizes[n - 1] = 0f;
         }
 
         // 렌더링 데이터 구조체
@@ -548,7 +639,8 @@ namespace CAT.UI
                         tempRect.width = colWidth;
                         tempRect.height = rowHeight;
                         Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
-                        AddQuad(vh, tempRect, uvRect);
+                        // 고정 메쉬 단위 표시: TiledFilled에서 부분 클립 시 전체 숨김 (all-or-nothing)
+                        AddQuad(vh, tempRect, uvRect, true, true);
                     }
                     else if (m_ImageType == ImageType.Mixed)
                     {
@@ -565,7 +657,8 @@ namespace CAT.UI
                             tempRect.width = colWidth;
                             tempRect.height = rowHeight;
                             Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
-                            AddQuad(vh, tempRect, uvRect);
+                            // 고정 메쉬 단위 표시
+                            AddQuad(vh, tempRect, uvRect, true, true);
                         }
                     }
                     else if (isFlexibleCol || isFlexibleRow)
@@ -576,13 +669,14 @@ namespace CAT.UI
                     }
                     else
                     {
-                        // 고정 영역은 그대로
+                        // 고정 영역: 메쉬 단위로 표시. TiledFilled에서 마스크와 부분 교차 시
+                        // 타일이 한번에 꺼지듯 고정 셀도 한번에 숨김 (all-or-nothing).
                         tempRect.x = tempPos.x;
                         tempRect.y = tempPos.y;
                         tempRect.width = colWidth;
                         tempRect.height = rowHeight;
                         Rect uvRect = new Rect(baseUvLeft, baseUvBottom, baseUvColWidth, baseUvRowHeight);
-                        AddQuad(vh, tempRect, uvRect);
+                        AddQuad(vh, tempRect, uvRect, true, true);
                     }
 
                     tempPos.x += colWidth;
@@ -600,6 +694,8 @@ namespace CAT.UI
             bool horizontalAxisTiled = (m_MixedAxisMode == MixedAxisMode.HorizontalTiled_VerticalSliced);
             bool verticalAxisTiled = (m_MixedAxisMode == MixedAxisMode.HorizontalSliced_VerticalTiled);
 
+            // 타일 1개 크기는 srcColWidth/srcRowHeight (이미 PixelsPerUnitMultiplier가 적용된 UI 좌표 단위).
+            // colWidth/rowHeight 또한 같은 UI 좌표 단위이므로 직접 비교합니다.
             bool shouldTileX = false;
             bool shouldTileY = false;
 
@@ -632,16 +728,18 @@ namespace CAT.UI
             {
                 bool stepwiseTiling = (m_ImageType == ImageType.TiledFilled);
 
-                // Tiled 모드: 타일링만 사용 (stretch 없음)
+                // 타일 1개 크기는 srcColWidth/srcRowHeight (이미 PixelsPerUnitMultiplier가 적용된 UI 좌표 단위).
+                // colWidth/rowHeight 또한 같은 UI 좌표 단위이므로 직접 비교합니다.
+                // (multiplier로 한 번 더 나누면 multiplier<1일 때 타일링이 트리거되지 않는 버그가 발생)
                 bool shouldTileX = false;
                 bool shouldTileY = false;
 
-                if (isFlexibleCol && srcColWidth > 0 && colWidth >= srcColWidth)
+                if (isFlexibleCol && srcColWidth > 0f && colWidth >= srcColWidth)
                 {
                     shouldTileX = true;
                 }
 
-                if (isFlexibleRow && srcRowHeight > 0 && rowHeight >= srcRowHeight)
+                if (isFlexibleRow && srcRowHeight > 0f && rowHeight >= srcRowHeight)
                 {
                     shouldTileY = true;
                 }
@@ -1097,6 +1195,10 @@ namespace CAT.UI
                         if (fullVisibleX)
                         {
                             tilesX = Mathf.CeilToInt(totalWidth / baseTileW);
+                            if (m_FillOrigin == FillOrigin.Right)
+                            {
+                                tileOriginX = cellRight - tilesX * baseTileW;
+                            }
                         }
                         else
                         {
@@ -1140,6 +1242,10 @@ namespace CAT.UI
                         if (fullVisibleY)
                         {
                             tilesY = Mathf.CeilToInt(totalHeight / baseTileH);
+                            if (m_FillOrigin == FillOrigin.Top)
+                            {
+                                tileOriginY = cellTop - tilesY * baseTileH;
+                            }
                         }
                         else
                         {
@@ -1194,7 +1300,11 @@ namespace CAT.UI
                     float uvH = uvHeight * (actualH * invBaseTileH);
                     Rect uvRect = new Rect(uvLeft, uvBottom, uvW, uvH);
 
-                    AddQuad(vh, tempRect, uvRect);
+                    // TiledFilled의 핵심 동작: 모든 메쉬는 단위(unit)로 렌더링.
+                    // 두 축 모두 stepwise 검사 적용 → 부분 클립된 타일은 통째로 숨김.
+                    // (한 축만 타일링되는 셀의 경우, 비-타일 축은 stepX/stepY 사전클리핑이 적용되지 않아
+                    //  단일 타일이 행/열 전체를 차지하지만, 이 경우에도 단위 메쉬로 취급해 한번에 숨김)
+                    AddQuad(vh, tempRect, uvRect, true, true);
                     quadsAdded++;
                 }
             }
@@ -1218,7 +1328,11 @@ namespace CAT.UI
         }
 
         // 쿼드를 추가합니다 (최적화: 구조체 재사용)
-        private void AddQuad(VertexHelper vh, Rect posRect, Rect uvRect)
+        // stepwiseTileX/Y: TiledFilled에서 "이 축이 타일 정렬 축"인지 여부.
+        //   - true이면 해당 축에서 부분 클립된 쿼드는 렌더 거부 (완전한 타일만 표시 — 정점 그리드 유지)
+        //   - false이면 해당 축은 일반 클리핑 허용 (고정 셀이나 수직축 전체를 차지하는 셀이 통째로 사라지는 버그 방지)
+        // 기본값 false → 호출자가 명시적으로 타일 컨텍스트임을 표시해야 stepwise 거부가 적용됩니다.
+        private void AddQuad(VertexHelper vh, Rect posRect, Rect uvRect, bool stepwiseTileX = false, bool stepwiseTileY = false)
         {
             if (_filledMaskActive)
             {
@@ -1243,12 +1357,18 @@ namespace CAT.UI
                 if (_filledMaskStepwiseQuad)
                 {
                     const float CLIP_EPS = 0.0001f;
-                    bool fullyVisibleX = left <= originalX + CLIP_EPS && right >= originalX + originalW - CLIP_EPS;
-                    bool fullyVisibleY = bottom <= originalY + CLIP_EPS && top >= originalY + originalH - CLIP_EPS;
-                    // TiledFilled는 메쉬(쿼드) 단위 표시를 유지해야 하므로
-                    // 부분 교차 쿼드는 렌더하지 않습니다.
-                    if (!fullyVisibleX || !fullyVisibleY)
-                        return;
+                    // 타일 정렬 축에서만 stepwise 거부 적용.
+                    // 비-타일 축(고정 셀의 양 축, 또는 한 축만 타일링되는 경우의 다른 축)은 일반 클리핑.
+                    if (stepwiseTileX)
+                    {
+                        bool fullyVisibleX = left <= originalX + CLIP_EPS && right >= originalX + originalW - CLIP_EPS;
+                        if (!fullyVisibleX) return;
+                    }
+                    if (stepwiseTileY)
+                    {
+                        bool fullyVisibleY = bottom <= originalY + CLIP_EPS && top >= originalY + originalH - CLIP_EPS;
+                        if (!fullyVisibleY) return;
+                    }
                 }
 
                 // TiledFilledMask/레거시 FilledMask는 기존처럼 부분 클리핑을 허용합니다.

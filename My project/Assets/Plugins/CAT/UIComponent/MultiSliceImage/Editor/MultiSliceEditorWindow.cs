@@ -238,26 +238,35 @@ public class MultiSliceEditorWindow : EditorWindow
 
         float aspect = spriteW / spriteH;
 
-        float padding = 20f;
-        float maxW = workArea.width - padding * 2;
-        float maxH = workArea.height - padding * 2;
+        // 비대칭 패딩: 우측·하단에 라벨(가로 50px / 세로 30px) 표시 공간 확보.
+        // 기존 20px 사방 패딩에서는 라벨이 윈도우 가장자리에 잘려 표시되었음.
+        const float paddingLeft = 20f;
+        const float paddingTop = 20f;
+        const float paddingRight = 60f;   // 우측 Height 라벨 공간 ("1000" 등 4자리까지 여유)
+        const float paddingBottom = 32f;  // 하단 Width 라벨 공간
+
+        float availW = workArea.width - paddingLeft - paddingRight;
+        float availH = workArea.height - paddingTop - paddingBottom;
+        if (availW <= 1f) availW = 1f;
+        if (availH <= 1f) availH = 1f;
 
         float drawW, drawH;
 
-        if (maxW / maxH > aspect)
+        if (availW / availH > aspect)
         {
-            drawH = maxH;
+            drawH = availH;
             drawW = drawH * aspect;
         }
         else
         {
-            drawW = maxW;
+            drawW = availW;
             drawH = drawW / aspect;
         }
 
+        // 사용 가능 영역의 중앙에 이미지 배치
         imageRect = new Rect(
-            workArea.center.x - drawW * 0.5f,
-            workArea.center.y - drawH * 0.5f,
+            workArea.x + paddingLeft + (availW - drawW) * 0.5f,
+            workArea.y + paddingTop + (availH - drawH) * 0.5f,
             drawW,
             drawH
         );

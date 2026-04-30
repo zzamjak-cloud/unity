@@ -42,6 +42,7 @@ namespace CAT.UI
 
         [SerializeField] private Sprite m_Sprite;
         [SerializeField] private MirrorMode mirrorMode = MirrorMode.Vertical;
+        [SerializeField] private float m_PixelsPerUnitMultiplier = 1f;
 
         [SerializeField] private bool m_IsGradient = false;
         [SerializeField] private GradientDirection m_GradientDirection = GradientDirection.Horizontal;
@@ -55,6 +56,7 @@ namespace CAT.UI
         private Sprite cachedSprite;
         private MirrorMode cachedMirrorMode;
         private Canvas cachedCanvas;
+        private float cachedPixelsPerUnitMultiplier;
         private Vector4 cachedOuterUV;
         private Vector4 cachedInnerUV;
         private Vector4 cachedBorder;       // PPU 적용된 UI 좌표 단위 border
@@ -100,6 +102,25 @@ namespace CAT.UI
                 if (mirrorMode != value)
                 {
                     mirrorMode = value;
+                    cacheDirty = true;
+                    SetVerticesDirty();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Unity Image와 동일한 Pixels Per Unit Multiplier.
+        /// 1보다 작으면 더 크게, 1보다 크면 더 작게(border가 더 작은 영역) 렌더링됩니다.
+        /// </summary>
+        public float pixelsPerUnitMultiplier
+        {
+            get { return m_PixelsPerUnitMultiplier; }
+            set
+            {
+                float clamped = Mathf.Max(0.01f, value);
+                if (!Mathf.Approximately(m_PixelsPerUnitMultiplier, clamped))
+                {
+                    m_PixelsPerUnitMultiplier = clamped;
                     cacheDirty = true;
                     SetVerticesDirty();
                 }
@@ -176,7 +197,13 @@ namespace CAT.UI
         private new void OnValidate()
         {
             base.OnValidate();
-            
+
+            // Pixels Per Unit Multiplier는 0이 되면 0으로 나누는 문제가 발생하므로 최소값 보정
+            if (m_PixelsPerUnitMultiplier < 0.01f)
+            {
+                m_PixelsPerUnitMultiplier = 0.01f;
+            }
+
             // Editor에서 값이 변경될 때 즉시 반영
             if (m_Sprite != null)
             {
@@ -198,7 +225,7 @@ namespace CAT.UI
             if (rectTransform == null) return;
 
             rectTransform.anchorMax = rectTransform.anchorMin;
-            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas);
+            float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, canvas) * Mathf.Max(0.01f, m_PixelsPerUnitMultiplier);
             Vector2 spriteSize = m_Sprite.rect.size / ppu;
             
             if (mirrorMode == MirrorMode.None)
@@ -230,7 +257,8 @@ namespace CAT.UI
             
             // 변경 감지: 스프라이트, 크기, 또는 모드가 변경되었는지 확인
             Canvas currentCanvas = canvas;
-            bool needsUpdate = cacheDirty || cachedSprite != m_Sprite || cachedRect != rect || cachedMirrorMode != mirrorMode || cachedCanvas != currentCanvas;
+            bool needsUpdate = cacheDirty || cachedSprite != m_Sprite || cachedRect != rect || cachedMirrorMode != mirrorMode || cachedCanvas != currentCanvas
+                || !Mathf.Approximately(cachedPixelsPerUnitMultiplier, m_PixelsPerUnitMultiplier);
 
             if (needsUpdate)
             {
@@ -238,12 +266,14 @@ namespace CAT.UI
                 cachedRect = rect;
                 cachedMirrorMode = mirrorMode;
                 cachedCanvas = currentCanvas;
+                cachedPixelsPerUnitMultiplier = m_PixelsPerUnitMultiplier;
 
                 cachedOuterUV = UnityEngine.Sprites.DataUtility.GetOuterUV(m_Sprite);
                 cachedInnerUV = UnityEngine.Sprites.DataUtility.GetInnerUV(m_Sprite);
 
                 // Pixel Per Unit 적용: border와 스프라이트 크기를 UI 좌표 단위로 변환
-                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, currentCanvas);
+                // PixelsPerUnitMultiplier는 Unity Image와 동일하게 PPU에 곱하여 적용
+                float ppu = MirrorSliceImageHelper.GetMultipliedPixelsPerUnit(m_Sprite, currentCanvas) * Mathf.Max(0.01f, m_PixelsPerUnitMultiplier);
                 Vector4 rawBorder = m_Sprite.border;
                 cachedBorder = rawBorder / ppu;
 
