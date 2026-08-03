@@ -332,7 +332,7 @@ PathFollower 경로를 따라 **Tiling 스프라이트 리본 메시**를 생성
   - **리본 두께(경로 수직)** = SpriteRenderer의 `size.y` 또는 Image RectTransform 높이.
 - **Loop 이음매 자동 보정**: Loop 경로에서는 타일 개수를 반올림해 `effectiveTileLength = totalLength / tileCount` 로 조정 → 이음매 완전 연결.
 - **UV 스크롤 (Loop 경로 한정)**: `scrollSpeed` (units/sec) 필드로 컨베이어 벨트 연출.
-- **셰이더 의존성 없음**: Unity 기본 `Sprites/Default` / `UI/Default` 사용. SoftMask / SoftMaskLight 는 `materialForRendering` 체인으로 자동 처리.
+- **셰이더 자동 대체 (Sprite 모드)**: URP 기본 스프라이트 셰이더(`Sprite-Unlit-Default`, `Sprite-Lit-Default`)는 SpriteRenderer 전용 내장값(`unity_SpriteProps`/`unity_SpriteColor`)에 의존해 **MeshRenderer 에서 렌더링되지 않으므로**, 전용 폴백 셰이더 `CAT/PathFollower/Ribbon-Unlit` 로 자동 대체됨. 커스텀 material 을 지정하면 그대로 사용. UI 모드는 자식 Image 의 material 사용, SoftMask / SoftMaskLight 는 `materialForRendering` 체인으로 자동 처리.
 
 ### 사용법
 
@@ -347,10 +347,10 @@ PathFollower 경로를 따라 **Tiling 스프라이트 리본 메시**를 생성
 
 | 필드 | 설명 |
 |------|------|
-| `scrollSpeed` | 컨베이어 스크롤 속도 (units/sec). 음수 = 역방향. **Loop 경로에서만** 동작 |
+| `scrollSpeed` | 컨베이어 스크롤 속도 (units/sec, UI 모드에서는 px/sec). 음수 = 역방향. **Loop 경로에서만** 동작 |
 | `flipX` | 가로(경로 방향) UV 반전. Sprite 모드에서는 자식 `SpriteRenderer.flipX` 와 XOR 결합 |
 | `flipY` | 세로(리본 두께) UV 반전. Sprite 모드에서는 자식 `SpriteRenderer.flipY` 와 XOR 결합 |
-| `samplesPerUnit` | 경로 1유닛당 샘플 정점 개수 (자동 모드, 기본 10) |
+| `samplesPerUnit` | 경로 1유닛당 샘플 정점 개수 (자동 모드, 기본 10). UI 모드에서는 100px = 1유닛으로 환산 |
 | `overrideSamples` | 샘플 개수를 수동 지정 |
 | `manualSamples` | 수동 샘플 개수 (4~512) |
 | `autoCreateSubCanvas` | UI 모드에서 서브 Canvas 자동 추가 (기본 `true`) — 상위 Canvas rebuild 격리 |
@@ -400,6 +400,8 @@ ribbon.scrollSpeed = -ribbon.scrollSpeed; // 이동 방향도 뒤집기
 
 ### 주의 사항
 
+- **Scroll Speed 는 Loop 경로 + 플레이 모드 전용**: `scrollSpeed` 는 PathFollower 의 **Loop(닫힌 경로)가 켜져 있어야** 동작하며, 스크롤 애니메이션은 **플레이 모드에서만** 재생됩니다. 인스펙터에 경고가 표시됩니다.
+- **Sprite 모드에서 URP 기본 스프라이트 material 은 자동 대체됨**: MeshRenderer 는 `Sprite-Unlit-Default` 등 URP 2D Sprite 셰이더를 렌더링할 수 없어(SpriteRenderer 전용 내장값 의존 → 정점 붕괴/알파 0), `Assets/Plugins/CAT/PathFollower/Resources/PathRibbonUnlit.shader` (`CAT/PathFollower/Ribbon-Unlit`) 기반 공유 material 로 자동 대체됩니다. 삭제하지 마세요.
 - **Wrap Mode = Repeat 필수**: 스프라이트가 아틀라스에 포함돼 있으면 UV 가 `[0..1]` 전체 영역이 아니라 아틀라스 내 서브영역이라 Repeat 동작이 불가합니다. 리본 전용 스프라이트는 **독립 텍스처로 Import** 하세요. 인스펙터에서 wrap 모드 경고가 표시됩니다.
 - **Draw Mode = Tiled / Image Type = Tiled 권장**: Size.y(리본 두께)를 사용하려면 자식 컴포넌트가 Tiled 모드여야 합니다. SpriteRenderer가 Simple 모드면 네이티브 스프라이트 높이가 두께로 사용됩니다.
 - **한 타일 길이 = 네이티브 스프라이트 크기**: `tileLength = sprite.rect.width / pixelsPerUnit`. SpriteRenderer.size.x는 **타일 길이가 아닙니다**(전체 영역 의미). 타일 길이를 바꾸려면 스프라이트 자체를 교체하거나 PPU를 조정하세요.
@@ -487,6 +489,17 @@ PathFollower 의 스냅샷 모핑 중에는 `PathVersion` 이 매 프레임 증�
 ---
 
 ## 버전 히스토리
+
+### v1.3.2 (2026-07-31)
+- **버그 수정 (카메라에 따라 타일 개수/두께 변화)**: 리본의 호 길이·두께 계산이 월드 공간 기준이어서, Screen Space - Camera 캔버스에서 카메라 설정(ortho size/FOV, plane distance, 해상도)에 따라 캔버스 월드 스케일이 변하면 타일 개수와 리본 두께가 함께 변하던 문제 수정.
+- **버그 수정 (자기 Transform 회전 시 V 방향 뒤집힘)**: 리본 오브젝트 자신을 회전(예: Y축 180°)하면 법선 계산의 좌/우가 뒤바뀌어 flipY 가 강제로 한 번 더 적용된 것처럼 톱니 방향이 뒤집히던 문제 수정.
+- **계산 공간 통일**: 위 두 문제의 공통 원인은 좌표 공간 혼용. 모든 길이/두께/법선 계산을 **경로 공간(부모 로컬 공간)** 기준으로 통일 → ① 카메라/캔버스 스케일과 무관하게 타일링 일정, ② 리본 자신의 회전/스케일은 렌더링 결과에 영향 없음 (경로 고정 원칙과 일치). 리본을 거울 반전하려면 **부모 Transform** 을 반전하거나 `flipX`/`flipY` 사용.
+- **단위 변경 (UI 모드)**: `scrollSpeed` 는 UI 모드에서 **px/sec** 로 동작 (카메라 독립적). 자동 샘플 계산(`samplesPerUnit`)은 UI 모드에서 **100px = 1유닛** 으로 환산 (기존 밀도 수준 유지). `TotalPathLength` / `EffectiveTileLength` 는 경로 공간 단위로 보고됨.
+
+### v1.3.1 (2026-07-30)
+- **버그 수정 (Sprite 모드 리본 미표시)**: 자식 SpriteRenderer 가 URP 기본 material(`Sprite-Unlit-Default`)일 때 MeshRenderer 에서 리본이 렌더링되지 않던 문제 수정. URP 2D Sprite 셰이더는 SpriteRenderer 전용 내장값(`unity_SpriteProps`/`unity_SpriteColor`)에 의존하므로, 전용 폴백 셰이더 `CAT/PathFollower/Ribbon-Unlit` (Resources/PathRibbonUnlit.shader) 로 자동 대체.
+- **버그 수정 (자식 늦은 추가 감지)**: PathRibbon 활성화 이후에 자식 렌더러를 추가하면 인스펙터 값(Scroll Speed 등)을 변경하는 시점에야 감지되어 자식 비활성화 + material 교체가 갑자기 일어나던 문제 수정. LateUpdate 에서 유효한 자식이 없으면 경량 재탐색.
+- **에디터 경고 추가**: ① 비Loop 경로에서 Scroll Speed 설정 시 경고, ② URP 2D Sprite 셰이더 → 폴백 material 자동 대체 안내.
 
 ### v1.3.0 (2026-04-20)
 - **PathRibbon 추가**: PathFollower 경로를 따라 Tiling 스프라이트 리본 메시 생성. UI/Sprite 양용, Loop 경로에서 UV 스크롤(컨베이어 벨트) 연출 지원.

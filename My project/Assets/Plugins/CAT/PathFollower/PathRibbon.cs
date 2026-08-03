@@ -18,6 +18,11 @@ namespace CAT.Utility
     /// - Graphic 베이스의 raycastTarget, color는 무시되며, 자식 렌더러의 Color가 정점 컬러로 사용된다.
     /// - 스프라이트의 텍스처는 Wrap Mode = Repeat 이어야 타일링이 끊어지지 않는다.
     /// - 비Loop 경로에서는 마지막 타일이 잘릴 수 있고 UV 스크롤은 비활성화된다.
+    /// - 모든 길이/두께/법선 계산은 경로 공간(부모 로컬 공간) 기준 → 카메라/캔버스 월드 스케일과
+    ///   무관하게 타일 개수와 리본 두께가 일정하다 (Screen Space - Camera 캔버스 대응).
+    /// - 리본 오브젝트 자신의 회전/스케일은 렌더링 결과에 영향을 주지 않는다 (경로 고정 원칙).
+    ///   예: 자신을 Y축 180° 회전해도 flipY 가 뒤집히지 않음. 리본을 거울 반전하려면
+    ///   부모 Transform 을 회전/반전하거나 flipX/flipY 를 사용할 것.
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -26,10 +31,10 @@ namespace CAT.Utility
     {
         #region 직렬화 필드
 
-        [Tooltip("컨베이어 벨트 스크롤 속도 (units/sec). 음수 = 역방향. Loop 경로에서만 동작")]
+        [Tooltip("컨베이어 벨트 스크롤 속도 (units/sec, UI 모드에서는 px/sec). 음수 = 역방향. Loop 경로에서만 동작")]
         public float scrollSpeed = 0f;
 
-        [Tooltip("경로 길이 1유닛당 샘플 정점 개수 (자동 모드)")]
+        [Tooltip("경로 길이 1유닛당 샘플 정점 개수 (자동 모드). UI 모드에서는 100px = 1유닛으로 환산")]
         [Min(0.1f)] public float samplesPerUnit = 10f;
 
         [Tooltip("샘플 개수를 수동으로 지정")]
@@ -66,8 +71,16 @@ namespace CAT.Utility
         private MaterialPropertyBlock _mpb;
         private static readonly int PropMainTex = Shader.PropertyToID("_MainTex");
 
+        // Sprite 모드 폴백 material (URP 2D Sprite 셰이더는 MeshRenderer 에서 렌더 불가)
+        // 모든 PathRibbon 이 공유 (텍스처는 MaterialPropertyBlock 으로 개별 주입)
+        private static Material s_ribbonFallbackMaterial;
+        private const string FallbackShaderResourceName = "PathRibbonUnlit";
+
         // UI 모드: 자동 생성한 서브 Canvas (null 이면 미생성 또는 사용자가 직접 추가)
         private Canvas _autoSubCanvas;
+
+        // UI 모드 자동 샘플 계산용: 로컬 단위(픽셀) → 유닛 환산 계수 (PPU 100 관례)
+        private const float UISampleUnitPixels = 100f;
 
         // Mesh 업데이트 플래그 (인덱스 검증 + bounds 자동 계산 생략 → 모바일 최적화)
         // 인덱스는 구조적으로 유효함이 보장되고, bounds 는 RecalculateBounds 로 수동 호출.
@@ -125,10 +138,10 @@ namespace CAT.Utility
         /// <summary>현재 생성된 샘플(정점 쌍) 개수</summary>
         public int ActualSampleCount => _sampleCount;
 
-        /// <summary>Loop 보정 후 실제 사용되는 타일 길이</summary>
+        /// <summary>Loop 보정 후 실제 사용되는 타일 길이 (경로 공간 단위)</summary>
         public float EffectiveTileLength => _effectiveTileLength;
 
-        /// <summary>경로 전체 길이 추정값</summary>
+        /// <summary>경로 전체 길이 추정값 (경로 공간 단위)</summary>
         public float TotalPathLength => _totalLength;
 
         #endregion
@@ -186,6 +199,15 @@ namespace CAT.Utility
         private void LateUpdate()
         {
             if (_follower == null) return;
+
+            // 자식 렌더러를 PathRibbon 활성화 이후에 추가한 경우 대응: 유효한 자식이 없으면 재탐색.
+            // (기존에는 OnValidate 가 발생해야만 뒤늦게 감지되어, 인스펙터 값 변경 시점에
+            //  자식 비활성화 + material 교체가 한꺼번에 일어나는 혼란이 있었음)
+            if (!HasValidChild() && TryFindChildRenderer())
+            {
+                CacheReferences();
+                MarkDirty();
+            }
 
             bool needsRebuild = DetectDataChanges();
 
@@ -346,11 +368,11 @@ namespace CAT.Utility
 
             if (_childSpriteRenderer != null)
             {
-                _meshRenderer.sharedMaterial = _childSpriteRenderer.sharedMaterial;
+                _meshRenderer.sharedMaterial = ResolveMeshMaterial(_childSpriteRenderer.sharedMaterial);
                 _meshRenderer.sortingLayerID = _childSpriteRenderer.sortingLayerID;
                 _meshRenderer.sortingOrder = _childSpriteRenderer.sortingOrder;
 
-                // Sprites/Default 재질의 _MainTex 는 SpriteRenderer 가 내부 주입한다.
+                // 스프라이트 재질의 _MainTex 는 SpriteRenderer 가 내부 주입한다.
                 // MeshRenderer 는 해당 경로가 없으므로 MaterialPropertyBlock 으로 텍스처를 주입.
                 ApplySpriteTexturePropertyBlock();
             }
@@ -394,6 +416,66 @@ namespace CAT.Utility
             _meshRenderer.GetPropertyBlock(_mpb);
             _mpb.SetTexture(PropMainTex, tex);
             _meshRenderer.SetPropertyBlock(_mpb);
+        }
+
+        /// <summary>
+        /// 스프라이트 전용 셰이더인지 판단한다.
+        /// URP 2D Sprite 셰이더는 SpriteRenderer 가 draw 시점에 주입하는
+        /// unity_SpriteProps / unity_SpriteColor 내장값에 의존하므로,
+        /// MeshRenderer 로 그리면 정점이 붕괴(×0)되고 알파가 0이 되어 보이지 않는다.
+        /// </summary>
+        public static bool IsSpriteOnlyShader(Material mat)
+        {
+            if (mat == null || mat.shader == null) return false;
+            string shaderName = mat.shader.name;
+            return shaderName == "Universal Render Pipeline/2D/Sprite-Unlit-Default"
+                || shaderName == "Universal Render Pipeline/2D/Sprite-Lit-Default";
+        }
+
+        /// <summary>
+        /// MeshRenderer 에 사용할 material 을 결정한다 (Sprite 모드 전용).
+        /// 자식 material 이 MeshRenderer 비호환(스프라이트 전용 셰이더)이거나 null 이면
+        /// 공유 폴백 material(CAT/PathFollower/Ribbon-Unlit)을 반환한다.
+        /// 변경 감지 시점에만 호출되므로 문자열 비교 비용은 무시 가능.
+        /// </summary>
+        private static Material ResolveMeshMaterial(Material childMat)
+        {
+            if (childMat != null && !IsSpriteOnlyShader(childMat)) return childMat;
+
+            if (s_ribbonFallbackMaterial == null)
+            {
+                Shader shader = Resources.Load<Shader>(FallbackShaderResourceName);
+                if (shader == null)
+                {
+                    Debug.LogError("[PathRibbon] Resources 에서 PathRibbonUnlit.shader 를 찾을 수 없습니다. 리본이 표시되지 않을 수 있습니다.");
+                    return childMat;
+                }
+                s_ribbonFallbackMaterial = new Material(shader)
+                {
+                    name = "PathRibbon-Unlit (Shared)",
+                    hideFlags = HideFlags.DontSave
+                };
+            }
+            return s_ribbonFallbackMaterial;
+        }
+
+        /// <summary>자식 1단계에 유효한 렌더러(Image/SpriteRenderer)가 있는지 검사만 한다 (부작용 없음).</summary>
+        private bool TryFindChildRenderer()
+        {
+            int childCount = transform.childCount;
+            for (int i = 0; i < childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+                if (_isUIMode)
+                {
+                    if (child.TryGetComponent<Image>(out _)) return true;
+                }
+                else
+                {
+                    if (child.TryGetComponent<SpriteRenderer>(out _)) return true;
+                }
+            }
+            return false;
         }
 
         #endregion
@@ -453,7 +535,7 @@ namespace CAT.Utility
                     // 재질/정렬 Sprite 모드에서 MeshRenderer 에 반영
                     if (_meshRenderer != null)
                     {
-                        _meshRenderer.sharedMaterial = _childSpriteRenderer.sharedMaterial;
+                        _meshRenderer.sharedMaterial = ResolveMeshMaterial(_childSpriteRenderer.sharedMaterial);
                         _meshRenderer.sortingLayerID = _childSpriteRenderer.sortingLayerID;
                         _meshRenderer.sortingOrder = _childSpriteRenderer.sortingOrder;
                     }
@@ -499,21 +581,33 @@ namespace CAT.Utility
             _effectiveFlipX = flipX ^ childFx;
             _effectiveFlipY = flipY ^ childFy;
 
-            // 1. 예비 샘플링으로 경로 총 길이 추정 → 자동 샘플 개수 계산
+            // 1. 예비 샘플링으로 경로 총 길이(로컬) 추정 → 자동 샘플 개수 계산
+            //    UI 모드의 로컬 단위는 픽셀이므로 100px = 1유닛으로 환산하여 샘플 밀도 유지
             float prelimLength = EstimatePathLength(32);
+            float unitLength = _isUIMode ? prelimLength / UISampleUnitPixels : prelimLength;
             int baseSampleCount = overrideSamples
                 ? Mathf.Max(4, manualSamples)
-                : Mathf.Clamp(Mathf.CeilToInt(prelimLength * samplesPerUnit), 4, 4096);
+                : Mathf.Clamp(Mathf.CeilToInt(unitLength * samplesPerUnit), 4, 4096);
 
             // Loop 경로는 이음매에서 UV 연속성을 위해 마지막 정점을 한 번 더 추가
             int vertexSampleCount = isLoop ? baseSampleCount + 1 : baseSampleCount;
 
             EnsureArraySize(vertexSampleCount);
 
-            // 2. 정점 및 누적 호 길이 계산
-            Matrix4x4 worldToLocal = transform.worldToLocalMatrix;
+            // 2. 정점 및 누적 호 길이 계산 — 전부 경로 공간(부모 로컬 공간) 기준
+            //    [카메라 독립성] Screen Space - Camera 캔버스는 카메라 설정에 따라 월드 스케일이
+            //    변하므로 월드 공간에서 길이/두께를 재면 타일링이 카메라에 종속된다.
+            //    [handedness 일관성] 경로 포인트가 저장된 공간(부모 로컬)에서 법선을 계산해야
+            //    리본 자신의 회전/스케일(예: Y축 180° 회전)이 좌/우 정점과 V 방향을 뒤집지 않는다.
+            //    경로 공간에서 만든 정점을 마지막에 리본 로컬로 변환하면, 렌더링 시 리본 자신의
+            //    Transform 과 상쇄되어 경로 고정 원칙(자기 Transform 무영향)이 그대로 유지된다.
+            Transform parent = transform.parent;
+            Matrix4x4 worldToPath = parent != null ? parent.worldToLocalMatrix : Matrix4x4.identity;
+            Matrix4x4 pathToLocal = parent != null
+                ? transform.worldToLocalMatrix * parent.localToWorldMatrix
+                : transform.worldToLocalMatrix;
             float cumLen = 0f;
-            Vector3 prevWorldPos = Vector3.zero;
+            Vector3 prevPathPos = Vector3.zero;
             float halfW = ribbonWidth * 0.5f;
 
             for (int i = 0; i < vertexSampleCount; i++)
@@ -522,12 +616,12 @@ namespace CAT.Utility
                     ? (float)i / baseSampleCount
                     : ((baseSampleCount > 1) ? (float)i / (baseSampleCount - 1) : 0f);
 
-                Vector3 worldPos = _follower.GetPointAt(t);
-                Vector3 tangent = _follower.GetDirectionAt(t);
+                Vector3 pathPos = worldToPath.MultiplyPoint3x4(_follower.GetPointAt(t));
+                Vector3 pathTangent = worldToPath.MultiplyVector(_follower.GetDirectionAt(t));
 
-                // 2D 법선: 접선을 CCW 90° 회전
-                float nx = -tangent.y;
-                float ny = tangent.x;
+                // 2D 법선: 경로 공간 접선을 CCW 90° 회전
+                float nx = -pathTangent.y;
+                float ny = pathTangent.x;
                 float nMagSq = nx * nx + ny * ny;
                 if (nMagSq > 1e-6f)
                 {
@@ -536,20 +630,20 @@ namespace CAT.Utility
                 }
                 else { nx = 0f; ny = 1f; }
 
-                Vector3 leftWorld = new Vector3(worldPos.x + nx * halfW, worldPos.y + ny * halfW, worldPos.z);
-                Vector3 rightWorld = new Vector3(worldPos.x - nx * halfW, worldPos.y - ny * halfW, worldPos.z);
+                Vector3 leftPath = new Vector3(pathPos.x + nx * halfW, pathPos.y + ny * halfW, pathPos.z);
+                Vector3 rightPath = new Vector3(pathPos.x - nx * halfW, pathPos.y - ny * halfW, pathPos.z);
 
-                _vertices[i * 2 + 0] = worldToLocal.MultiplyPoint3x4(leftWorld);
-                _vertices[i * 2 + 1] = worldToLocal.MultiplyPoint3x4(rightWorld);
+                _vertices[i * 2 + 0] = pathToLocal.MultiplyPoint3x4(leftPath);
+                _vertices[i * 2 + 1] = pathToLocal.MultiplyPoint3x4(rightPath);
 
                 if (i > 0)
                 {
-                    float dx = worldPos.x - prevWorldPos.x;
-                    float dy = worldPos.y - prevWorldPos.y;
-                    float dz = worldPos.z - prevWorldPos.z;
+                    float dx = pathPos.x - prevPathPos.x;
+                    float dy = pathPos.y - prevPathPos.y;
+                    float dz = pathPos.z - prevPathPos.z;
                     cumLen += Mathf.Sqrt(dx * dx + dy * dy + dz * dz);
                 }
-                prevWorldPos = worldPos;
+                prevPathPos = pathPos;
 
                 _baseU[i] = cumLen; // 일단 누적 호 길이 저장 → 뒤에서 타일 길이로 나눠 정규화
             }
@@ -667,14 +761,17 @@ namespace CAT.Utility
             return _isUIMode ? _childImage.color : _childSpriteRenderer.color;
         }
 
+        /// <summary>경로 총 길이를 경로 공간(부모 로컬) 기준으로 추정한다 (카메라/캔버스 스케일·리본 자신 Transform 무관).</summary>
         private float EstimatePathLength(int samples)
         {
-            Vector3 prev = _follower.GetPointAt(0f);
+            Transform parent = transform.parent;
+            Matrix4x4 worldToPath = parent != null ? parent.worldToLocalMatrix : Matrix4x4.identity;
+            Vector3 prev = worldToPath.MultiplyPoint3x4(_follower.GetPointAt(0f));
             float len = 0f;
             for (int i = 1; i <= samples; i++)
             {
                 float t = (float)i / samples;
-                Vector3 p = _follower.GetPointAt(t);
+                Vector3 p = worldToPath.MultiplyPoint3x4(_follower.GetPointAt(t));
                 len += (p - prev).magnitude;
                 prev = p;
             }

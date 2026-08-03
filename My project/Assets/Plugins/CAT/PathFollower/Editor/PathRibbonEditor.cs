@@ -107,6 +107,19 @@ public class PathRibbonEditor : Editor
 
         private void DrawWarnings(PathRibbon ribbon)
         {
+            // Scroll Speed 는 닫힌(Loop) 경로 + 플레이 모드에서만 동작
+            if (!Mathf.Approximately(ribbon.scrollSpeed, 0f))
+            {
+                var follower = ribbon.GetComponent<PathFollower>();
+                if (follower != null && !follower.IsLoop)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Scroll Speed(UV 스크롤)는 닫힌(Loop) 경로에서만 동작합니다. PathFollower 의 Loop 를 켜세요. " +
+                        "(스크롤 애니메이션은 플레이 모드에서만 재생됩니다)",
+                        MessageType.Warning);
+                }
+            }
+
             // 자식 렌더러 검사
             bool hasChildRenderer = false;
             SpriteRenderer foundSR = null;
@@ -150,6 +163,15 @@ public class PathRibbonEditor : Editor
                 EditorGUILayout.HelpBox(
                     "자식 Image의 Type 이 Tiled 가 아닙니다. Type=Tiled 로 변경하세요.",
                     MessageType.Warning);
+            }
+
+            // URP 2D Sprite 셰이더는 MeshRenderer 비호환 → 폴백 material 자동 대체 안내
+            if (foundSR != null && PathRibbon.IsSpriteOnlyShader(foundSR.sharedMaterial))
+            {
+                EditorGUILayout.HelpBox(
+                    "자식 SpriteRenderer 의 material(URP 2D Sprite 셰이더)은 MeshRenderer 에서 렌더링되지 않으므로, " +
+                    "PathRibbon 전용 폴백 material(CAT/PathFollower/Ribbon-Unlit)로 자동 대체됩니다.",
+                    MessageType.Info);
             }
 
             // 텍스처 Wrap Mode 검사
