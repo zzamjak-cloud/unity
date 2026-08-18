@@ -26,10 +26,21 @@ namespace SoftMaskLight
         private SoftMaskLight _softMask;
         private Material _currentProxyMaterial;
         private bool _isCleanedUp;
+        // Graphic 참조 캐시 (반복 GetComponent 방지)
+        private Graphic _graphic;
+
+        private Graphic OwnerGraphic
+        {
+            get
+            {
+                if (_graphic == null) _graphic = GetComponent<Graphic>();
+                return _graphic;
+            }
+        }
 
         /// <summary>
         /// 마지막으로 반환한 프록시 머티리얼 참조
-        /// SoftMaskLight.UpdateChildProxyMaterials()에서 프로퍼티 전파에 사용
+        /// SoftMaskLight가 프록시 머티리얼 식별/정리에 사용
         /// </summary>
         public Material ProxyMaterial => _currentProxyMaterial;
 
@@ -50,6 +61,8 @@ namespace SoftMaskLight
         {
             _softMask = mask;
             _isCleanedUp = false;
+            // 씬/프리팹에 직렬화되지 않도록 설정 (플러그인 제거 시 missing script 방지)
+            hideFlags = HideFlags.DontSave;
         }
 
         /// <summary>
@@ -57,10 +70,25 @@ namespace SoftMaskLight
         /// </summary>
         private void OnEnable()
         {
+            // 과거 버전에서 씬에 직렬화된 프록시 업그레이드 경로
+            hideFlags = HideFlags.DontSave;
+
             if (_isCleanedUp || _softMask == null) return;
 
-            var graphic = GetComponent<Graphic>();
+            var graphic = OwnerGraphic;
             if (graphic != null) graphic.SetMaterialDirty();
+        }
+
+        /// <summary>
+        /// 부모 변경 시 마스크 밖으로 이동했는지 확인하고 마스크에 즉시 통보
+        /// (플레이모드에서 SetParent로 이탈 시 원본 Material 즉시 복원)
+        /// </summary>
+        private void OnTransformParentChanged()
+        {
+            if (_isCleanedUp || _softMask == null) return;
+
+            var graphic = OwnerGraphic;
+            if (graphic != null) _softMask.NotifyChildMovedOut(graphic);
         }
 
         /// <summary>
@@ -105,7 +133,7 @@ namespace SoftMaskLight
             _isCleanedUp = true;
             _currentProxyMaterial = null;
 
-            var graphic = GetComponent<Graphic>();
+            var graphic = OwnerGraphic;
             if (graphic != null) graphic.SetMaterialDirty();
 
             if (Application.isPlaying)

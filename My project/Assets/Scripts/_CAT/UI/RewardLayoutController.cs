@@ -245,6 +245,27 @@ public class RewardLayoutController : MonoBehaviour
         }
     }
     
+    /// <summary>
+    /// 모든 Grid에 등록된 총 프리팹 개수를 계산합니다.
+    /// 런타임(Update의 테스트 경로)에서도 호출되므로 UNITY_EDITOR 블록 밖에 위치해야 한다.
+    /// </summary>
+    private int GetTotalPrefabCount()
+    {
+        if (gridPrefabData == null)
+            return 0;
+
+        int totalCount = 0;
+        foreach (var gridData in gridPrefabData)
+        {
+            if (gridData?.rewardItems != null)
+            {
+                totalCount += GetValidPrefabCount(gridData.rewardItems);
+            }
+        }
+
+        return totalCount;
+    }
+
     #if UNITY_EDITOR
     /// <summary>
     /// 에디터에서 값이 변경될 때 호출됩니다. Reward Count와 Max Items In Grid를 Element Index + 1로 자동 동기화하고, Test Reward Count를 제한합니다.
@@ -287,26 +308,6 @@ public class RewardLayoutController : MonoBehaviour
             testRewardCount = 0;
             UnityEditor.EditorUtility.SetDirty(this);
         }
-    }
-    
-    /// <summary>
-    /// 모든 Grid에 등록된 총 프리팹 개수를 계산합니다.
-    /// </summary>
-    private int GetTotalPrefabCount()
-    {
-        if (gridPrefabData == null)
-            return 0;
-        
-        int totalCount = 0;
-        foreach (var gridData in gridPrefabData)
-        {
-            if (gridData?.rewardItems != null)
-            {
-                totalCount += GetValidPrefabCount(gridData.rewardItems);
-            }
-        }
-        
-        return totalCount;
     }
     
     /// <summary>

@@ -59,22 +59,32 @@ Shader "SoftMaskLight/UI/TMP_SoftMask"
 
         // --- SoftMask Properties (_SoftMask 접두사: TMP _MaskTex 충돌 방지) ---
         _SoftMaskTex        ("SoftMask Texture", 2D) = "white" {}
-        _SoftMaskSoftness   ("SoftMask Softness", Range(0, 1)) = 0.1
+        // 소프트니스 역수 (= 1 / max(softness, 0.001), C# 사전 계산 — 픽셀당 나눗셈 제거)
+        [HideInInspector] _SoftMaskSoftnessRcp ("SoftMask Softness Rcp", Float) = 10
         _SoftMaskInvert     ("SoftMask Invert", Float) = 0
         _SoftMaskUVRect     ("SoftMask UV Rect", Vector) = (0, 0, 1, 1)
 
         // 슬라이스 마스크 파라미터 (Image.Type.Sliced 대응)
         [HideInInspector] _SoftMaskSliceBorder   ("SoftMask Slice Border", Vector) = (0, 0, 1, 1)
         [HideInInspector] _SoftMaskSliceInnerUV  ("SoftMask Slice Inner UV", Vector) = (0, 0, 1, 1)
+        // 구간별 기울기 (k1, k2n, k3, 타일수-ε) — C# 사전 계산 (픽셀당 나눗셈 제거)
+        [HideInInspector] _SoftMaskSliceSlopeX   ("SoftMask Slice Slope X", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _SoftMaskSliceSlopeY   ("SoftMask Slice Slope Y", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _SoftMaskFillLineA     ("SoftMask Fill Line A", Vector) = (0, 0, 1, 0)
+        [HideInInspector] _SoftMaskFillLineB     ("SoftMask Fill Line B", Vector) = (0, 0, 1, 10000)
 
         [HideInInspector] _SoftMaskTex2      ("SoftMask Texture 2", 2D) = "white" {}
-        [HideInInspector] _SoftMaskSoftness2  ("SoftMask Softness 2", Range(0, 1)) = 0.1
+        [HideInInspector] _SoftMaskSoftnessRcp2 ("SoftMask Softness Rcp 2", Float) = 10
         [HideInInspector] _SoftMaskInvert2    ("SoftMask Invert 2", Float) = 0
         [HideInInspector] _SoftMaskUVRect2    ("SoftMask UV Rect 2", Vector) = (0, 0, 1, 1)
 
-        // 중첩 슬라이스 마스크 파라미터
+        // 중첩 형태 대응 파라미터
         [HideInInspector] _SoftMaskSliceBorder2  ("SoftMask Slice Border 2", Vector) = (0, 0, 1, 1)
         [HideInInspector] _SoftMaskSliceInnerUV2 ("SoftMask Slice Inner UV 2", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _SoftMaskSliceSlopeX2  ("SoftMask Slice Slope X 2", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _SoftMaskSliceSlopeY2  ("SoftMask Slice Slope Y 2", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _SoftMaskFillLineA2    ("SoftMask Fill Line A 2", Vector) = (0, 0, 1, 0)
+        [HideInInspector] _SoftMaskFillLineB2    ("SoftMask Fill Line B 2", Vector) = (0, 0, 1, 10000)
     }
 
     SubShader
@@ -112,9 +122,9 @@ Shader "SoftMaskLight/UI/TMP_SoftMask"
             #pragma multi_compile __ UNDERLAY_ON UNDERLAY_INNER
             #pragma multi_compile __ UNITY_UI_CLIP_RECT
             #pragma multi_compile __ UNITY_UI_ALPHACLIP
+            // _SOFTMASK_SLICE 하나가 마스크 1·2의 슬라이스를 모두 담당 (변형 수 절감)
             #pragma multi_compile_local _ _SOFTMASK_NESTED
             #pragma multi_compile_local _ _SOFTMASK_SLICE
-            #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
 
             #include "UnityCG.cginc"
             #include "UnityUI.cginc"
@@ -129,41 +139,60 @@ Shader "SoftMaskLight/UI/TMP_SoftMask"
             // SoftMask 유니폼 (_SoftMask 접두사)
             // ─────────────────────────────────────────
             sampler2D _SoftMaskTex;
-            half _SoftMaskSoftness;
+            half _SoftMaskSoftnessRcp;  // = 1 / max(softness, 0.001), C# 사전 계산
             half _SoftMaskInvert;
             float4x4 _SoftMaskWorldToUV;
             float4 _SoftMaskUVRect;
 
             sampler2D _SoftMaskTex2;
-            half _SoftMaskSoftness2;
+            half _SoftMaskSoftnessRcp2;
             half _SoftMaskInvert2;
             float4x4 _SoftMaskWorldToUV2;
             float4 _SoftMaskUVRect2;
 
-            // 슬라이스 유니폼 (마스크 1)
+            // 형태 대응 유니폼 (마스크 1: 9-slice / Tiled / Filled)
             #if defined(_SOFTMASK_SLICE)
             float4 _SoftMaskSliceBorder;   // (leftBreak, bottomBreak, rightBreak, topBreak) rect 정규화 [0,1]
             float4 _SoftMaskSliceInnerUV;  // (innerLeft, innerBottom, innerRight, innerTop) 스프라이트 UV [0,1]
+            float4 _SoftMaskSliceSlopeX;   // (k1, k2n, k3, 타일수-ε) — C# 사전 계산
+            float4 _SoftMaskSliceSlopeY;
+            float4 _SoftMaskFillLineA;     // Filled 반평면 A (a, b, c, 결합모드). 항등=(0,0,1,0)
+            float4 _SoftMaskFillLineB;     // Filled 반평면 B (a, b, c, 0). 항등=(0,0,1,0)
             #endif
 
-            // 슬라이스 유니폼 (마스크 2, 중첩)
-            #if defined(_SOFTMASK_NESTED) && defined(_SOFTMASK_NESTED_SLICE)
+            // 형태 대응 유니폼 (마스크 2, 중첩)
+            #if defined(_SOFTMASK_NESTED) && defined(_SOFTMASK_SLICE)
             float4 _SoftMaskSliceBorder2;
             float4 _SoftMaskSliceInnerUV2;
+            float4 _SoftMaskSliceSlopeX2;
+            float4 _SoftMaskSliceSlopeY2;
+            float4 _SoftMaskFillLineA2;
+            float4 _SoftMaskFillLineB2;
             #endif
 
             // ─────────────────────────────────────────
-            // 9-슬라이스 1D 리매핑 (브랜치 없음, 모바일 최적화)
+            // 9-슬라이스/타일 1D 리매핑 (브랜치·나눗셈 없음, 모바일 최적화)
+            // k = (k1, k2n, k3, nMax) — C#이 역수/타일 수 사전 계산 (Core.cginc와 동일 알고리즘)
             // ─────────────────────────────────────────
-            inline float SliceRemap1D_TMP(float u, float uA, float uB, float pA, float pB)
+            inline float SliceRemap1D_TMP(float u, float uA, float uB, float pA, float pB, float4 k)
             {
                 float s1 = step(u, uA);
                 float s3 = step(uB, u);
-                float s2 = 1.0 - s1 - s3;
-                float r1 = u * pA / max(uA, 0.00001);
-                float r2 = pA + (u - uA) * (pB - pA) / max(uB - uA, 0.00001);
-                float r3 = pB + (u - uB) * (1.0 - pB) / max(1.0 - uB, 0.00001);
+                float s2 = saturate(1.0 - s1 - s3); // uA==uB 경계점 음수 가중치 방지
+                float r1 = u * k.x;
+                float r2 = pA + frac(min((u - uA) * k.y, k.w)) * (pB - pA);
+                float r3 = pB + (u - uB) * k.z;
                 return s1 * r1 + s2 * r2 + s3 * r3;
+            }
+
+            // Filled 커버리지 (반평면 2개, atan2 없음 — Core.cginc와 동일 알고리즘)
+            // lineB.w = AA 스케일 (saturate(d*aa+0.5)로 ~1px 소프트 경계)
+            inline half FillCoverage_TMP(float2 uv, float4 lineA, float4 lineB)
+            {
+                half aa = (half)lineB.w;
+                half a = saturate((half)dot(float3(uv, 1.0), lineA.xyz) * aa + 0.5h);
+                half b = saturate((half)dot(float3(uv, 1.0), lineB.xyz) * aa + 0.5h);
+                return lerp(a * b, max(a, b), (half)lineA.w);
             }
 
             // ─────────────────────────────────────────
@@ -175,19 +204,22 @@ Shader "SoftMaskLight/UI/TMP_SoftMask"
                 half inBounds = step(0.0h, uv.x) * step(uv.x, 1.0h)
                               * step(0.0h, uv.y) * step(uv.y, 1.0h);
 
-                // 슬라이스 타입: 9-slice UV 리매핑 적용
+                // 형태 대응: Filled 커버리지 + 9-slice/Tiled 리매핑
                 #if defined(_SOFTMASK_SLICE)
+                inBounds *= FillCoverage_TMP(uv, _SoftMaskFillLineA, _SoftMaskFillLineB);
                 uv = float2(
-                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder.x, _SoftMaskSliceBorder.z, _SoftMaskSliceInnerUV.x, _SoftMaskSliceInnerUV.z),
-                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder.y, _SoftMaskSliceBorder.w, _SoftMaskSliceInnerUV.y, _SoftMaskSliceInnerUV.w)
+                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder.x, _SoftMaskSliceBorder.z, _SoftMaskSliceInnerUV.x, _SoftMaskSliceInnerUV.z, _SoftMaskSliceSlopeX),
+                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder.y, _SoftMaskSliceBorder.w, _SoftMaskSliceInnerUV.y, _SoftMaskSliceInnerUV.w, _SoftMaskSliceSlopeY)
                 );
                 #endif
 
                 float2 atlasUV = _SoftMaskUVRect.xy + uv * _SoftMaskUVRect.zw;
-                half maskAlpha = tex2D(_SoftMaskTex, atlasUV).a;
-                half softEdge = smoothstep(0.0h, max(_SoftMaskSoftness, 0.001h), maskAlpha);
-                half finalMask = lerp(softEdge, 1.0h - softEdge, _SoftMaskInvert);
-                return finalMask * inBounds;
+                // rect 밖은 마스크 알파 0 취급 — 인버트 시 rect 밖이 표시되도록 반전 이전에 적용
+                half maskAlpha = tex2D(_SoftMaskTex, atlasUV).a * inBounds;
+                // smoothstep(0, softness, a)와 동일하되 역수 사전 계산으로 픽셀당 나눗셈 제거
+                half t = saturate(maskAlpha * _SoftMaskSoftnessRcp);
+                half softEdge = t * t * (3.0h - 2.0h * t);
+                return lerp(softEdge, 1.0h - softEdge, _SoftMaskInvert);
             }
 
             #if defined(_SOFTMASK_NESTED)
@@ -196,19 +228,20 @@ Shader "SoftMaskLight/UI/TMP_SoftMask"
                 half inBounds = step(0.0h, uv.x) * step(uv.x, 1.0h)
                               * step(0.0h, uv.y) * step(uv.y, 1.0h);
 
-                // 중첩 마스크 슬라이스 타입: 9-slice UV 리매핑 적용
-                #if defined(_SOFTMASK_NESTED_SLICE)
+                // 중첩 마스크 형태 대응: 마스크 1과 동일 키워드로 제어
+                #if defined(_SOFTMASK_SLICE)
+                inBounds *= FillCoverage_TMP(uv, _SoftMaskFillLineA2, _SoftMaskFillLineB2);
                 uv = float2(
-                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder2.x, _SoftMaskSliceBorder2.z, _SoftMaskSliceInnerUV2.x, _SoftMaskSliceInnerUV2.z),
-                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder2.y, _SoftMaskSliceBorder2.w, _SoftMaskSliceInnerUV2.y, _SoftMaskSliceInnerUV2.w)
+                    SliceRemap1D_TMP(uv.x, _SoftMaskSliceBorder2.x, _SoftMaskSliceBorder2.z, _SoftMaskSliceInnerUV2.x, _SoftMaskSliceInnerUV2.z, _SoftMaskSliceSlopeX2),
+                    SliceRemap1D_TMP(uv.y, _SoftMaskSliceBorder2.y, _SoftMaskSliceBorder2.w, _SoftMaskSliceInnerUV2.y, _SoftMaskSliceInnerUV2.w, _SoftMaskSliceSlopeY2)
                 );
                 #endif
 
                 float2 atlasUV = _SoftMaskUVRect2.xy + uv * _SoftMaskUVRect2.zw;
-                half maskAlpha = tex2D(_SoftMaskTex2, atlasUV).a;
-                half softEdge = smoothstep(0.0h, max(_SoftMaskSoftness2, 0.001h), maskAlpha);
-                half finalMask = lerp(softEdge, 1.0h - softEdge, _SoftMaskInvert2);
-                return finalMask * inBounds;
+                half maskAlpha = tex2D(_SoftMaskTex2, atlasUV).a * inBounds;
+                half t = saturate(maskAlpha * _SoftMaskSoftnessRcp2);
+                half softEdge = t * t * (3.0h - 2.0h * t);
+                return lerp(softEdge, 1.0h - softEdge, _SoftMaskInvert2);
             }
             #endif
 

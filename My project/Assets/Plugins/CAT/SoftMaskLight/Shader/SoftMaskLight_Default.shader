@@ -6,23 +6,32 @@ Shader "SoftMaskLight/UI/Default"
 
         // 마스크 파라미터
         _MaskTex("Mask Texture", 2D) = "white" {}
-        _Softness("Softness", Range(0, 1)) = 0.1
+        // 소프트니스 역수 (= 1 / max(softness, 0.001), C# 사전 계산 — 픽셀당 나눗셈 제거)
+        [HideInInspector] _SoftnessRcp("Softness Rcp", Float) = 10
         _InvertMask("Invert Mask", Float) = 0
         _MaskUVRect("Mask UV Rect", Vector) = (0, 0, 1, 1)
 
-        // 슬라이스 마스크 파라미터 (Image.Type.Sliced 대응)
+        // 형태 대응 파라미터 (Sliced / Tiled / Filled — _SOFTMASK_SLICE)
         [HideInInspector] _MaskSliceBorder("Mask Slice Border", Vector) = (0, 0, 1, 1)
         [HideInInspector] _MaskSliceInnerUV("Mask Slice Inner UV", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _MaskSliceSlopeX("Mask Slice Slope X", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _MaskSliceSlopeY("Mask Slice Slope Y", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _MaskFillLineA("Mask Fill Line A", Vector) = (0, 0, 1, 0)
+        [HideInInspector] _MaskFillLineB("Mask Fill Line B", Vector) = (0, 0, 1, 10000)
 
         // 중첩 마스크 파라미터
         [HideInInspector] _MaskTex2("Mask Texture 2", 2D) = "white" {}
-        [HideInInspector] _Softness2("Softness 2", Range(0, 1)) = 0.1
+        [HideInInspector] _SoftnessRcp2("Softness Rcp 2", Float) = 10
         [HideInInspector] _InvertMask2("Invert Mask 2", Float) = 0
         [HideInInspector] _MaskUVRect2("Mask UV Rect 2", Vector) = (0, 0, 1, 1)
 
-        // 중첩 슬라이스 마스크 파라미터
+        // 중첩 형태 대응 파라미터
         [HideInInspector] _MaskSliceBorder2("Mask Slice Border 2", Vector) = (0, 0, 1, 1)
         [HideInInspector] _MaskSliceInnerUV2("Mask Slice Inner UV 2", Vector) = (0, 0, 1, 1)
+        [HideInInspector] _MaskSliceSlopeX2("Mask Slice Slope X 2", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _MaskSliceSlopeY2("Mask Slice Slope Y 2", Vector) = (0, 1, 0, 0.9999)
+        [HideInInspector] _MaskFillLineA2("Mask Fill Line A 2", Vector) = (0, 0, 1, 0)
+        [HideInInspector] _MaskFillLineB2("Mask Fill Line B 2", Vector) = (0, 0, 1, 10000)
 
         // UI 스텐실/마스크 설정
         [HideInInspector] _StencilComp("Stencil Comparison", Float) = 8
@@ -31,106 +40,20 @@ Shader "SoftMaskLight/UI/Default"
         [HideInInspector] _StencilWriteMask("Stencil Write Mask", Float) = 255
         [HideInInspector] _StencilReadMask("Stencil Read Mask", Float) = 255
         [HideInInspector] _ColorMask("Color Mask", Float) = 15
+
+        // RectMask2D: 기본값을 넓게 두어 미주입 시 전체가 사라지지 않게 함
+        [HideInInspector] _ClipRect("Clip Rect", Vector) = (-32767, -32767, 32767, 32767)
     }
 
     CGINCLUDE
     #include "UnityCG.cginc"
 
+    // 마스크 유니폼/샘플링은 Core에서 공용 사용 (구현 3중 복제 제거)
+    #define _CAT_SOFTMASK 1
+    #include "SoftMaskLight_Core.cginc"
+
     sampler2D _MainTex;
     float4 _MainTex_ST;
-    sampler2D _MaskTex;
-    half _Softness;
-    half _InvertMask;
-    float4x4 _MaskWorldToUV;
-    float4 _MaskUVRect; // (minU, minV, rangeU, rangeV) - Atlas UV 보정
-
-    #if defined(_SOFTMASK_NESTED)
-    sampler2D _MaskTex2;
-    half _Softness2;
-    half _InvertMask2;
-    float4x4 _MaskWorldToUV2;
-    float4 _MaskUVRect2;
-    #endif
-
-    // 슬라이스 유니폼 (마스크 1)
-    #if defined(_SOFTMASK_SLICE)
-    float4 _MaskSliceBorder;   // (leftBreak, bottomBreak, rightBreak, topBreak) rect 정규화 [0,1]
-    float4 _MaskSliceInnerUV;  // (innerLeft, innerBottom, innerRight, innerTop) 스프라이트 UV [0,1]
-    #endif
-
-    // 슬라이스 유니폼 (마스크 2, 중첩)
-    #if defined(_SOFTMASK_NESTED) && defined(_SOFTMASK_NESTED_SLICE)
-    float4 _MaskSliceBorder2;
-    float4 _MaskSliceInnerUV2;
-    #endif
-
-    // 9-슬라이스 1D 리매핑 (브랜치 없음, 모바일 최적화)
-    // u:  입력 [0,1] (rect 정규화 좌표)
-    // uA: 왼쪽/아래쪽 break point (rect 공간)
-    // uB: 오른쪽/위쪽 break point (rect 공간, = 1 - 오른쪽/위쪽 테두리 비율)
-    // pA: 왼쪽/아래쪽 inner UV break point (스프라이트 UV 공간)
-    // pB: 오른쪽/위쪽 inner UV break point (스프라이트 UV 공간)
-    inline float SliceRemap1D(float u, float uA, float uB, float pA, float pB)
-    {
-        // step으로 각 구간 가중치 계산 (브랜치 없음)
-        float s1 = step(u, uA);       // u <= uA: 왼쪽/아래쪽 코너 구간
-        float s3 = step(uB, u);       // u >= uB: 오른쪽/위쪽 코너 구간
-        float s2 = 1.0 - s1 - s3;    // 가운데 스트레치 구간
-
-        // 각 구간의 리매핑 값
-        float r1 = u * pA / max(uA, 0.00001);
-        float r2 = pA + (u - uA) * (pB - pA) / max(uB - uA, 0.00001);
-        float r3 = pB + (u - uB) * (1.0 - pB) / max(1.0 - uB, 0.00001);
-
-        return s1 * r1 + s2 * r2 + s3 * r3;
-    }
-
-    // 마스크 1 샘플링 (half precision, 분기 없음)
-    inline half SampleMask1(float2 maskUV)
-    {
-        half inBounds = step(0.0h, maskUV.x) * step(maskUV.x, 1.0h)
-                      * step(0.0h, maskUV.y) * step(maskUV.y, 1.0h);
-
-        // 슬라이스 타입: 9-slice UV 리매핑 적용
-        #if defined(_SOFTMASK_SLICE)
-        maskUV = float2(
-            SliceRemap1D(maskUV.x, _MaskSliceBorder.x, _MaskSliceBorder.z, _MaskSliceInnerUV.x, _MaskSliceInnerUV.z),
-            SliceRemap1D(maskUV.y, _MaskSliceBorder.y, _MaskSliceBorder.w, _MaskSliceInnerUV.y, _MaskSliceInnerUV.w)
-        );
-        #endif
-
-        // Atlas 스프라이트 UV 보정
-        float2 atlasUV = _MaskUVRect.xy + maskUV * _MaskUVRect.zw;
-
-        half maskAlpha = tex2D(_MaskTex, atlasUV).a;
-        half softEdge = smoothstep(0.0h, max(_Softness, 0.001h), maskAlpha);
-        half finalMask = lerp(softEdge, 1.0h - softEdge, _InvertMask);
-        return finalMask * inBounds;
-    }
-
-    // 중첩 마스크 2 샘플링
-    #if defined(_SOFTMASK_NESTED)
-    inline half SampleMask2(float2 maskUV)
-    {
-        half inBounds = step(0.0h, maskUV.x) * step(maskUV.x, 1.0h)
-                      * step(0.0h, maskUV.y) * step(maskUV.y, 1.0h);
-
-        // 중첩 마스크 슬라이스 타입: 9-slice UV 리매핑 적용
-        #if defined(_SOFTMASK_NESTED_SLICE)
-        maskUV = float2(
-            SliceRemap1D(maskUV.x, _MaskSliceBorder2.x, _MaskSliceBorder2.z, _MaskSliceInnerUV2.x, _MaskSliceInnerUV2.z),
-            SliceRemap1D(maskUV.y, _MaskSliceBorder2.y, _MaskSliceBorder2.w, _MaskSliceInnerUV2.y, _MaskSliceInnerUV2.w)
-        );
-        #endif
-
-        float2 atlasUV = _MaskUVRect2.xy + maskUV * _MaskUVRect2.zw;
-
-        half maskAlpha = tex2D(_MaskTex2, atlasUV).a;
-        half softEdge = smoothstep(0.0h, max(_Softness2, 0.001h), maskAlpha);
-        half finalMask = lerp(softEdge, 1.0h - softEdge, _InvertMask2);
-        return finalMask * inBounds;
-    }
-    #endif
     ENDCG
 
     // SubShader 0: UI
@@ -170,10 +93,10 @@ Shader "SoftMaskLight/UI/Default"
             #pragma multi_compile_local _ UNITY_UI_ALPHACLIP
             #pragma multi_compile_local _ _SOFTMASK_NESTED
             #pragma multi_compile_local _ _SOFTMASK_SLICE
-            #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
             #pragma target 2.0
 
             #include "UnityUI.cginc"
+            #include "SoftMaskLight_UIClip.cginc"
 
             struct appdata_t
             {
@@ -188,33 +111,24 @@ Shader "SoftMaskLight/UI/Default"
                 float4 vertex        : SV_POSITION;
                 half4 color          : COLOR;
                 float2 texcoord      : TEXCOORD0;
-                float4 worldPosition : TEXCOORD1;
-                float2 maskUV        : TEXCOORD2;
-                #if defined(_SOFTMASK_NESTED)
-                float2 maskUV2       : TEXCOORD3;
-                #endif
+                CAT_UI_CLIP_COORDS(1)
+                CAT_SOFTMASK_COORDS(2, 3)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
-
-            float4 _ClipRect;
 
             v2f vert(appdata_t v)
             {
                 v2f OUT;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
-                OUT.worldPosition = v.vertex; // UI 클리핑용 (Canvas 로컬 좌표)
                 OUT.vertex = UnityObjectToClipPos(v.vertex);
+                OUT.uiClipMask = CAT_UI_ComputeClipMask(OUT.vertex, v.vertex.xy);
                 OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
                 OUT.color = v.color;
 
                 // Canvas 로컬 좌표 → 마스크 UV (버텍스에서 계산, 프래그먼트 비용 절감)
                 // v.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
-                OUT.maskUV = mul(_MaskWorldToUV, v.vertex).xy;
-
-                #if defined(_SOFTMASK_NESTED)
-                OUT.maskUV2 = mul(_MaskWorldToUV2, v.vertex).xy;
-                #endif
+                CAT_SOFTMASK_VERT(v.vertex.xyz, OUT)
 
                 return OUT;
             }
@@ -223,15 +137,9 @@ Shader "SoftMaskLight/UI/Default"
             {
                 half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
-                #ifdef UNITY_UI_CLIP_RECT
-                color.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
-                #endif
+                CAT_UI_ApplyClipRect(color, IN.uiClipMask);
 
-                color.a *= SampleMask1(IN.maskUV);
-
-                #if defined(_SOFTMASK_NESTED)
-                color.a *= SampleMask2(IN.maskUV2);
-                #endif
+                color.a *= CAT_SOFTMASK_FRAG(IN);
 
                 #ifdef UNITY_UI_ALPHACLIP
                 clip(color.a - 0.001h);
@@ -253,6 +161,8 @@ Shader "SoftMaskLight/UI/Default"
             "IgnoreProjector" = "True"
             "PreviewType" = "Plane"
             "CanUseSpriteAtlas" = "True"
+            // 동적 배칭 시 v.vertex가 사전 월드 변환되어 마스크 UV가 어긋나는 것을 방지
+            "DisableBatching" = "True"
         }
 
         Stencil
@@ -278,7 +188,6 @@ Shader "SoftMaskLight/UI/Default"
             #pragma multi_compile _ PIXELSNAP_ON
             #pragma multi_compile_local _ _SOFTMASK_NESTED
             #pragma multi_compile_local _ _SOFTMASK_SLICE
-            #pragma multi_compile_local _ _SOFTMASK_NESTED_SLICE
             #pragma target 2.0
 
             struct appdata_t
@@ -294,10 +203,7 @@ Shader "SoftMaskLight/UI/Default"
                 float4 vertex   : SV_POSITION;
                 half4 color     : COLOR;
                 float2 texcoord : TEXCOORD0;
-                float2 maskUV   : TEXCOORD1;
-                #if defined(_SOFTMASK_NESTED)
-                float2 maskUV2  : TEXCOORD2;
-                #endif
+                CAT_SOFTMASK_COORDS(1, 2)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -311,11 +217,7 @@ Shader "SoftMaskLight/UI/Default"
                 OUT.color = IN.color;
 
                 // v.vertex는 Canvas 로컬 좌표 (unity_ObjectToWorld 미사용 → Overlay 호환)
-                OUT.maskUV = mul(_MaskWorldToUV, IN.vertex).xy;
-
-                #if defined(_SOFTMASK_NESTED)
-                OUT.maskUV2 = mul(_MaskWorldToUV2, IN.vertex).xy;
-                #endif
+                CAT_SOFTMASK_VERT(IN.vertex.xyz, OUT)
 
                 #ifdef PIXELSNAP_ON
                 OUT.vertex = UnityPixelSnap(OUT.vertex);
@@ -328,11 +230,7 @@ Shader "SoftMaskLight/UI/Default"
             {
                 half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
-                color.a *= SampleMask1(IN.maskUV);
-
-                #if defined(_SOFTMASK_NESTED)
-                color.a *= SampleMask2(IN.maskUV2);
-                #endif
+                color.a *= CAT_SOFTMASK_FRAG(IN);
 
                 return color;
             }

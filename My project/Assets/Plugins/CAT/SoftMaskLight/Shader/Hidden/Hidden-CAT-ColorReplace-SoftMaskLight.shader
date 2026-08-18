@@ -1,19 +1,23 @@
-// [OptionalShader] SoftMaskLight: UI/Default
-// UI/Default 셰이더에 SoftMaskLight 마스킹을 항상 활성화한 Hidden 변형
-Shader "Hidden/UI/Default (SoftMaskLight)"
+// [OptionalShader] SoftMaskLight: CAT/Effects/ColorReplace
+// CAT/Effects/ColorReplace 셰이더에 SoftMaskLight 마스킹을 항상 활성화한 Hidden 변형
+Shader "Hidden/CAT/Effects/ColorReplace (SoftMaskLight)"
 {
     Properties
     {
-        [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
-        _Color ("Tint", Color) = (1,1,1,1)
+        [PerRendererData] _MainTex("Sprite Texture", 2D) = "white" {}
+
+        // PerRendererData로 PropertyBlock에서 개별 값 설정 가능
+        [PerRendererData] _HSVRangeMin("HSV Affect Min", Range(0, 1)) = 0
+        [PerRendererData] _HSVRangeMax("HSV Affect Max", Range(0, 1)) = 1
+        [PerRendererData] _HSVAAdjust("HSVA Adjust", Vector) = (0, 0, 0, 0)
 
         // UI 스텐실/마스크 설정
-        [HideInInspector] _StencilComp ("Stencil Comparison", Float) = 8
-        [HideInInspector] _Stencil ("Stencil ID", Float) = 0
-        [HideInInspector] _StencilOp ("Stencil Operation", Float) = 0
-        [HideInInspector] _StencilWriteMask ("Stencil Write Mask", Float) = 255
-        [HideInInspector] _StencilReadMask ("Stencil Read Mask", Float) = 255
-        [HideInInspector] _ColorMask ("Color Mask", Float) = 15
+        [HideInInspector] _StencilComp("Stencil Comparison", Float) = 8
+        [HideInInspector] _Stencil("Stencil ID", Float) = 0
+        [HideInInspector] _StencilOp("Stencil Operation", Float) = 0
+        [HideInInspector] _StencilWriteMask("Stencil Write Mask", Float) = 255
+        [HideInInspector] _StencilReadMask("Stencil Read Mask", Float) = 255
+        [HideInInspector] _ColorMask("Color Mask", Float) = 15
 
         [Toggle(UNITY_UI_ALPHACLIP)] _UseUIAlphaClip ("Use Alpha Clip", Float) = 0
 
@@ -43,24 +47,65 @@ Shader "Hidden/UI/Default (SoftMaskLight)"
         [HideInInspector] _MaskFillLineB2 ("Mask Fill Line B 2", Vector) = (0, 0, 1, 10000)
     }
 
+    // 공통 HSV 함수를 CGINCLUDE로 분리
+    CGINCLUDE
+    #include "UnityCG.cginc"
+
+    sampler2D _MainTex;
+    float4 _MainTex_ST;
+    half _HSVRangeMin;
+    half _HSVRangeMax;
+    half4 _HSVAAdjust;
+
+    // RGB -> HSV 변환 (half precision)
+    inline half3 RGB2HSV(half3 c)
+    {
+        half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
+        half4 p = lerp(half4(c.bg, K.wz), half4(c.gb, K.xy), step(c.b, c.g));
+        half4 q = lerp(half4(p.xyw, c.r), half4(c.r, p.yzx), step(p.x, c.r));
+        half d = q.x - min(q.w, q.y);
+        half e = 1.0e-4h;
+        return half3(abs(q.z + (q.w - q.y) / (6.0h * d + e)), d / (q.x + e), q.x);
+    }
+
+    // HSV -> RGB 변환 (half precision)
+    inline half3 HSV2RGB(half3 c)
+    {
+        c = half3(c.x, saturate(c.yz));
+        half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
+        half3 p = abs(frac(c.xxx + K.xyz) * 6.0h - K.www);
+        return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
+    }
+
+    // HSV 범위 체크 (분기 없이 수학 연산)
+    inline half ComputeAffectMult(half hue, half rangeMin, half rangeMax)
+    {
+        half isWrapped = step(rangeMax + 0.001h, rangeMin);
+        half normalCase = step(rangeMin, hue) * step(hue, rangeMax);
+        half wrappedCase = saturate(step(rangeMin, hue) + step(hue, rangeMax));
+        return lerp(normalCase, wrappedCase, isWrapped);
+    }
+    ENDCG
+
+    // UI SubShader (SoftMaskLight는 UI 전용)
     SubShader
     {
         Tags
         {
-            "Queue"="Transparent"
-            "IgnoreProjector"="True"
-            "RenderType"="Transparent"
-            "PreviewType"="Plane"
-            "CanUseSpriteAtlas"="True"
+            "Queue" = "Transparent"
+            "IgnoreProjector" = "True"
+            "RenderType" = "Transparent"
+            "PreviewType" = "Plane"
+            "CanUseSpriteAtlas" = "True"
         }
 
         Stencil
         {
-            Ref [_Stencil]
-            Comp [_StencilComp]
-            Pass [_StencilOp]
-            ReadMask [_StencilReadMask]
-            WriteMask [_StencilWriteMask]
+            Ref[_Stencil]
+            Comp[_StencilComp]
+            Pass[_StencilOp]
+            ReadMask[_StencilReadMask]
+            WriteMask[_StencilWriteMask]
         }
 
         Cull Off
@@ -76,9 +121,9 @@ Shader "Hidden/UI/Default (SoftMaskLight)"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma target 2.0
             #pragma multi_compile_local _ UNITY_UI_CLIP_RECT
             #pragma multi_compile_local _ UNITY_UI_ALPHACLIP
+            #pragma target 2.0
             // _CAT_SOFTMASK multi_compile 없음 (항상 활성)
             #pragma multi_compile_local _ _SOFTMASK_NESTED
             #pragma multi_compile_local _ _SOFTMASK_SLICE
@@ -87,14 +132,13 @@ Shader "Hidden/UI/Default (SoftMaskLight)"
             #define _CAT_SOFTMASK 1
             #include "../SoftMaskLight_Core.cginc"
 
-            #include "UnityCG.cginc"
             #include "UnityUI.cginc"
             #include "../SoftMaskLight_UIClip.cginc"
 
             struct appdata_t
             {
                 float4 vertex   : POSITION;
-                float4 color    : COLOR;
+                half4 color     : COLOR;
                 float2 texcoord : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -102,18 +146,12 @@ Shader "Hidden/UI/Default (SoftMaskLight)"
             struct v2f
             {
                 float4 vertex        : SV_POSITION;
-                fixed4 color         : COLOR;
+                half4 color          : COLOR;
                 float2 texcoord      : TEXCOORD0;
                 CAT_UI_CLIP_COORDS(1)
                 CAT_SOFTMASK_COORDS(2, 3)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
-
-            sampler2D _MainTex;
-            fixed4 _Color;
-            fixed4 _TextureSampleAdd;
-            float4 _MainTex_ST;
-            int _UIVertexColorAlwaysGammaSpace;
 
             v2f vert(appdata_t v)
             {
@@ -123,33 +161,35 @@ Shader "Hidden/UI/Default (SoftMaskLight)"
                 OUT.vertex = UnityObjectToClipPos(v.vertex);
                 OUT.uiClipMask = CAT_UI_ComputeClipMask(OUT.vertex, v.vertex.xy);
                 OUT.texcoord = TRANSFORM_TEX(v.texcoord, _MainTex);
-
-                if (_UIVertexColorAlwaysGammaSpace)
-                {
-                    if (!IsGammaSpace())
-                        v.color.rgb = GammaToLinearSpace(v.color.rgb);
-                }
-                OUT.color = v.color * _Color;
+                OUT.color = v.color;
 
                 // SoftMaskLight 버텍스 처리 (항상 활성)
                 CAT_SOFTMASK_VERT(v.vertex.xyz, OUT)
+
                 return OUT;
             }
 
             half4 frag(v2f IN) : SV_Target
             {
-                half4 color = (tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd) * IN.color;
+                half4 color = tex2D(_MainTex, IN.texcoord) * IN.color;
 
                 CAT_UI_ApplyClipRect(color, IN.uiClipMask);
 
-                // SoftMaskLight 적용 (항상 활성)
-                color.a *= CAT_SOFTMASK_FRAG(IN);
+                half3 hsv = RGB2HSV(color.rgb);
+                half affectMult = ComputeAffectMult(hsv.x, _HSVRangeMin, _HSVRangeMax);
+                half3 rgb = HSV2RGB(hsv + _HSVAAdjust.xyz * affectMult);
 
+                half4 finalColor = half4(rgb, saturate(color.a + _HSVAAdjust.w));
+
+                // SoftMaskLight 적용 (항상 활성)
+                finalColor.a *= CAT_SOFTMASK_FRAG(IN);
+
+                // ALPHACLIP은 마스크 적용 이후 최종 알파 기준으로 discard (원본 UI/Default와 동일 순서)
                 #ifdef UNITY_UI_ALPHACLIP
-                clip(color.a - 0.001);
+                clip(finalColor.a - 0.001h);
                 #endif
 
-                return color;
+                return finalColor;
             }
             ENDCG
         }

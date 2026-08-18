@@ -15,15 +15,11 @@ ShaderVariantCollection:
         passType: 0
       - keywords: EDGE_PLAIN
         passType: 0
-      - keywords: EDGE_SHINY SOFTMASKABLE TRANSITION_SHINY
-        passType: 0
       - keywords: EDGE_SHINY TRANSITION_SHINY
         passType: 0
       - keywords: GRADATION_COLOR2
         passType: 0
       - keywords: GRADATION_GRADIENT
-        passType: 0
-      - keywords: SOFTMASKABLE TRANSITION_SHINY
         passType: 0
       - keywords: TONE_GRAYSCALE
         passType: 0
@@ -34,6 +30,8 @@ ShaderVariantCollection:
   - first: {fileID: 4800000, guid: 28fb71e5a98334466b1525c4b90f75d6, type: 3}
     second:
       variants:
+      - keywords:
+        passType: 0
       - keywords: COLOR_FILTER
         passType: 0
       - keywords: EDGE_PLAIN
@@ -42,13 +40,35 @@ ShaderVariantCollection:
         passType: 0
       - keywords: EDGE_SHINY TRANSITION_SHINY
         passType: 0
-      - keywords: EDGE_SHINY _SOFTMASK_SLICE
-        passType: 0
       - keywords: GRADATION_COLOR2
+        passType: 0
+      - keywords: GRADATION_GRADIENT
+        passType: 0
+      - keywords: TONE_GRAYSCALE
         passType: 0
       - keywords: TRANSITION_PATTERN
         passType: 0
       - keywords: TRANSITION_SHINY
+        passType: 0
+      - keywords: _CAT_SOFTMASK
+        passType: 0
+      - keywords: COLOR_FILTER _CAT_SOFTMASK
+        passType: 0
+      - keywords: EDGE_PLAIN _CAT_SOFTMASK
+        passType: 0
+      - keywords: EDGE_SHINY _CAT_SOFTMASK
+        passType: 0
+      - keywords: EDGE_SHINY TRANSITION_SHINY _CAT_SOFTMASK
+        passType: 0
+      - keywords: GRADATION_COLOR2 _CAT_SOFTMASK
+        passType: 0
+      - keywords: GRADATION_GRADIENT _CAT_SOFTMASK
+        passType: 0
+      - keywords: TONE_GRAYSCALE _CAT_SOFTMASK
+        passType: 0
+      - keywords: TRANSITION_PATTERN _CAT_SOFTMASK
+        passType: 0
+      - keywords: TRANSITION_SHINY _CAT_SOFTMASK
         passType: 0
 --- !u!114 &11400000
 MonoBehaviour:

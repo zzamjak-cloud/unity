@@ -12,8 +12,15 @@ namespace SoftMaskLight
         [Tooltip("빌드에 포함할 Hidden 변형 셰이더 목록 (자동 관리)")]
         [SerializeField] private Shader[] _includedShaders = new Shader[0];
 
+        [Tooltip("UIEffect 마스킹용 오버라이드 셰이더 (자동 관리). " +
+                 "Shader.Find 이름 충돌을 피하기 위해 직렬화 참조로 확정한다.")]
+        [SerializeField] private Shader _uiEffectOverrideShader;
+
         /// <summary>빌드에 포함된 Hidden 변형 셰이더 목록</summary>
         public Shader[] IncludedShaders => _includedShaders;
+
+        /// <summary>UIEffect 프록시가 셰이더 교체에 사용하는 오버라이드 셰이더 (UIEffect 미설치 시 null)</summary>
+        public Shader UIEffectOverrideShader => _uiEffectOverrideShader;
 
         private static SoftMaskLightSettings _instance;
 
@@ -48,6 +55,16 @@ namespace SoftMaskLight
         public void SetIncludedShaders(Shader[] shaders)
         {
             _includedShaders = shaders;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
+        /// <summary>
+        /// UIEffect 오버라이드 셰이더 참조를 갱신한다. (SoftMaskLightInstaller에서 호출)
+        /// </summary>
+        public void SetUIEffectOverrideShader(Shader shader)
+        {
+            if (_uiEffectOverrideShader == shader) return;
+            _uiEffectOverrideShader = shader;
             UnityEditor.EditorUtility.SetDirty(this);
         }
 #endif

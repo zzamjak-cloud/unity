@@ -2,7 +2,10 @@ using UnityEngine;
 using UnityEngine.Serialization;
 using System.Collections.Generic;
 using TMPro;
+#if UIEFFECT_ENABLED
+// UIEffect는 선택적 의존성 — asmdef versionDefines(com.coffee.ui-effect)로 심볼 정의
 using Coffee.UIEffects;
+#endif
 
 namespace SoftMaskLight
 {
@@ -21,15 +24,24 @@ namespace SoftMaskLight
     [UnityEngine.Scripting.APIUpdating.MovedFrom(true, "CAT.UI", null, "SoftMask")]
     public class SoftMaskLight : MonoBehaviour
     {
-        public const string VERSION = "2.0.0";
+        public const string VERSION = "2.4.0";
 
         // 셰이더/키워드 상수
         public const string SHADER_NAME = "SoftMaskLight/UI/Default";
         public const string TMP_SHADER_NAME = "SoftMaskLight/UI/TMP_SoftMask";
         private const string KEYWORD_NESTED = "_SOFTMASK_NESTED";
         private const string KEYWORD_SLICE = "_SOFTMASK_SLICE";
-        private const string KEYWORD_NESTED_SLICE = "_SOFTMASK_NESTED_SLICE";
-        private const string PARTICLE_SHADER_PREFIX = "SoftMaskLight/Particles/";
+        private const string KEYWORD_CAT_SOFTMASK = "_CAT_SOFTMASK";
+        // 슬라이스는 _SOFTMASK_SLICE 하나로 마스크 1·2를 모두 제어한다 (셰이더 변형 수 절감).
+        // 슬라이스가 아닌 쪽은 항등 파라미터(0,0,1,1)를 넣어 리매핑을 무효화한다.
+        private static readonly Vector4 IdentitySlice = new Vector4(0f, 0f, 1f, 1f);
+        // 항등 슬라이스 기울기 (k1=0, k2=1, k3=0): 리매핑이 항등 함수가 되는 사전 계산 값
+        // w = 타일 수 - ε (frac 반복의 끝 경계 가드). 항등 = 타일 1개
+        private static readonly Vector4 IdentitySliceSlope = new Vector4(0f, 1f, 0f, 0.9999f);
+        // Filled 커버리지 항등 반평면: c=1 → 항상 내부 (AND 결합)
+        private static readonly Vector4 IdentityFillLine = new Vector4(0f, 0f, 1f, 0f);
+        // 반평면 B의 w = AA 스케일. 항등에서도 saturate(dist*aa+0.5)가 step처럼 동작하도록 큰 값
+        private static readonly Vector4 IdentityFillLineB = new Vector4(0f, 0f, 1f, 10000f);
 
         // Optional Shader 패턴 상수
         private const string OPTIONAL_SUFFIX = "(SoftMaskLight)";
@@ -41,8 +53,7 @@ namespace SoftMaskLight
         [SerializeField, HideInInspector] private Shader _tmpMaskShader;
         // Optional Shader 빌드 포함은 SoftMaskLightSettings (Resources) 에셋이 담당
 
-        // 셰이더 캐싱
-        private static Shader s_cachedShader;
+        // 셰이더 캐싱 (TMP 전용 — 기본 마스크 셰이더는 _maskShader 직렬화 참조로 빌드 포함만 담당)
         private static Shader s_cachedTMPShader;
 
         // Optional Shader 캐싱 (원본 셰이더 InstanceID → Hidden 변형 셰이더)
@@ -68,9 +79,20 @@ namespace SoftMaskLight
                 return originalShader;
             }
 
+            string shaderName = originalShader.name;
+
+            // mob-sakai SoftMask가 이미 적용된 셰이더 → 마스킹 스킵 (패스스루)
+            // 결합 변형 셰이더가 없으므로 교체 시 mob-sakai 마스킹과 원본 기능이 모두 파괴됨
+            if (shaderName.Contains("(SoftMaskable)"))
+            {
+                Debug.LogWarning($"[SoftMaskLight] '{shaderName}'은 mob-sakai SoftMask가 적용된 셰이더입니다. " +
+                                 "동일 Graphic에 두 마스크를 중첩할 수 없어 SoftMaskLight 마스킹을 건너뜁니다.");
+                s_optionalShaderCache[id] = null;
+                return null;
+            }
+
             // 이미 Hidden/ 접두사가 있는 셰이더는 접두사 중복 방지
             // 예: "Hidden/UI/Default (UIEffect)" → "Hidden/UI/Default (UIEffect) (SoftMaskLight)"
-            string shaderName = originalShader.name;
             string name;
             if (shaderName.StartsWith("Hidden/"))
                 name = shaderName + " " + OPTIONAL_SUFFIX;
@@ -79,7 +101,13 @@ namespace SoftMaskLight
 
             Shader variant = Shader.Find(name);
             if (variant == null)
+            {
+                // 변형 셰이더 부재 → 기본 UI 변형으로 폴백 (블렌드 모드/이펙트가 달라질 수 있음)
                 variant = Shader.Find(DEFAULT_OPTIONAL);
+                Debug.LogWarning($"[SoftMaskLight] '{name}' 변형 셰이더가 없어 '{DEFAULT_OPTIONAL}'로 대체합니다. " +
+                                 "원본 셰이더의 블렌드 모드/이펙트가 손실될 수 있습니다. " +
+                                 "커스텀 셰이더라면 (SoftMaskLight) 변형 셰이더를 추가하세요. (README 참조)");
+            }
 
             s_optionalShaderCache[id] = variant;
             return variant;
@@ -87,35 +115,61 @@ namespace SoftMaskLight
 
         // Shader Property ID 캐싱 (SoftMaskLight 셰이더용)
         private static readonly int PropMaskTex = Shader.PropertyToID("_MaskTex");
-        private static readonly int PropSoftness = Shader.PropertyToID("_Softness");
+        // 소프트니스는 역수(1/max(softness, 0.001))로 전달 — 픽셀당 나눗셈 제거
+        private static readonly int PropSoftnessRcp = Shader.PropertyToID("_SoftnessRcp");
         private static readonly int PropInvertMask = Shader.PropertyToID("_InvertMask");
         private static readonly int PropMaskWorldToUV = Shader.PropertyToID("_MaskWorldToUV");
         private static readonly int PropMaskUVRect = Shader.PropertyToID("_MaskUVRect");
         private static readonly int PropMaskSliceBorder = Shader.PropertyToID("_MaskSliceBorder");
         private static readonly int PropMaskSliceInnerUV = Shader.PropertyToID("_MaskSliceInnerUV");
+        private static readonly int PropMaskSliceSlopeX = Shader.PropertyToID("_MaskSliceSlopeX");
+        private static readonly int PropMaskSliceSlopeY = Shader.PropertyToID("_MaskSliceSlopeY");
+        private static readonly int PropMaskFillLineA = Shader.PropertyToID("_MaskFillLineA");
+        private static readonly int PropMaskFillLineB = Shader.PropertyToID("_MaskFillLineB");
         private static readonly int PropMaskTex2 = Shader.PropertyToID("_MaskTex2");
-        private static readonly int PropSoftness2 = Shader.PropertyToID("_Softness2");
+        private static readonly int PropSoftnessRcp2 = Shader.PropertyToID("_SoftnessRcp2");
         private static readonly int PropInvertMask2 = Shader.PropertyToID("_InvertMask2");
         private static readonly int PropMaskWorldToUV2 = Shader.PropertyToID("_MaskWorldToUV2");
         private static readonly int PropMaskUVRect2 = Shader.PropertyToID("_MaskUVRect2");
         private static readonly int PropMaskSliceBorder2 = Shader.PropertyToID("_MaskSliceBorder2");
         private static readonly int PropMaskSliceInnerUV2 = Shader.PropertyToID("_MaskSliceInnerUV2");
+        private static readonly int PropMaskSliceSlopeX2 = Shader.PropertyToID("_MaskSliceSlopeX2");
+        private static readonly int PropMaskSliceSlopeY2 = Shader.PropertyToID("_MaskSliceSlopeY2");
+        private static readonly int PropMaskFillLineA2 = Shader.PropertyToID("_MaskFillLineA2");
+        private static readonly int PropMaskFillLineB2 = Shader.PropertyToID("_MaskFillLineB2");
+        private static readonly int PropClipRect = Shader.PropertyToID("_ClipRect");
+        private static readonly Vector4 DefaultClipRect = new Vector4(-32767f, -32767f, 32767f, 32767f);
+        private const string KeywordUIClipRect = "UNITY_UI_CLIP_RECT";
 
         // TMP 셰이더용 프로퍼티 ID (_SoftMask* 접두사: TMP의 _MaskTex 충돌 방지)
         private static readonly int PropTMPMaskTex = Shader.PropertyToID("_SoftMaskTex");
-        private static readonly int PropTMPSoftness = Shader.PropertyToID("_SoftMaskSoftness");
+        private static readonly int PropTMPSoftnessRcp = Shader.PropertyToID("_SoftMaskSoftnessRcp");
         private static readonly int PropTMPInvertMask = Shader.PropertyToID("_SoftMaskInvert");
         private static readonly int PropTMPMaskWorldToUV = Shader.PropertyToID("_SoftMaskWorldToUV");
         private static readonly int PropTMPMaskUVRect = Shader.PropertyToID("_SoftMaskUVRect");
         private static readonly int PropTMPMaskSliceBorder = Shader.PropertyToID("_SoftMaskSliceBorder");
         private static readonly int PropTMPMaskSliceInnerUV = Shader.PropertyToID("_SoftMaskSliceInnerUV");
+        private static readonly int PropTMPMaskSliceSlopeX = Shader.PropertyToID("_SoftMaskSliceSlopeX");
+        private static readonly int PropTMPMaskSliceSlopeY = Shader.PropertyToID("_SoftMaskSliceSlopeY");
+        private static readonly int PropTMPMaskFillLineA = Shader.PropertyToID("_SoftMaskFillLineA");
+        private static readonly int PropTMPMaskFillLineB = Shader.PropertyToID("_SoftMaskFillLineB");
         private static readonly int PropTMPMaskTex2 = Shader.PropertyToID("_SoftMaskTex2");
-        private static readonly int PropTMPSoftness2 = Shader.PropertyToID("_SoftMaskSoftness2");
+        private static readonly int PropTMPSoftnessRcp2 = Shader.PropertyToID("_SoftMaskSoftnessRcp2");
         private static readonly int PropTMPInvertMask2 = Shader.PropertyToID("_SoftMaskInvert2");
         private static readonly int PropTMPMaskWorldToUV2 = Shader.PropertyToID("_SoftMaskWorldToUV2");
         private static readonly int PropTMPMaskUVRect2 = Shader.PropertyToID("_SoftMaskUVRect2");
         private static readonly int PropTMPMaskSliceBorder2 = Shader.PropertyToID("_SoftMaskSliceBorder2");
         private static readonly int PropTMPMaskSliceInnerUV2 = Shader.PropertyToID("_SoftMaskSliceInnerUV2");
+        private static readonly int PropTMPMaskSliceSlopeX2 = Shader.PropertyToID("_SoftMaskSliceSlopeX2");
+        private static readonly int PropTMPMaskSliceSlopeY2 = Shader.PropertyToID("_SoftMaskSliceSlopeY2");
+        private static readonly int PropTMPMaskFillLineA2 = Shader.PropertyToID("_SoftMaskFillLineA2");
+        private static readonly int PropTMPMaskFillLineB2 = Shader.PropertyToID("_SoftMaskFillLineB2");
+
+        /// <summary>셰이더에 전달할 소프트니스 역수 (픽셀당 나눗셈 제거용 사전 계산)</summary>
+        private static float SoftnessRcp(float softness)
+        {
+            return 1f / Mathf.Max(softness, 0.001f);
+        }
 
         // ─────────────────────────────────────────────
         // 직렬화 필드
@@ -168,9 +222,10 @@ namespace SoftMaskLight
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _originalChildMaterials =
             new Dictionary<UnityEngine.UI.Graphic, Material>();
 
-        // 마스크 그래픽 원본 색상
-        private Color _originalMaskColor;
-        private bool _originalColorSaved;
+        // 마스크 그래픽 숨김 상태 (ShowMaskGraphic = false → 알파 0으로 숨김)
+        // 상태 전환 시에만 색상을 변경하여 외부 색상 트윈/애니메이션과 충돌하지 않음
+        private float _savedMaskAlpha;
+        private bool _maskColorHidden;
 
         // 중첩 마스크: 부모 SoftMask
         private SoftMaskLight _parentSoftMask;
@@ -179,6 +234,9 @@ namespace SoftMaskLight
         // 더티 체크용 캐싱
         private Matrix4x4 _cachedWorldToUV;
         private Matrix4x4 _cachedParentWorldToUV;
+        // 행렬 캐시 초기화 여부 (m00/m11 == 0 검사는 90도 회전 시 오탐 → 명시적 플래그 사용)
+        private bool _cachedWorldToUVValid;
+        private bool _cachedParentWorldToUVValid;
         private float _cachedSoftness;
         private bool _cachedInvertMask;
         private float _cachedParentSoftness;
@@ -187,13 +245,47 @@ namespace SoftMaskLight
         private int _cachedParentMaskTexId;
         private bool _materialDirty;
 
-        // 슬라이스 마스크 더티 체크용 캐싱
+        // ── 지오메트리/스프라이트 캐시 ──
+        // 스프라이트 rect·border·아틀라스 UV 조회는 네이티브 바인딩 호출이라 매 프레임 반복하면 낭비다.
+        // 스프라이트 인스턴스 / Image.type / RectTransform 크기가 바뀔 때만 재계산한다.
+        private Sprite _geoSprite;
+        private Texture _geoMaskTexture;
+        private UnityEngine.UI.Image.Type _geoImageType;
+        private Rect _geoContentRect;
+        private Vector4 _geoUVRect = new Vector4(0f, 0f, 1f, 1f);
+        // "형태 대응" 필요 여부: Sliced(테두리 있음) / Tiled / Filled → _SOFTMASK_SLICE 키워드 활성
+        private bool _geoIsSliced;
+        private Vector4 _geoSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+        private Vector4 _geoSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
+        // 구간별 기울기 (k1, k2n, k3, 타일수-ε) — 셰이더의 픽셀당 나눗셈을 제거하기 위한 사전 계산 값
+        private Vector4 _geoSliceSlopeX = IdentitySliceSlope;
+        private Vector4 _geoSliceSlopeY = IdentitySliceSlope;
+        // Filled 커버리지 반평면 (항등 = 항상 내부)
+        private Vector4 _geoFillLineA = IdentityFillLine;
+        private Vector4 _geoFillLineB = IdentityFillLineB;
+        // Filled 파라미터 변경 감지 (fillAmount는 매 프레임 애니메이션될 수 있음)
+        private float _geoFillAmount = -1f;
+        private UnityEngine.UI.Image.FillMethod _geoFillMethod;
+        private int _geoFillOrigin;
+        private bool _geoFillClockwise;
+        private bool _geometryDirty = true;
+        private int _geoValidatedFrame = -1;
+
+        // 형태 대응 더티 체크용 캐싱 (기본값은 각 단계를 무효화하는 항등값)
         private bool _cachedIsSliced;
-        private Vector4 _cachedSliceBorder;
-        private Vector4 _cachedSliceInnerUV;
+        private Vector4 _cachedSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+        private Vector4 _cachedSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
+        private Vector4 _cachedSliceSlopeX = IdentitySliceSlope;
+        private Vector4 _cachedSliceSlopeY = IdentitySliceSlope;
+        private Vector4 _cachedFillLineA = IdentityFillLine;
+        private Vector4 _cachedFillLineB = IdentityFillLineB;
         private bool _cachedParentIsSliced;
-        private Vector4 _cachedParentSliceBorder;
-        private Vector4 _cachedParentSliceInnerUV;
+        private Vector4 _cachedParentSliceBorder = new Vector4(0f, 0f, 1f, 1f);
+        private Vector4 _cachedParentSliceInnerUV = new Vector4(0f, 0f, 1f, 1f);
+        private Vector4 _cachedParentSliceSlopeX = IdentitySliceSlope;
+        private Vector4 _cachedParentSliceSlopeY = IdentitySliceSlope;
+        private Vector4 _cachedParentFillLineA = IdentityFillLine;
+        private Vector4 _cachedParentFillLineB = IdentityFillLineB;
 
         // TMP 전용 Material 리스트 (폰트 아틀라스별 개별 Material 필요)
         private readonly List<Material> _tmpMaskMaterials = new List<Material>(2);
@@ -203,11 +295,23 @@ namespace SoftMaskLight
         private readonly Dictionary<UnityEngine.UI.Graphic, Material> _tmpAppliedMaskMats =
             new Dictionary<UnityEngine.UI.Graphic, Material>(2);
 
+        // TMP 마스크 Material 공유 캐시: 원본 폰트 Material → 마스크 Material
+        // 같은 폰트 프리셋을 쓰는 TMP 자식끼리 마스크 Material을 공유 (드로우콜 N → 1)
+        private readonly Dictionary<Material, Material> _tmpSharedMaskMats =
+            new Dictionary<Material, Material>(2);
+
         // UIEffect 프록시 목록 (프로퍼티 전파 + 정리용)
         private readonly List<UIEffectSoftMaskLightProxy> _uiEffectProxies = new List<UIEffectSoftMaskLightProxy>(2);
 
         // SoftMaskLightChildProxy 목록 (프로퍼티 전파 + 정리용)
         private readonly List<SoftMaskLightChildProxy> _childProxies = new List<SoftMaskLightChildProxy>(8);
+        // 위 리스트의 O(1) 중복 검사용 (자식 수가 많을 때 Contains의 O(N²) 방지)
+        private readonly HashSet<SoftMaskLightChildProxy> _childProxySet = new HashSet<SoftMaskLightChildProxy>();
+
+        // 마스킹할 수 없어 등록에서 제외된 자식 (대응 변형 셰이더 없음 / TMP 폰트 머티리얼 없음 등).
+        // 기록해 두지 않으면 매 스캔마다 "미등록 자식"으로 재발견되어 전체 재적용이 반복된다.
+        private readonly HashSet<UnityEngine.UI.Graphic> _unmaskableChildren =
+            new HashSet<UnityEngine.UI.Graphic>();
 
         // 공유 프록시 Material 캐시: 원본 Material → 프록시 Material
         // 동일한 원본 Material을 가진 자식끼리 프록시 Material을 공유 (배칭 유지)
@@ -216,6 +320,17 @@ namespace SoftMaskLight
 
         // 프록시 Material 역방향 인덱스: O(1) ContainsValue 대체
         private readonly HashSet<Material> _proxyMaterialSet = new HashSet<Material>();
+
+        // UIEffect 프록시 Material 공유 캐시: UIEffect가 생성한 baseMaterial → 프록시 Material
+        // UIEffect는 이펙트 설정별로 Material을 공유하므로, 같은 설정의 자식끼리 프록시도 공유 (배칭 유지)
+        private readonly Dictionary<Material, Material> _uiEffectProxyMaterials =
+            new Dictionary<Material, Material>(2);
+
+        // UIEffect 프록시 Material 역방향 인덱스: O(1) 판별용 (PropagateToStencilMaterials 스킵 판정)
+        private readonly HashSet<Material> _uiEffectProxyMaterialSet = new HashSet<Material>();
+
+        // _unmaskableChildren 정리용 캐시 조건자 (RemoveWhere 델리게이트 할당 방지)
+        private static readonly System.Predicate<UnityEngine.UI.Graphic> s_IsNullGraphic = g => g == null;
 
         // GC 방지: 재사용 리스트
         private readonly List<UnityEngine.UI.Graphic> _toRemove = new List<UnityEngine.UI.Graphic>(4);
@@ -246,6 +361,13 @@ namespace SoftMaskLight
         // 자식 수 변경 감지 (에디터 + 플레이모드 공통)
         private int _lastChildCount;
 
+        // 주기 스캔 위상 오프셋 (마스크가 여러 개일 때 같은 프레임에 비용이 몰리는 것 방지)
+        private int _scanPhase;
+
+        // 다음 자식 스캔에서 "일반 자식 → UIEffect 전환"까지 검사할지 여부.
+        // 이 검사는 자식마다 GetComponent가 발생하므로 상시 수행하지 않는다.
+        private bool _scanUIEffectTransition;
+
         // Canvas 레이아웃 완료 후 갱신 플래그
         // OnEnable/OnTransformParentChanged 시점에는 레이아웃이 미완료 상태일 수 있음
         // Canvas.willRenderCanvases 이벤트에서 레이아웃 완료 후 마스크 갱신
@@ -255,6 +377,11 @@ namespace SoftMaskLight
         // 부모 UI Mask의 showMaskGraphic 변경 감지 (에디터 전용)
         private UnityEngine.UI.Mask _parentUIMask;
         private bool _cachedParentMaskShowGraphic;
+
+        // 에디터 폴링 주기 (초). 구조 변경은 hierarchyChanged/OnValidate가 즉시 처리하므로
+        // 여기서는 놓친 변경을 뒤늦게 줍는 안전망 역할만 한다.
+        private const double EDITOR_SCAN_INTERVAL = 0.25;
+        private double _lastEditorScanTime;
 #endif
 
         // ─────────────────────────────────────────────
@@ -317,13 +444,36 @@ namespace SoftMaskLight
             // Canvas 참조 캐싱 (ComputeWorldToMaskUV에서 프레임당 탐색 방지)
             CacheRootCanvas();
 
+            // 인스턴스별 스캔 위상 (0~7)
+            _scanPhase = GetInstanceID() & 7;
+
             _initialized = true;
         }
+
+        // 프로파일러 마커 (Deep Profile 없이도 이름으로 비용 귀속이 가능하도록)
+        // 프로파일링이 꺼져 있으면 사실상 무비용이다.
+        private static readonly Unity.Profiling.ProfilerMarker s_MarkerLateUpdate =
+            new Unity.Profiling.ProfilerMarker("SoftMaskLight.LateUpdate");
+        private static readonly Unity.Profiling.ProfilerMarker s_MarkerUpdateShared =
+            new Unity.Profiling.ProfilerMarker("SoftMaskLight.UpdateSharedMaterial");
+        private static readonly Unity.Profiling.ProfilerMarker s_MarkerChildScan =
+            new Unity.Profiling.ProfilerMarker("SoftMaskLight.CheckForChildChanges");
+        private static readonly Unity.Profiling.ProfilerMarker s_MarkerApplyMask =
+            new Unity.Profiling.ProfilerMarker("SoftMaskLight.ApplyMaskToChildren");
+        private static readonly Unity.Profiling.ProfilerMarker s_MarkerPropagate =
+            new Unity.Profiling.ProfilerMarker("SoftMaskLight.PropagateToStencilMaterials");
 
         private void LateUpdate()
         {
             if (!_initialized) return;
+            using (s_MarkerLateUpdate.Auto())
+            {
+                LateUpdateInternal();
+            }
+        }
 
+        private void LateUpdateInternal()
+        {
             // TMP / UIEffect 외부 Material 변경 감지
             DetectTMPMaterialChanges();
             DetectUIEffectMaterialChanges();
@@ -334,6 +484,8 @@ namespace SoftMaskLight
             {
                 _checkUIEffectPending = false;
                 DetectNewUIEffectOnExistingChildren();
+                // 프록시 관리 자식(값이 null)은 위 함수가 다루지 않으므로 다음 주기 스캔에 위임
+                _scanUIEffectTransition = true;
             }
 
             // 자식 수 변경 감지 (UIParticle 활성/비활성 시 새 자식 추가됨)
@@ -361,10 +513,31 @@ namespace SoftMaskLight
 #if UNITY_EDITOR
             if (!Application.isPlaying)
             {
-                CheckForChildChanges();
-                CheckParentUIMaskChanges();
+                // 에디터에서도 [ExecuteAlways]로 매 프레임 돌기 때문에, 자식 트리 전수 스캔을
+                // 프레임마다 하면 씬뷰에서 오브젝트를 드래그하는 동안 그대로 히칭이 된다.
+                // 구조 변경은 hierarchyChanged / OnValidate가 즉시 처리하므로 여기서는 저빈도 폴링만 한다.
+                double now = UnityEditor.EditorApplication.timeSinceStartup;
+                if (now - _lastEditorScanTime >= EDITOR_SCAN_INTERVAL)
+                {
+                    _lastEditorScanTime = now;
+                    // 에디터에서는 컴포넌트 추가를 알리는 콜백이 없으므로 저빈도 폴링에 함께 태운다
+                    _scanUIEffectTransition = true;
+                    CheckForChildChanges();
+                    CheckParentUIMaskChanges();
+                    CleanupDestroyedChildren();
+                }
+                return;
             }
 #endif
+            // 플레이모드: 깊은 계층에 동적 추가된 Graphic / 마스크 밖 이동 감지
+            // (직계 childCount 비교로는 중간 컨테이너 아래 Instantiate를 감지 못함)
+            // 매 프레임 GetComponentsInChildren 비용을 피하기 위해 8프레임 주기로 스로틀하고,
+            // 인스턴스별 위상 오프셋을 줘서 마스크가 여러 개일 때 같은 프레임에 몰리지 않게 한다.
+            if (((Time.frameCount + _scanPhase) & 7) == 0)
+            {
+                CheckForChildChanges();
+                CleanupDestroyedChildren();
+            }
         }
 
         private void OnDisable()
@@ -374,13 +547,24 @@ namespace SoftMaskLight
 
             RestoreChildrenMaterials();
 
-            if (_originalColorSaved && _uiGraphic != null)
-            {
-                _uiGraphic.color = _originalMaskColor;
-            }
+            RestoreMaskGraphicAlpha();
 
             _parentSoftMask = null;
             _hasParentMask = false;
+        }
+
+        /// <summary>
+        /// 숨김 상태였다면 마스크 Graphic의 알파를 복원 (OnDisable/OnDestroy 공용)
+        /// </summary>
+        private void RestoreMaskGraphicAlpha()
+        {
+            if (_maskColorHidden && _uiGraphic != null)
+            {
+                _maskColorHidden = false;
+                Color c = _uiGraphic.color;
+                c.a = _savedMaskAlpha;
+                _uiGraphic.color = c;
+            }
         }
 
         private void OnDestroy()
@@ -389,10 +573,7 @@ namespace SoftMaskLight
 
             RestoreChildrenMaterials();
 
-            if (_originalColorSaved && _uiGraphic != null)
-            {
-                _uiGraphic.color = _originalMaskColor;
-            }
+            RestoreMaskGraphicAlpha();
         }
 
         /// <summary>
@@ -407,12 +588,14 @@ namespace SoftMaskLight
 
             // 레이아웃 완료 후 변환 행렬 재계산
             _cachedWorldToUV = ComputeWorldToMaskUV();
+            _cachedWorldToUVValid = true;
             _materialDirty = true;
 
             // 부모 마스크도 갱신
             if (_hasParentMask && _parentSoftMask != null)
             {
                 _cachedParentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
+                _cachedParentWorldToUVValid = true;
             }
 
             // Stencil Material 갱신 카운터 리셋
@@ -466,11 +649,37 @@ namespace SoftMaskLight
             UpdateMaskGraphicVisibility();
         }
 
+#endif
+
+        // CheckForChildChanges 재진입 방지 (에디터 hierarchyChanged 핸들러에서
+        // DestroyImmediate → hierarchyChanged 재발화로 재진입될 수 있음)
+        private bool _checkingChildChanges;
+
         /// <summary>
-        /// 자식 오브젝트 변경 감지 (에디터 전용)
+        /// 자식 오브젝트 변경 감지 (에디터: 매 프레임 / 플레이모드: 8프레임 주기)
+        /// 자식 추가, 마스크 밖 이동, UIEffect 추가 전환을 감지하여 마스크 재적용/복원
         /// </summary>
         public void CheckForChildChanges()
         {
+            if (_checkingChildChanges) return;
+            _checkingChildChanges = true;
+            try
+            {
+                using (s_MarkerChildScan.Auto())
+                    CheckForChildChangesInternal();
+            }
+            finally
+            {
+                _checkingChildChanges = false;
+            }
+        }
+
+        private void CheckForChildChangesInternal()
+        {
+            // 마스크 텍스처가 없으면 ApplyMaskToChildren이 아무것도 등록하지 못한다.
+            // 이 상태에서 미등록 자식을 찾아 재적용을 시도하면 스캔마다 헛도는 루프가 된다.
+            if (GetMaskTexture() == null) return;
+
             int currentChildCount = transform.childCount;
             if (currentChildCount != _lastChildCount)
             {
@@ -506,38 +715,50 @@ namespace SoftMaskLight
 
             GetComponentsInChildren(true, _childGraphicsBuffer);
             var children = _childGraphicsBuffer;
-            foreach (var child in children)
+            for (int i = 0; i < children.Count; i++)
             {
+                var child = children[i];
                 if (child.gameObject == gameObject) continue;
-                if (!BelongsToThisMask(child.transform)) continue;
 
-                // 기존 일반 Graphic → UIEffect 추가 감지: UIEffect 프록시 없이 UIEffect가 있으면 전환
-                if (_originalChildMaterials.TryGetValue(child, out var origMat) && IsUIEffectGraphic(child))
-                {
-                    var existingUIProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
-                    if (existingUIProxy == null || existingUIProxy.IsCleanedUp)
-                    {
-                        // 일반 프록시 제거 후 UIEffect 프록시로 전환
-                        var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
-                        if (childProxy != null && !childProxy.IsCleanedUp)
-                        {
-                            _childProxies.Remove(childProxy);
-                            childProxy.Cleanup();
-                        }
-                        _originalChildMaterials.Remove(child);
-                        ApplyMaskToUIEffect(child);
-                        continue;
-                    }
-                }
-
+                // 미추적 자식 발견 → 전체 재적용 (BelongsToThisMask는 이때만 확인)
+                // 마스킹 불가로 판정된 자식은 재시도하지 않는다 (재적용 루프 방지)
                 if (!_originalChildMaterials.ContainsKey(child))
                 {
+                    if (_unmaskableChildren.Contains(child)) continue;
+                    if (!BelongsToThisMask(child.transform)) continue;
                     ApplyMaskToChildren();
                     return;
                 }
+
+                // 기존 자식에 UIEffect가 나중에 추가된 경우의 전환 감지.
+                // GetComponent가 자식 수만큼 곱해지는 구간이라 매 스캔 수행하지 않고,
+                // 전환 후보가 생겼다고 표시된 경우(_checkUIEffectPending 소비 시)에만 검사한다.
+                if (!_scanUIEffectTransition) continue;
+                if (!IsUIEffectGraphic(child)) continue;
+
+                var existingUIProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
+                if (existingUIProxy != null && !existingUIProxy.IsCleanedUp) continue;
+
+                // 일반 프록시 제거 후 UIEffect 프록시로 전환
+                var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
+                if (childProxy != null && !childProxy.IsCleanedUp)
+                {
+                    _childProxies.Remove(childProxy);
+                    _childProxySet.Remove(childProxy);
+                    childProxy.Cleanup();
+                }
+                // TMP 자식이었다면 폰트 Material 복원 + 공유 마스크 Material 해제
+                // (해제 없이 전환하면 _tmpAppliedMaskMats의 stale 엔트리가 공유 Material 파괴를 영구히 막는다)
+                if (_originalChildMaterials.TryGetValue(child, out var prevOriginal) && prevOriginal != null)
+                    RestoreSingleChild(child, prevOriginal);
+                _originalChildMaterials.Remove(child);
+                ApplyMaskToUIEffect(child);
             }
+
+            _scanUIEffectTransition = false;
         }
 
+#if UNITY_EDITOR
         /// <summary>
         /// 부모 UI Mask 캐싱 (showMaskGraphic 변경 감지용)
         /// </summary>
@@ -599,7 +820,8 @@ namespace SoftMaskLight
         {
             if (_rectTransform == null) return Matrix4x4.identity;
 
-            Rect contentRect = GetContentLocalRect();
+            EnsureGeometryCache();
+            Rect contentRect = _geoContentRect;
             if (contentRect.width < 0.001f || contentRect.height < 0.001f) return Matrix4x4.identity;
 
             Matrix4x4 worldToLocal = _rectTransform.worldToLocalMatrix;
@@ -638,11 +860,279 @@ namespace SoftMaskLight
         }
 
         /// <summary>
+        /// RectTransform 크기 변경 시 지오메트리 캐시 무효화 (Unity 메시지)
+        /// </summary>
+        private void OnRectTransformDimensionsChange()
+        {
+            _geometryDirty = true;
+        }
+
+        /// <summary>
+        /// 스프라이트/사이즈 의존 값(콘텐츠 rect, 아틀라스 UV, 9-slice 파라미터, 마스크 텍스처)을
+        /// 프레임당 1회만 검증하고, 실제 변경이 있을 때만 재계산한다.
+        /// 스프라이트 프로퍼티는 네이티브 바인딩이므로 매 프레임 반복 접근을 피하는 것이 핵심.
+        /// </summary>
+        private void EnsureGeometryCache()
+        {
+            if (_rectTransform == null) return;
+
+            // 에디터 비플레이 모드에서는 인스펙터 편집 반응성을 위해 항상 검증
+            bool alwaysValidate = !Application.isPlaying;
+            if (!alwaysValidate && !_geometryDirty && _geoValidatedFrame == Time.frameCount) return;
+            _geoValidatedFrame = Time.frameCount;
+
+            var image = _uiGraphic as UnityEngine.UI.Image;
+            Sprite sprite = image != null ? image.sprite : null;
+            UnityEngine.UI.Image.Type imageType = image != null ? image.type : default;
+
+            bool changed = _geometryDirty
+                || sprite != _geoSprite
+                || (image != null && imageType != _geoImageType);
+
+            // RawImage는 텍스처가 임의 시점에 교체될 수 있어 매 프레임 확인 (참조 비교라 저렴)
+            if (!changed && _uiGraphic is UnityEngine.UI.RawImage rawCheck && rawCheck.texture != _geoMaskTexture)
+                changed = true;
+
+            // Filled 파라미터는 매 프레임 애니메이션될 수 있어 항상 확인 (float/enum 비교라 저렴)
+            // sprite == null이면 isFilled 판정이 false라 _geoFillAmount가 -1로 유지되므로
+            // 비교 대상에서 제외 (매 프레임 무한 재계산 방지)
+            if (!changed && image != null && imageType == UnityEngine.UI.Image.Type.Filled && sprite != null &&
+                (image.fillAmount != _geoFillAmount || image.fillMethod != _geoFillMethod ||
+                 image.fillOrigin != _geoFillOrigin || image.fillClockwise != _geoFillClockwise))
+                changed = true;
+
+            if (!changed) return;
+
+            _geometryDirty = false;
+            _geoSprite = sprite;
+            _geoImageType = imageType;
+
+            Texture prevMaskTexture = _geoMaskTexture;
+            _geoMaskTexture = ComputeMaskTexture();
+            // 스프라이트/텍스처가 바뀌면 "마스킹 불가" 판정 근거도 달라지므로 재시도를 허용한다
+            if (prevMaskTexture != _geoMaskTexture && _unmaskableChildren.Count > 0)
+                _unmaskableChildren.Clear();
+            _geoContentRect = ComputeContentLocalRect();
+            _geoUVRect = ComputeMaskUVRect();
+
+            // 형태 대응 판정: Sliced(테두리 있음) / Tiled / Filled → _SOFTMASK_SLICE 키워드 필요
+            bool isSliced = image != null && imageType == UnityEngine.UI.Image.Type.Sliced &&
+                            sprite != null && sprite.border != Vector4.zero;
+            bool isTiled = image != null && imageType == UnityEngine.UI.Image.Type.Tiled && sprite != null;
+            bool isFilled = image != null && imageType == UnityEngine.UI.Image.Type.Filled && sprite != null;
+            _geoIsSliced = isSliced || isTiled || isFilled;
+
+            if (isSliced || isTiled)
+            {
+                // Tiled(테두리 0)도 동일 함수로 처리됨: border → 항등, innerUV → 전체 스프라이트
+                _geoSliceBorder = ComputeMaskSliceBorder();
+                _geoSliceInnerUV = ComputeMaskSliceInnerUV();
+                Vector2 tiles = isTiled ? ComputeTileCounts(image) : Vector2.one;
+                _geoSliceSlopeX = ComputeSliceSlopes(_geoSliceBorder.x, _geoSliceBorder.z, _geoSliceInnerUV.x, _geoSliceInnerUV.z, tiles.x);
+                _geoSliceSlopeY = ComputeSliceSlopes(_geoSliceBorder.y, _geoSliceBorder.w, _geoSliceInnerUV.y, _geoSliceInnerUV.w, tiles.y);
+            }
+            else
+            {
+                _geoSliceBorder = IdentitySlice;
+                _geoSliceInnerUV = IdentitySlice;
+                _geoSliceSlopeX = IdentitySliceSlope;
+                _geoSliceSlopeY = IdentitySliceSlope;
+            }
+
+            if (isFilled)
+            {
+                _geoFillAmount = image.fillAmount;
+                _geoFillMethod = image.fillMethod;
+                _geoFillOrigin = image.fillOrigin;
+                _geoFillClockwise = image.fillClockwise;
+                // AA 스케일: 1 로컬 단위(≈1 참조 px) 폭의 소프트 경계
+                float aaScale = Mathf.Max(Mathf.Max(_geoContentRect.width, _geoContentRect.height), 2f);
+                ComputeFillLines(_geoFillMethod, _geoFillOrigin, _geoFillAmount, _geoFillClockwise,
+                                 aaScale, out _geoFillLineA, out _geoFillLineB);
+            }
+            else
+            {
+                _geoFillAmount = -1f;
+                _geoFillLineA = IdentityFillLine;
+                _geoFillLineB = IdentityFillLineB;
+            }
+        }
+
+        /// <summary>
+        /// 9-슬라이스/타일 리매핑의 구간별 기울기 사전 계산 (셰이더 픽셀당 나눗셈 제거)
+        /// k1 = pA/uA, k2n = 타일수/(uB-uA), k3 = (1-pB)/(1-uB), w = 타일수 - ε (frac 끝 경계 가드)
+        /// Sliced는 타일수 1 → frac(min(x, 1-ε)) = x 로 기존 선형 스트레치와 동일
+        /// 분모 하한(0.00001)은 셰이더의 기존 max() 가드와 동일
+        /// </summary>
+        private static Vector4 ComputeSliceSlopes(float uA, float uB, float pA, float pB, float tiles)
+        {
+            const float EPS = 0.00001f;
+            float n = Mathf.Max(tiles, EPS);
+            float k1 = pA / Mathf.Max(uA, EPS);
+            float k2 = n / Mathf.Max(uB - uA, EPS);
+            float k3 = (1f - pB) / Mathf.Max(1f - uB, EPS);
+            return new Vector4(k1, k2, k3, n - 0.0001f);
+        }
+
+        /// <summary>
+        /// Tiled 마스크의 중앙 구간 타일 반복 수 계산 (X, Y)
+        /// Unity의 타일 크기 = 스프라이트 내부 영역(px) / (pixelsPerUnit * pixelsPerUnitMultiplier)
+        /// </summary>
+        private static Vector2 ComputeTileCounts(UnityEngine.UI.Image image)
+        {
+            Sprite sprite = image.sprite;
+            // multipliedPixelsPerUnit은 protected라 공개 API로 동일 값을 재구성
+            float ppu = image.pixelsPerUnit * image.pixelsPerUnitMultiplier;
+            if (ppu < 0.001f) ppu = 1f;
+
+            Vector4 border = sprite.border; // (L, B, R, T) px
+            Rect spriteRect = sprite.rect;
+            float innerPxW = Mathf.Max(spriteRect.width - border.x - border.z, 1f);
+            float innerPxH = Mathf.Max(spriteRect.height - border.y - border.w, 1f);
+            float tileW = innerPxW / ppu;
+            float tileH = innerPxH / ppu;
+
+            RectTransform rt = image.rectTransform;
+            Rect rect = rt.rect;
+            float middleW = Mathf.Max(rect.width - (border.x + border.z) / ppu, 0f);
+            float middleH = Mathf.Max(rect.height - (border.y + border.w) / ppu, 0f);
+
+            return new Vector2(
+                tileW > 0.0001f ? middleW / tileW : 1f,
+                tileH > 0.0001f ? middleH / tileH : 1f);
+        }
+
+        /// <summary>
+        /// Filled 마스크의 커버리지를 반평면 2개 + 결합 모드로 사전 계산 (셰이더 atan2 제거)
+        /// 반평면 (a,b,c): a*u + b*v + c >= 0 이면 내부. (a,b)는 단위 벡터로 정규화 →
+        /// dot 결과가 uv 공간 부호 거리. lineA.w: 0=교집합(부채꼴 ≤180°), 1=합집합(>180°)
+        /// lineB.w: AA 스케일 (셰이더에서 saturate(dist*aa+0.5)로 ~1px 소프트 경계)
+        /// 좌표계: 마스크 rect 정규화 [0,1]², 각도는 +x축 기준 반시계(CCW)
+        /// </summary>
+        private static void ComputeFillLines(
+            UnityEngine.UI.Image.FillMethod method, int origin, float fill, bool clockwise,
+            float aaScale, out Vector4 lineA, out Vector4 lineB)
+        {
+            lineA = IdentityFillLine;
+            lineB = IdentityFillLineB;
+            lineB.w = aaScale;
+
+            if (fill >= 0.9999f) return; // 전체 표시 → 항등
+            // Unity와 동일 임계: fillAmount < 0.001 이면 아예 렌더하지 않음 (Image.cs 참조)
+            if (fill < 0.001f)
+            {
+                lineA = new Vector4(0f, 0f, -1f, 0f); // 항상 외부 → 전체 숨김
+                return;
+            }
+
+            switch (method)
+            {
+                case UnityEngine.UI.Image.FillMethod.Horizontal:
+                    lineA = origin == 0
+                        ? new Vector4(-1f, 0f, fill, 0f)      // Left:   u <= fill
+                        : new Vector4(1f, 0f, fill - 1f, 0f); // Right:  u >= 1-fill
+                    return;
+
+                case UnityEngine.UI.Image.FillMethod.Vertical:
+                    lineA = origin == 0
+                        ? new Vector4(0f, -1f, fill, 0f)      // Bottom: v <= fill
+                        : new Vector4(0f, 1f, fill - 1f, 0f); // Top:    v >= 1-fill
+                    return;
+            }
+
+            // 방사형: 중심 / 시작각 / 스윕각 → 부채꼴 반평면 2개
+            Vector2 center;
+            float startDeg;
+            float sweepDeg;
+            // Radial180은 rect를 반으로 나눈 서브쿼드의 파라미터 공간에서 컷이 보간되므로
+            // (Unity Image.RadialCut), 경계 방향에 축별 비등방 스케일을 곱해야 실제 규약과 일치한다
+            Vector2 aniso = Vector2.one;
+            switch (method)
+            {
+                case UnityEngine.UI.Image.FillMethod.Radial90:
+                {
+                    // 내부 사분면 [θa, θa+90°]. BottomLeft/TopLeft/TopRight/BottomRight
+                    center = origin switch
+                    {
+                        1 => new Vector2(0f, 1f),
+                        2 => new Vector2(1f, 1f),
+                        3 => new Vector2(1f, 0f),
+                        _ => new Vector2(0f, 0f),
+                    };
+                    float qa = origin switch { 1 => 270f, 2 => 180f, 3 => 90f, _ => 0f };
+                    sweepDeg = fill * 90f;
+                    startDeg = clockwise ? qa + 90f : qa;
+                    break;
+                }
+                case UnityEngine.UI.Image.FillMethod.Radial180:
+                {
+                    // 내부 반원 [θa, θa+180°]. Bottom/Left/Top/Right (원점 = 변의 중점)
+                    center = origin switch
+                    {
+                        1 => new Vector2(0f, 0.5f),
+                        2 => new Vector2(0.5f, 1f),
+                        3 => new Vector2(1f, 0.5f),
+                        _ => new Vector2(0.5f, 0f),
+                    };
+                    float ha = origin switch { 1 => 270f, 2 => 180f, 3 => 90f, _ => 0f };
+                    sweepDeg = fill * 180f;
+                    startDeg = clockwise ? ha + 180f : ha;
+                    // 서브쿼드 0.5×1(Bottom/Top) 또는 1×0.5(Left/Right)의 비등방 보정
+                    aniso = (origin == 0 || origin == 2)
+                        ? new Vector2(0.5f, 1f)
+                        : new Vector2(1f, 0.5f);
+                    break;
+                }
+                default: // Radial360
+                {
+                    center = new Vector2(0.5f, 0.5f);
+                    startDeg = origin switch { 1 => 0f, 2 => 90f, 3 => 180f, _ => 270f }; // Bottom/Right/Top/Left
+                    sweepDeg = fill * 360f;
+                    break;
+                }
+            }
+
+            float dir = clockwise ? -1f : 1f;
+            Vector2 s = Vector2.Scale(DirFromDeg(startDeg), aniso);
+            Vector2 e = Vector2.Scale(DirFromDeg(startDeg + dir * sweepDeg), aniso);
+
+            // 부채꼴 내부 = "시작선의 스윕 방향 쪽" ∩ "끝선의 반대 쪽"
+            // 스윕이 180° 초과면 여집합 부채꼴의 드모르간 → 합집합으로 전환
+            // (양의 대각 스케일은 cross 부호를 보존하므로 판정 논리는 그대로 유효)
+            float combiner = sweepDeg > 180.001f ? 1f : 0f;
+            lineA = LineFromCross(s, dir, center);
+            lineB = LineFromCross(e, -dir, center);
+            lineA.w = combiner;
+            lineB.w = aaScale;
+        }
+
+        private static Vector2 DirFromDeg(float deg)
+        {
+            float rad = deg * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(rad), Mathf.Sin(rad));
+        }
+
+        /// <summary>
+        /// 방향 벡터 V와 중심 c에 대해 sign*cross(V, D) >= 0 (D = p - c)을
+        /// 반평면 (a, b, c') 형태로 변환: a*u + b*v + c' >= 0
+        /// (a,b)를 단위 길이로 정규화해 dot 결과가 uv 공간 부호 거리가 되게 한다 (AA용)
+        /// </summary>
+        private static Vector4 LineFromCross(Vector2 v, float sign, Vector2 center)
+        {
+            float a = -sign * v.y;
+            float b = sign * v.x;
+            float len = Mathf.Sqrt(a * a + b * b);
+            if (len > 0.00001f) { a /= len; b /= len; }
+            float c = -(a * center.x + b * center.y);
+            return new Vector4(a, b, c, 0f);
+        }
+
+        /// <summary>
         /// 스프라이트 콘텐츠의 실제 로컬 영역 계산
         /// Atlas 패킹 시 투명 여백이 트리밍된 경우, 콘텐츠 영역만 반환
         /// 비트리밍 스프라이트 또는 비Image는 전체 RectTransform rect 반환
         /// </summary>
-        private Rect GetContentLocalRect()
+        private Rect ComputeContentLocalRect()
         {
             if (_uiGraphic is UnityEngine.UI.Image image && image.sprite != null)
             {
@@ -680,9 +1170,15 @@ namespace SoftMaskLight
         }
 
         /// <summary>
-        /// 마스크 텍스처 가져오기 (자신의 텍스처)
+        /// 마스크 텍스처 가져오기 (자신의 텍스처) — 캐시 조회
         /// </summary>
         internal Texture GetMaskTexture()
+        {
+            EnsureGeometryCache();
+            return _geoMaskTexture;
+        }
+
+        private Texture ComputeMaskTexture()
         {
             if (_uiGraphic is UnityEngine.UI.Image image && image.sprite != null)
                 return image.sprite.texture;
@@ -697,23 +1193,27 @@ namespace SoftMaskLight
         /// </summary>
         internal Vector4 GetMaskUVRect()
         {
+            EnsureGeometryCache();
+            return _geoUVRect;
+        }
+
+        private Vector4 ComputeMaskUVRect()
+        {
             if (_uiGraphic is UnityEngine.UI.Image image && image.sprite != null)
             {
                 Vector4 outerUV = UnityEngine.Sprites.DataUtility.GetOuterUV(image.sprite);
                 return new Vector4(outerUV.x, outerUV.y, outerUV.z - outerUV.x, outerUV.w - outerUV.y);
             }
-            return new Vector4(0, 0, 1, 1);
+            return IdentitySlice;
         }
 
         /// <summary>
-        /// 마스크 이미지가 Sliced 타입인지 확인
+        /// 마스크 이미지가 Sliced 타입인지 확인 — 캐시 조회
         /// </summary>
         internal bool IsSlicedMask()
         {
-            return _uiGraphic is UnityEngine.UI.Image image &&
-                   image.type == UnityEngine.UI.Image.Type.Sliced &&
-                   image.sprite != null &&
-                   image.sprite.border != Vector4.zero;
+            EnsureGeometryCache();
+            return _geoIsSliced;
         }
 
         /// <summary>
@@ -726,18 +1226,23 @@ namespace SoftMaskLight
         /// </summary>
         internal Vector4 GetMaskSliceBorder()
         {
-            if (!IsSlicedMask()) return new Vector4(0f, 0f, 1f, 1f);
+            EnsureGeometryCache();
+            return _geoSliceBorder;
+        }
 
+        private Vector4 ComputeMaskSliceBorder()
+        {
             var image = (UnityEngine.UI.Image)_uiGraphic;
             var sprite = image.sprite;
 
             Rect rect = _rectTransform.rect;
             float rectW = rect.width;
             float rectH = rect.height;
-            if (rectW < 0.001f || rectH < 0.001f) return new Vector4(0f, 0f, 1f, 1f);
+            if (rectW < 0.001f || rectH < 0.001f) return IdentitySlice;
 
-            // 스프라이트 테두리 픽셀 → 캔버스 단위 변환 (Image.pixelsPerUnit 사용)
-            float ppu = image.pixelsPerUnit;
+            // 스프라이트 테두리 픽셀 → 캔버스 단위 변환
+            // Unity는 테두리/타일 변환 모두 multipliedPixelsPerUnit 기준 — 타일 수 계산과 기준 통일
+            float ppu = image.pixelsPerUnit * image.pixelsPerUnitMultiplier;
             if (ppu < 0.001f) ppu = 1f;
 
             float bL = sprite.border.x / ppu;
@@ -775,8 +1280,40 @@ namespace SoftMaskLight
         /// </summary>
         internal Vector4 GetMaskSliceInnerUV()
         {
-            if (!IsSlicedMask()) return new Vector4(0f, 0f, 1f, 1f);
+            EnsureGeometryCache();
+            return _geoSliceInnerUV;
+        }
 
+        /// <summary>9-슬라이스 X축 구간별 기울기 (사전 계산) — 캐시 조회</summary>
+        internal Vector4 GetMaskSliceSlopeX()
+        {
+            EnsureGeometryCache();
+            return _geoSliceSlopeX;
+        }
+
+        /// <summary>9-슬라이스 Y축 구간별 기울기 (사전 계산) — 캐시 조회</summary>
+        internal Vector4 GetMaskSliceSlopeY()
+        {
+            EnsureGeometryCache();
+            return _geoSliceSlopeY;
+        }
+
+        /// <summary>Filled 커버리지 반평면 A (사전 계산) — 캐시 조회</summary>
+        internal Vector4 GetMaskFillLineA()
+        {
+            EnsureGeometryCache();
+            return _geoFillLineA;
+        }
+
+        /// <summary>Filled 커버리지 반평면 B (사전 계산) — 캐시 조회</summary>
+        internal Vector4 GetMaskFillLineB()
+        {
+            EnsureGeometryCache();
+            return _geoFillLineB;
+        }
+
+        private Vector4 ComputeMaskSliceInnerUV()
+        {
             var image = (UnityEngine.UI.Image)_uiGraphic;
             var sprite = image.sprite;
 
@@ -839,21 +1376,36 @@ namespace SoftMaskLight
         {
             if (!_initialized || _uiGraphic == null) return;
 
-            if (!_originalColorSaved)
-            {
-                _originalMaskColor = _uiGraphic.color;
-                _originalColorSaved = true;
-            }
-
             if (_showMaskGraphic)
             {
-                _uiGraphic.color = _originalMaskColor;
+                // 숨김 → 표시 전환 시에만 알파 복원
+                // 표시 상태에서는 색상에 개입하지 않음 (외부 트윈/애니메이션 허용)
+                if (_maskColorHidden)
+                {
+                    _maskColorHidden = false;
+                    Color c = _uiGraphic.color;
+                    c.a = _savedMaskAlpha;
+                    _uiGraphic.color = c;
+                }
             }
             else
             {
                 Color c = _uiGraphic.color;
-                c.a = 0f;
-                _uiGraphic.color = c;
+                if (!_maskColorHidden)
+                {
+                    // 표시 → 숨김 전환: 현재 알파 저장 후 0으로
+                    _maskColorHidden = true;
+                    _savedMaskAlpha = c.a;
+                    c.a = 0f;
+                    _uiGraphic.color = c;
+                }
+                else if (c.a != 0f)
+                {
+                    // 숨김 중 외부에서 알파가 변경됨 → 새 알파를 기억하고 다시 숨김
+                    _savedMaskAlpha = c.a;
+                    c.a = 0f;
+                    _uiGraphic.color = c;
+                }
             }
         }
 
@@ -890,6 +1442,13 @@ namespace SoftMaskLight
             };
             proxy.CopyPropertiesFromMaterial(baseMaterial);
             proxy.shader = optShader;
+            // 셰이더 키워드/렌더 큐 유지 (CopyPropertiesFromMaterial은 프로퍼티만 복사)
+            // 생성 시 1회만 수행되므로 shaderKeywords 배열 할당은 GC 부담 없음
+            proxy.shaderKeywords = baseMaterial.shaderKeywords;
+            proxy.renderQueue = baseMaterial.renderQueue;
+            // RectMask2D 키워드/_ClipRect는 CanvasRenderer가 드로우마다 주입한다.
+            // 공유 프록시에 구우면 _ClipRect=(0,0,0,0)으로 자식이 전부 사라진다.
+            ResetRectMask2DMaterialState(proxy);
 
             // 마스크 프로퍼티 적용
             ApplyMaskPropertiesToMaterial(proxy);
@@ -900,11 +1459,28 @@ namespace SoftMaskLight
         }
 
         /// <summary>
+        /// RectMask2D 클리핑은 CanvasRenderer가 드로우마다 주입한다.
+        /// 공유 프록시에 UNITY_UI_CLIP_RECT와 _ClipRect=0이 남으면 자식이 전부 사라진다.
+        /// </summary>
+        internal static void ResetRectMask2DMaterialState(Material mat)
+        {
+            if (mat == null) return;
+            mat.DisableKeyword(KeywordUIClipRect);
+            mat.SetVector(PropClipRect, DefaultClipRect);
+        }
+
+        /// <summary>
         /// 공유 Material 프로퍼티 업데이트 (더티 체크 포함)
         /// Transform 변경 시에만 행렬 업데이트, 프로퍼티 변경 시에만 값 업데이트
         /// UI Mask 내에서 사용 시 Stencil 래핑 Material에도 프로퍼티 전파
         /// </summary>
         private void UpdateSharedMaterial()
+        {
+            using (s_MarkerUpdateShared.Auto())
+                UpdateSharedMaterialInternal();
+        }
+
+        private void UpdateSharedMaterialInternal()
         {
             if (_originalChildMaterials.Count == 0) return;
             if (_sharedProxyMaterials.Count == 0 && _tmpMaskMaterials.Count == 0 && _childProxies.Count == 0 && _uiEffectProxies.Count == 0) return;
@@ -918,6 +1494,7 @@ namespace SoftMaskLight
                 foreach (var m in _sharedProxyMaterials.Values)
                     if (m != null) m.SetMatrix(PropMaskWorldToUV, currentWorldToUV);
                 _cachedWorldToUV = currentWorldToUV;
+                _cachedWorldToUVValid = true;
                 anyChange = true;
             }
 
@@ -939,10 +1516,11 @@ namespace SoftMaskLight
             // Softness / InvertMask 변경 체크
             if (_materialDirty || _softness != _cachedSoftness || _invertMask != _cachedInvertMask)
             {
+                float softnessRcp = SoftnessRcp(_softness);
                 foreach (var m in _sharedProxyMaterials.Values)
                 {
                     if (m == null) continue;
-                    m.SetFloat(PropSoftness, _softness);
+                    m.SetFloat(PropSoftnessRcp, softnessRcp);
                     m.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
                 }
                 _cachedSoftness = _softness;
@@ -950,30 +1528,29 @@ namespace SoftMaskLight
                 anyChange = true;
             }
 
-            // 슬라이스 타입 변경 체크
+            // 형태 대응 값 계산 (키워드 적용은 부모 마스크까지 확인한 뒤 아래에서 일괄 처리)
             bool isSliced = IsSlicedMask();
-            Vector4 sliceBorder = isSliced ? GetMaskSliceBorder() : new Vector4(0f, 0f, 1f, 1f);
-            Vector4 sliceInnerUV = isSliced ? GetMaskSliceInnerUV() : new Vector4(0f, 0f, 1f, 1f);
-            if (_materialDirty || isSliced != _cachedIsSliced || sliceBorder != _cachedSliceBorder || sliceInnerUV != _cachedSliceInnerUV)
+            Vector4 sliceBorder = GetMaskSliceBorder();
+            Vector4 sliceInnerUV = GetMaskSliceInnerUV();
+            Vector4 sliceSlopeX = GetMaskSliceSlopeX();
+            Vector4 sliceSlopeY = GetMaskSliceSlopeY();
+            Vector4 fillLineA = GetMaskFillLineA();
+            Vector4 fillLineB = GetMaskFillLineB();
+            bool sliceChanged = _materialDirty || isSliced != _cachedIsSliced
+                || sliceBorder != _cachedSliceBorder || sliceInnerUV != _cachedSliceInnerUV
+                || sliceSlopeX != _cachedSliceSlopeX || sliceSlopeY != _cachedSliceSlopeY
+                || fillLineA != _cachedFillLineA || fillLineB != _cachedFillLineB;
+            // 캐시는 변경 감지 시에만 갱신한다. 무조건 갱신하면 Vector4 == 의 근사 비교 때문에
+            // 프레임당 변화가 임계 미만인 초저속 fill 애니메이션이 영영 반영되지 않는다 (드리프트 누적 허용)
+            if (sliceChanged)
             {
                 _cachedIsSliced = isSliced;
                 _cachedSliceBorder = sliceBorder;
                 _cachedSliceInnerUV = sliceInnerUV;
-                foreach (var m in _sharedProxyMaterials.Values)
-                {
-                    if (m == null) continue;
-                    if (isSliced)
-                    {
-                        m.EnableKeyword(KEYWORD_SLICE);
-                        m.SetVector(PropMaskSliceBorder, sliceBorder);
-                        m.SetVector(PropMaskSliceInnerUV, sliceInnerUV);
-                    }
-                    else
-                    {
-                        m.DisableKeyword(KEYWORD_SLICE);
-                    }
-                }
-                anyChange = true;
+                _cachedSliceSlopeX = sliceSlopeX;
+                _cachedSliceSlopeY = sliceSlopeY;
+                _cachedFillLineA = fillLineA;
+                _cachedFillLineB = fillLineB;
             }
 
             // 부모 마스크 업데이트 (중첩 마스크)
@@ -985,6 +1562,7 @@ namespace SoftMaskLight
                     foreach (var m in _sharedProxyMaterials.Values)
                         if (m != null) m.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
                     _cachedParentWorldToUV = parentWorldToUV;
+                    _cachedParentWorldToUVValid = true;
                     anyChange = true;
                 }
 
@@ -1005,10 +1583,11 @@ namespace SoftMaskLight
                 if (_parentSoftMask._softness != _cachedParentSoftness ||
                     _parentSoftMask._invertMask != _cachedParentInvertMask)
                 {
+                    float parentSoftnessRcp = SoftnessRcp(_parentSoftMask._softness);
                     foreach (var m in _sharedProxyMaterials.Values)
                     {
                         if (m == null) continue;
-                        m.SetFloat(PropSoftness2, _parentSoftMask._softness);
+                        m.SetFloat(PropSoftnessRcp2, parentSoftnessRcp);
                         m.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
                     }
                     _cachedParentSoftness = _parentSoftMask._softness;
@@ -1016,31 +1595,73 @@ namespace SoftMaskLight
                     anyChange = true;
                 }
 
-                // 부모 마스크 슬라이스 타입 변경 체크
+                // 부모 마스크 형태 대응 값 계산 (적용은 아래 일괄 처리)
                 bool parentIsSliced = _parentSoftMask.IsSlicedMask();
-                Vector4 parentSliceBorder = parentIsSliced ? _parentSoftMask.GetMaskSliceBorder() : new Vector4(0f, 0f, 1f, 1f);
-                Vector4 parentSliceInnerUV = parentIsSliced ? _parentSoftMask.GetMaskSliceInnerUV() : new Vector4(0f, 0f, 1f, 1f);
-                if (_materialDirty || parentIsSliced != _cachedParentIsSliced || parentSliceBorder != _cachedParentSliceBorder || parentSliceInnerUV != _cachedParentSliceInnerUV)
+                Vector4 parentSliceBorder = _parentSoftMask.GetMaskSliceBorder();
+                Vector4 parentSliceInnerUV = _parentSoftMask.GetMaskSliceInnerUV();
+                Vector4 parentSliceSlopeX = _parentSoftMask.GetMaskSliceSlopeX();
+                Vector4 parentSliceSlopeY = _parentSoftMask.GetMaskSliceSlopeY();
+                Vector4 parentFillLineA = _parentSoftMask.GetMaskFillLineA();
+                Vector4 parentFillLineB = _parentSoftMask.GetMaskFillLineB();
+                if (_materialDirty || parentIsSliced != _cachedParentIsSliced
+                    || parentSliceBorder != _cachedParentSliceBorder || parentSliceInnerUV != _cachedParentSliceInnerUV
+                    || parentSliceSlopeX != _cachedParentSliceSlopeX || parentSliceSlopeY != _cachedParentSliceSlopeY
+                    || parentFillLineA != _cachedParentFillLineA || parentFillLineB != _cachedParentFillLineB)
                 {
+                    sliceChanged = true;
+                    // 변경 감지 시에만 캐시 갱신 (근사 비교로 인한 초저속 애니메이션 정체 방지)
                     _cachedParentIsSliced = parentIsSliced;
                     _cachedParentSliceBorder = parentSliceBorder;
                     _cachedParentSliceInnerUV = parentSliceInnerUV;
-                    foreach (var m in _sharedProxyMaterials.Values)
-                    {
-                        if (m == null) continue;
-                        if (parentIsSliced)
-                        {
-                            m.EnableKeyword(KEYWORD_NESTED_SLICE);
-                            m.SetVector(PropMaskSliceBorder2, parentSliceBorder);
-                            m.SetVector(PropMaskSliceInnerUV2, parentSliceInnerUV);
-                        }
-                        else
-                        {
-                            m.DisableKeyword(KEYWORD_NESTED_SLICE);
-                        }
-                    }
-                    anyChange = true;
+                    _cachedParentSliceSlopeX = parentSliceSlopeX;
+                    _cachedParentSliceSlopeY = parentSliceSlopeY;
+                    _cachedParentFillLineA = parentFillLineA;
+                    _cachedParentFillLineB = parentFillLineB;
                 }
+            }
+            else if (_cachedParentIsSliced)
+            {
+                // 부모 마스크가 사라짐 → 항등값으로 되돌림
+                _cachedParentIsSliced = false;
+                _cachedParentSliceBorder = IdentitySlice;
+                _cachedParentSliceInnerUV = IdentitySlice;
+                _cachedParentSliceSlopeX = IdentitySliceSlope;
+                _cachedParentSliceSlopeY = IdentitySliceSlope;
+                _cachedParentFillLineA = IdentityFillLine;
+                _cachedParentFillLineB = IdentityFillLineB;
+                sliceChanged = true;
+            }
+
+            // 슬라이스 일괄 적용: _SOFTMASK_SLICE 하나가 마스크 1·2를 모두 담당한다.
+            // 슬라이스가 아닌 쪽은 항등 파라미터가 들어가 리매핑이 no-op이 되므로 항상 값을 써 준다.
+            if (sliceChanged)
+            {
+                bool anySliced = _cachedIsSliced || _cachedParentIsSliced;
+                foreach (var m in _sharedProxyMaterials.Values)
+                {
+                    if (m == null) continue;
+                    if (anySliced)
+                    {
+                        if (!m.IsKeywordEnabled(KEYWORD_SLICE)) m.EnableKeyword(KEYWORD_SLICE);
+                        m.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
+                        m.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
+                        m.SetVector(PropMaskSliceSlopeX, _cachedSliceSlopeX);
+                        m.SetVector(PropMaskSliceSlopeY, _cachedSliceSlopeY);
+                        m.SetVector(PropMaskFillLineA, _cachedFillLineA);
+                        m.SetVector(PropMaskFillLineB, _cachedFillLineB);
+                        m.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
+                        m.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
+                        m.SetVector(PropMaskSliceSlopeX2, _cachedParentSliceSlopeX);
+                        m.SetVector(PropMaskSliceSlopeY2, _cachedParentSliceSlopeY);
+                        m.SetVector(PropMaskFillLineA2, _cachedParentFillLineA);
+                        m.SetVector(PropMaskFillLineB2, _cachedParentFillLineB);
+                    }
+                    else if (m.IsKeywordEnabled(KEYWORD_SLICE))
+                    {
+                        m.DisableKeyword(KEYWORD_SLICE);
+                    }
+                }
+                anyChange = true;
             }
 
             // TMP, ChildProxy, UIEffect, Stencil Material에 마스크 프로퍼티 전파
@@ -1048,15 +1669,14 @@ namespace SoftMaskLight
             {
                 UpdateTMPMaterials();
                 // 주의: ChildProxy의 ProxyMaterial은 _sharedProxyMaterials.Values와 동일 인스턴스이므로
-                // 위 루프에서 이미 업데이트됨 → UpdateChildProxyMaterials() 중복 호출 불필요
+                // 위 루프에서 이미 업데이트됨 (별도 전파 불필요)
                 UpdateUIEffectMaterials();
                 PropagateToStencilMaterials();
             }
 
             _materialDirty = false;
 
-            // 파괴된 자식 정리
-            CleanupDestroyedChildren();
+            // 파괴된 자식 정리는 매 프레임이 아니라 LateUpdate의 주기 스캔에서 수행 (아래 참조)
         }
 
         /// <summary>
@@ -1066,6 +1686,12 @@ namespace SoftMaskLight
         /// </summary>
         private void PropagateToStencilMaterials()
         {
+            using (s_MarkerPropagate.Auto())
+                PropagateToStencilMaterialsInternal();
+        }
+
+        private void PropagateToStencilMaterialsInternal()
+        {
             Texture maskTex = GetMaskTexture();
             Vector4 maskUVRect = GetMaskUVRect();
 
@@ -1073,7 +1699,11 @@ namespace SoftMaskLight
             {
                 if (kvp.Key == null) continue;
 
-                Material rendered = kvp.Key.materialForRendering;
+                // materialForRendering은 접근할 때마다 IMaterialModifier 체인 전체를 재평가하므로
+                // CanvasRenderer에 이미 설정된 최종 머티리얼을 직접 참조 (프로젝트 ActiveMaterial 패턴)
+                var cr = kvp.Key.canvasRenderer;
+                if (cr == null || cr.materialCount == 0) continue;
+                Material rendered = cr.GetMaterial(0);
                 if (rendered == null) continue;
 
                 // 기본 Material 자체는 이미 업데이트됨 → 스킵
@@ -1085,29 +1715,39 @@ namespace SoftMaskLight
                 Shader renderedShader = rendered.shader;
                 if (renderedShader == null) continue;
 
-                int pTex, pSoftness, pInvert, pWorldToUV, pUVRect;
-                int pTex2, pSoftness2, pInvert2, pWorldToUV2, pUVRect2;
+                int pTex, pSoftnessRcp, pInvert, pWorldToUV, pUVRect;
+                int pTex2, pSoftnessRcp2, pInvert2, pWorldToUV2, pUVRect2;
                 int pSliceBorder, pSliceInnerUV, pSliceBorder2, pSliceInnerUV2;
+                int pSliceSlopeX, pSliceSlopeY, pSliceSlopeX2, pSliceSlopeY2;
+                int pFillLineA, pFillLineB, pFillLineA2, pFillLineB2;
 
                 Shader tmpShader = GetCachedTMPShader();
                 if (tmpShader != null && renderedShader == tmpShader)
                 {
-                    pTex = PropTMPMaskTex; pSoftness = PropTMPSoftness; pInvert = PropTMPInvertMask;
+                    pTex = PropTMPMaskTex; pSoftnessRcp = PropTMPSoftnessRcp; pInvert = PropTMPInvertMask;
                     pWorldToUV = PropTMPMaskWorldToUV; pUVRect = PropTMPMaskUVRect;
-                    pTex2 = PropTMPMaskTex2; pSoftness2 = PropTMPSoftness2; pInvert2 = PropTMPInvertMask2;
+                    pTex2 = PropTMPMaskTex2; pSoftnessRcp2 = PropTMPSoftnessRcp2; pInvert2 = PropTMPInvertMask2;
                     pWorldToUV2 = PropTMPMaskWorldToUV2; pUVRect2 = PropTMPMaskUVRect2;
                     pSliceBorder = PropTMPMaskSliceBorder; pSliceInnerUV = PropTMPMaskSliceInnerUV;
                     pSliceBorder2 = PropTMPMaskSliceBorder2; pSliceInnerUV2 = PropTMPMaskSliceInnerUV2;
+                    pSliceSlopeX = PropTMPMaskSliceSlopeX; pSliceSlopeY = PropTMPMaskSliceSlopeY;
+                    pSliceSlopeX2 = PropTMPMaskSliceSlopeX2; pSliceSlopeY2 = PropTMPMaskSliceSlopeY2;
+                    pFillLineA = PropTMPMaskFillLineA; pFillLineB = PropTMPMaskFillLineB;
+                    pFillLineA2 = PropTMPMaskFillLineA2; pFillLineB2 = PropTMPMaskFillLineB2;
                 }
                 else if (rendered.HasProperty(PropMaskTex))
                 {
                     // _MaskTex 프로퍼티가 있는 셰이더 = SoftMaskLight 대응 셰이더 (표준 프로퍼티 이름)
-                    pTex = PropMaskTex; pSoftness = PropSoftness; pInvert = PropInvertMask;
+                    pTex = PropMaskTex; pSoftnessRcp = PropSoftnessRcp; pInvert = PropInvertMask;
                     pWorldToUV = PropMaskWorldToUV; pUVRect = PropMaskUVRect;
-                    pTex2 = PropMaskTex2; pSoftness2 = PropSoftness2; pInvert2 = PropInvertMask2;
+                    pTex2 = PropMaskTex2; pSoftnessRcp2 = PropSoftnessRcp2; pInvert2 = PropInvertMask2;
                     pWorldToUV2 = PropMaskWorldToUV2; pUVRect2 = PropMaskUVRect2;
                     pSliceBorder = PropMaskSliceBorder; pSliceInnerUV = PropMaskSliceInnerUV;
                     pSliceBorder2 = PropMaskSliceBorder2; pSliceInnerUV2 = PropMaskSliceInnerUV2;
+                    pSliceSlopeX = PropMaskSliceSlopeX; pSliceSlopeY = PropMaskSliceSlopeY;
+                    pSliceSlopeX2 = PropMaskSliceSlopeX2; pSliceSlopeY2 = PropMaskSliceSlopeY2;
+                    pFillLineA = PropMaskFillLineA; pFillLineB = PropMaskFillLineB;
+                    pFillLineA2 = PropMaskFillLineA2; pFillLineB2 = PropMaskFillLineB2;
                 }
                 else
                 {
@@ -1116,19 +1756,29 @@ namespace SoftMaskLight
 
                 // Stencil 래핑된 Material에 마스크 프로퍼티 복사
                 rendered.SetMatrix(pWorldToUV, _cachedWorldToUV);
-                rendered.SetFloat(pSoftness, _cachedSoftness);
+                rendered.SetFloat(pSoftnessRcp, SoftnessRcp(_cachedSoftness));
                 rendered.SetFloat(pInvert, _cachedInvertMask ? 1f : 0f);
 
                 if (maskTex != null) rendered.SetTexture(pTex, maskTex);
                 rendered.SetVector(pUVRect, maskUVRect);
 
-                // 슬라이스 프로퍼티 전파
-                if (_cachedIsSliced)
+                // 슬라이스 프로퍼티 전파 (_SOFTMASK_SLICE 하나가 마스크 1·2를 모두 담당)
+                if (_cachedIsSliced || _cachedParentIsSliced)
                 {
                     if (!rendered.IsKeywordEnabled(KEYWORD_SLICE))
                         rendered.EnableKeyword(KEYWORD_SLICE);
                     rendered.SetVector(pSliceBorder, _cachedSliceBorder);
                     rendered.SetVector(pSliceInnerUV, _cachedSliceInnerUV);
+                    rendered.SetVector(pSliceSlopeX, _cachedSliceSlopeX);
+                    rendered.SetVector(pSliceSlopeY, _cachedSliceSlopeY);
+                    rendered.SetVector(pFillLineA, _cachedFillLineA);
+                    rendered.SetVector(pFillLineB, _cachedFillLineB);
+                    rendered.SetVector(pSliceBorder2, _cachedParentSliceBorder);
+                    rendered.SetVector(pSliceInnerUV2, _cachedParentSliceInnerUV);
+                    rendered.SetVector(pSliceSlopeX2, _cachedParentSliceSlopeX);
+                    rendered.SetVector(pSliceSlopeY2, _cachedParentSliceSlopeY);
+                    rendered.SetVector(pFillLineA2, _cachedParentFillLineA);
+                    rendered.SetVector(pFillLineB2, _cachedParentFillLineB);
                 }
                 else if (rendered.IsKeywordEnabled(KEYWORD_SLICE))
                 {
@@ -1141,26 +1791,13 @@ namespace SoftMaskLight
                         rendered.EnableKeyword(KEYWORD_NESTED);
 
                     rendered.SetMatrix(pWorldToUV2, _cachedParentWorldToUV);
-                    rendered.SetFloat(pSoftness2, _cachedParentSoftness);
+                    rendered.SetFloat(pSoftnessRcp2, SoftnessRcp(_cachedParentSoftness));
                     rendered.SetFloat(pInvert2, _cachedParentInvertMask ? 1f : 0f);
 
                     Texture parentTex = _parentSoftMask != null ? _parentSoftMask.GetMaskTexture() : null;
                     if (parentTex != null) rendered.SetTexture(pTex2, parentTex);
                     if (_parentSoftMask != null)
                         rendered.SetVector(pUVRect2, _parentSoftMask.GetMaskUVRect());
-
-                    // 중첩 슬라이스 프로퍼티 전파
-                    if (_cachedParentIsSliced)
-                    {
-                        if (!rendered.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                            rendered.EnableKeyword(KEYWORD_NESTED_SLICE);
-                        rendered.SetVector(pSliceBorder2, _cachedParentSliceBorder);
-                        rendered.SetVector(pSliceInnerUV2, _cachedParentSliceInnerUV);
-                    }
-                    else if (rendered.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                    {
-                        rendered.DisableKeyword(KEYWORD_NESTED_SLICE);
-                    }
                 }
             }
         }
@@ -1171,30 +1808,6 @@ namespace SoftMaskLight
         private bool IsChildProxyMaterial(Material mat)
         {
             return _proxyMaterialSet.Contains(mat);
-        }
-
-        /// <summary>
-        /// 자식 프록시 머티리얼에 현재 마스크 프로퍼티 일괄 전파
-        /// (캔버스 리빌드 없이 마스크 프로퍼티만 변경된 경우 대응)
-        /// </summary>
-        private void UpdateChildProxyMaterials()
-        {
-            if (_childProxies.Count == 0) return;
-
-            for (int i = _childProxies.Count - 1; i >= 0; i--)
-            {
-                var proxy = _childProxies[i];
-                if (proxy == null)
-                {
-                    _childProxies.RemoveAt(i);
-                    continue;
-                }
-
-                Material mat = proxy.ProxyMaterial;
-                if (mat == null) continue;
-
-                ApplyMaskPropertiesToMaterial(mat);
-            }
         }
 
         /// <summary>
@@ -1211,14 +1824,32 @@ namespace SoftMaskLight
             for (int i = 0; i < _toRemove.Count; i++)
             {
                 _originalChildMaterials.Remove(_toRemove[i]);
-                _tmpAppliedMaskMats.Remove(_toRemove[i]);
+                if (_tmpAppliedMaskMats.TryGetValue(_toRemove[i], out var destroyedTmpMat))
+                {
+                    _tmpAppliedMaskMats.Remove(_toRemove[i]);
+                    ReleaseTMPMaskMaterial(destroyedTmpMat);
+                }
+            }
+
+            // 파괴된 Graphic이 누적되지 않도록 정리 (마스킹 불가 목록 누수 방지)
+            if (_unmaskableChildren.Count > 0)
+                _unmaskableChildren.RemoveWhere(s_IsNullGraphic);
+
+            // 파괴된 Graphic의 TMP 원본 백업 엔트리 정리 (직렬화 리스트에 null 누적 방지)
+            for (int i = _tmpOriginalBackup.Count - 1; i >= 0; i--)
+            {
+                if (_tmpOriginalBackup[i].graphic == null)
+                    _tmpOriginalBackup.RemoveAt(i);
             }
 
             // 파괴된 프록시 정리
             for (int i = _childProxies.Count - 1; i >= 0; i--)
             {
                 if (_childProxies[i] == null)
+                {
+                    _childProxySet.Remove(_childProxies[i]);
                     _childProxies.RemoveAt(i);
+                }
             }
             for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
             {
@@ -1236,33 +1867,63 @@ namespace SoftMaskLight
         /// </summary>
         private void CleanupStaleProxyMaterials()
         {
-            if (_sharedProxyMaterials.Count == 0) return;
-
-            _toRemoveMaterials.Clear();
-            foreach (var kvp in _sharedProxyMaterials)
+            if (_sharedProxyMaterials.Count > 0)
             {
-                // 키(baseMaterial)가 파괴됨 → 프록시도 함께 파괴
-                if (kvp.Key == null)
+                _toRemoveMaterials.Clear();
+                foreach (var kvp in _sharedProxyMaterials)
                 {
-                    if (kvp.Value != null)
+                    // 키(baseMaterial)가 파괴됨 → 프록시도 함께 파괴
+                    if (kvp.Key == null)
+                    {
+                        if (kvp.Value != null)
+                        {
+                            _proxyMaterialSet.Remove(kvp.Value);
+                            if (Application.isPlaying) Destroy(kvp.Value);
+                            else DestroyImmediate(kvp.Value);
+                        }
+                        _toRemoveMaterials.Add(kvp.Key);
+                        continue;
+                    }
+                    // 값(proxyMaterial)이 외부에서 파괴됨 → 엔트리만 제거
+                    if (kvp.Value == null)
                     {
                         _proxyMaterialSet.Remove(kvp.Value);
-                        if (Application.isPlaying) Destroy(kvp.Value);
-                        else DestroyImmediate(kvp.Value);
+                        _toRemoveMaterials.Add(kvp.Key);
                     }
-                    _toRemoveMaterials.Add(kvp.Key);
-                    continue;
                 }
-                // 값(proxyMaterial)이 외부에서 파괴됨 → 엔트리만 제거
-                if (kvp.Value == null)
-                {
-                    _proxyMaterialSet.Remove(kvp.Value);
-                    _toRemoveMaterials.Add(kvp.Key);
-                }
+
+                for (int i = 0; i < _toRemoveMaterials.Count; i++)
+                    _sharedProxyMaterials.Remove(_toRemoveMaterials[i]);
             }
 
-            for (int i = 0; i < _toRemoveMaterials.Count; i++)
-                _sharedProxyMaterials.Remove(_toRemoveMaterials[i]);
+            // UIEffect 공유 프록시 캐시도 동일하게 정리
+            // (UIEffect가 설정 변경으로 baseMaterial을 재생성하면 옛 키가 파괴됨)
+            if (_uiEffectProxyMaterials.Count > 0)
+            {
+                _toRemoveMaterials.Clear();
+                foreach (var kvp in _uiEffectProxyMaterials)
+                {
+                    if (kvp.Key == null)
+                    {
+                        if (kvp.Value != null)
+                        {
+                            _uiEffectProxyMaterialSet.Remove(kvp.Value);
+                            if (Application.isPlaying) Destroy(kvp.Value);
+                            else DestroyImmediate(kvp.Value);
+                        }
+                        _toRemoveMaterials.Add(kvp.Key);
+                        continue;
+                    }
+                    if (kvp.Value == null)
+                    {
+                        _uiEffectProxyMaterialSet.Remove(kvp.Value);
+                        _toRemoveMaterials.Add(kvp.Key);
+                    }
+                }
+
+                for (int i = 0; i < _toRemoveMaterials.Count; i++)
+                    _uiEffectProxyMaterials.Remove(_toRemoveMaterials[i]);
+            }
         }
 
         // ─────────────────────────────────────────────
@@ -1283,6 +1944,7 @@ namespace SoftMaskLight
             if (childProxy != null && !childProxy.IsCleanedUp)
             {
                 _childProxies.Remove(childProxy);
+                _childProxySet.Remove(childProxy);
                 childProxy.Cleanup();
             }
 
@@ -1294,6 +1956,12 @@ namespace SoftMaskLight
         /// 자식 오브젝트에 공유 마스크 Material 적용
         /// </summary>
         public void ApplyMaskToChildren()
+        {
+            using (s_MarkerApplyMask.Auto())
+                ApplyMaskToChildrenInternal();
+        }
+
+        private void ApplyMaskToChildrenInternal()
         {
             if (!_initialized) return;
 
@@ -1325,7 +1993,11 @@ namespace SoftMaskLight
                         tmpText.fontSharedMaterial = backup;
                     }
 
-                    if (originalFontMat == null) continue;
+                    if (originalFontMat == null)
+                    {
+                        _unmaskableChildren.Add(child);
+                        continue;
+                    }
 
                     _originalChildMaterials[child] = originalFontMat;
                     SaveTMPOriginalBackup(child, originalFontMat);
@@ -1388,8 +2060,23 @@ namespace SoftMaskLight
                 }
 
                 // Optional Shader 존재 확인 (없으면 마스킹 불가 → 스킵)
+                // 스킵된 자식은 기록해 둔다. 기록하지 않으면 다음 스캔에서 다시 "미등록 자식"으로
+                // 잡혀 ApplyMaskToChildren이 매번 재호출되는 무한 재적용 루프가 된다.
                 Shader optShader = FindOptionalShader(child.material != null ? child.material.shader : null);
-                if (optShader == null) continue;
+                if (optShader == null)
+                {
+                    _unmaskableChildren.Add(child);
+                    continue;
+                }
+
+                // 다른 마스크(외부 마스크)가 관리 중이던 자식을 인수하는 경우
+                // → 이전 마스크의 추적에서 먼저 제거하여 프로퍼티 경합(깜빡임) 방지
+                // (이 과정에서 기존 프록시가 정리될 수 있으므로 반드시 생성 판단 이전에 수행)
+                if (existingProxy != null && !existingProxy.IsCleanedUp &&
+                    existingProxy.SoftMask != null && existingProxy.SoftMask != this)
+                {
+                    existingProxy.SoftMask.NotifyChildMovedOut(child);
+                }
 
                 // 프록시 컴포넌트 생성 및 초기화
                 if (existingProxy == null || existingProxy.IsCleanedUp)
@@ -1397,7 +2084,7 @@ namespace SoftMaskLight
 
                 existingProxy.Initialize(this);
 
-                if (!_childProxies.Contains(existingProxy))
+                if (_childProxySet.Add(existingProxy))
                     _childProxies.Add(existingProxy);
 
                 // 프록시 관리 자식으로 등록 (원본 Material = null: 프록시가 관리)
@@ -1421,16 +2108,17 @@ namespace SoftMaskLight
             // 프록시 관리 자식 (originalMat == null): UIEffect 또는 일반 프록시
             if (originalMat == null)
             {
-                // UIEffect 프록시 제거
+                // 주의: 다른 SoftMaskLight(예: 런타임에 삽입된 중첩 마스크)가 이미 인수한
+                // 프록시는 파괴하지 않음 — 이 마스크 소유의 프록시만 정리
                 var uiProxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
-                if (uiProxy != null && !uiProxy.IsCleanedUp)
+                if (uiProxy != null && !uiProxy.IsCleanedUp && uiProxy.SoftMask == this)
                     uiProxy.Cleanup();
 
-                // 일반 프록시 제거
                 var childProxy = child.GetComponent<SoftMaskLightChildProxy>();
-                if (childProxy != null && !childProxy.IsCleanedUp)
+                if (childProxy != null && !childProxy.IsCleanedUp && childProxy.SoftMask == this)
                 {
                     _childProxies.Remove(childProxy);
+                    _childProxySet.Remove(childProxy);
                     childProxy.Cleanup();
                 }
                 else
@@ -1446,13 +2134,29 @@ namespace SoftMaskLight
             else
                 child.material = originalMat;
 
-            // TMP 마스크 Material 정리
+            // TMP 마스크 Material 정리 (공유 중이면 마지막 사용자만 파괴)
             if (_tmpAppliedMaskMats.TryGetValue(child, out var tmpMat))
             {
-                if (tmpMat != null) { if (Application.isPlaying) Destroy(tmpMat); else DestroyImmediate(tmpMat); }
-                _tmpMaskMaterials.Remove(tmpMat);
                 _tmpAppliedMaskMats.Remove(child);
+                ReleaseTMPMaskMaterial(tmpMat);
             }
+        }
+
+        /// <summary>
+        /// 자식이 마스크 밖으로 이동했을 때 프록시가 호출하는 즉시 복원 경로
+        /// (플레이모드에서 SetParent 등으로 이탈 시 8프레임 스로틀을 기다리지 않고 복원)
+        /// </summary>
+        internal void NotifyChildMovedOut(UnityEngine.UI.Graphic child)
+        {
+            if (child == null) return;
+            if (!_originalChildMaterials.TryGetValue(child, out var origMat)) return;
+
+            // 아직 이 마스크에 직접 속해 있으면 무시 (마스크 내부 이동)
+            if (child.transform.IsChildOf(transform) && BelongsToThisMask(child.transform)) return;
+
+            RestoreSingleChild(child, origMat);
+            _originalChildMaterials.Remove(child);
+            _tmpAppliedMaskMats.Remove(child);
         }
 
         /// <summary>
@@ -1494,6 +2198,7 @@ namespace SoftMaskLight
             }
             _tmpMaskMaterials.Clear();
             _tmpAppliedMaskMats.Clear();
+            _tmpSharedMaskMats.Clear();
 
             // 공유 프록시 Material 파괴
             foreach (var mat in _sharedProxyMaterials.Values)
@@ -1507,6 +2212,18 @@ namespace SoftMaskLight
             _sharedProxyMaterials.Clear();
             _proxyMaterialSet.Clear();
 
+            // UIEffect 공유 프록시 Material 파괴 (소유권은 SoftMaskLight)
+            foreach (var mat in _uiEffectProxyMaterials.Values)
+            {
+                if (mat != null)
+                {
+                    if (Application.isPlaying) Destroy(mat);
+                    else DestroyImmediate(mat);
+                }
+            }
+            _uiEffectProxyMaterials.Clear();
+            _uiEffectProxyMaterialSet.Clear();
+
             // SoftMaskLightChildProxy 컴포넌트 정리
             for (int i = 0; i < _childProxies.Count; i++)
             {
@@ -1514,6 +2231,8 @@ namespace SoftMaskLight
                     _childProxies[i].Cleanup();
             }
             _childProxies.Clear();
+            _childProxySet.Clear();
+            _unmaskableChildren.Clear();
 
             // UIEffect 프록시 컴포넌트 정리
             for (int i = 0; i < _uiEffectProxies.Count; i++)
@@ -1581,12 +2300,11 @@ namespace SoftMaskLight
                     continue;
                 }
 
-                // 기존 마스크 Material 정리
-                if (_tmpAppliedMaskMats.TryGetValue(child, out Material oldMaskMat) && oldMaskMat != null)
+                // 기존 마스크 Material 정리 (공유 중이면 마지막 사용자만 파괴)
+                if (_tmpAppliedMaskMats.TryGetValue(child, out Material oldMaskMat))
                 {
-                    _tmpMaskMaterials.Remove(oldMaskMat);
-                    if (Application.isPlaying) Destroy(oldMaskMat);
-                    else DestroyImmediate(oldMaskMat);
+                    _tmpAppliedMaskMats.Remove(child);
+                    ReleaseTMPMaskMaterial(oldMaskMat);
                 }
 
                 // 사용자의 새 Material 가져오기
@@ -1635,6 +2353,11 @@ namespace SoftMaskLight
         /// </summary>
         private Material CreateTMPMaskMaterial(Material originalTMPMat)
         {
+            // 동일 원본 폰트 Material을 쓰는 자식끼리 마스크 Material 공유 (드로우콜 N → 1)
+            if (originalTMPMat != null &&
+                _tmpSharedMaskMats.TryGetValue(originalTMPMat, out var shared) && shared != null)
+                return shared;
+
             Shader shader = GetCachedTMPShader();
             if (shader == null) return null;
 
@@ -1655,6 +2378,7 @@ namespace SoftMaskLight
             {
                 tmpMat.EnableKeyword(keyword);
             }
+            ResetRectMask2DMaterialState(tmpMat);
 
             // 렌더 큐 보존
             tmpMat.renderQueue = originalTMPMat.renderQueue;
@@ -1664,6 +2388,7 @@ namespace SoftMaskLight
             {
                 Debug.LogWarning($"[SoftMaskLight] TMP 셰이더가 지원되지 않습니다: {TMP_SHADER_NAME}");
                 _tmpMaskMaterials.Add(tmpMat);
+                if (originalTMPMat != null) _tmpSharedMaskMats[originalTMPMat] = tmpMat;
                 return tmpMat;
             }
 
@@ -1671,7 +2396,33 @@ namespace SoftMaskLight
             ApplyMaskPropertiesToTMPMaterial(tmpMat);
 
             _tmpMaskMaterials.Add(tmpMat);
+            if (originalTMPMat != null) _tmpSharedMaskMats[originalTMPMat] = tmpMat;
             return tmpMat;
+        }
+
+        /// <summary>
+        /// TMP 마스크 Material 해제. 다른 TMP 자식이 아직 공유 중이면 유지하고,
+        /// 마지막 사용자가 해제할 때만 파괴한다.
+        /// 호출 전에 _tmpAppliedMaskMats에서 해당 자식 엔트리를 먼저 제거할 것.
+        /// </summary>
+        private void ReleaseTMPMaskMaterial(Material maskMat)
+        {
+            if (maskMat == null) return;
+
+            foreach (var m in _tmpAppliedMaskMats.Values)
+                if (m == maskMat) return; // 아직 다른 자식이 공유 중
+
+            _tmpMaskMaterials.Remove(maskMat);
+
+            // 공유 캐시에서 역방향 제거
+            _toRemoveMaterials.Clear();
+            foreach (var kvp in _tmpSharedMaskMats)
+                if (kvp.Value == maskMat) _toRemoveMaterials.Add(kvp.Key);
+            for (int i = 0; i < _toRemoveMaterials.Count; i++)
+                _tmpSharedMaskMats.Remove(_toRemoveMaterials[i]);
+
+            if (Application.isPlaying) Destroy(maskMat);
+            else DestroyImmediate(maskMat);
         }
 
         /// <summary>
@@ -1704,22 +2455,35 @@ namespace SoftMaskLight
             Vector4 maskUVRect = GetMaskUVRect();
 
             Matrix4x4 worldToUV = _cachedWorldToUV;
-            if (worldToUV.m00 == 0f && worldToUV.m11 == 0f)
+            if (!_cachedWorldToUVValid)
                 worldToUV = ComputeWorldToMaskUV();
 
+            // 소프트니스/인버트는 캐시가 아닌 현재 값 사용 (첫 프레임 캐시 미초기화 대비)
             mat.SetMatrix(PropTMPMaskWorldToUV, worldToUV);
-            mat.SetFloat(PropTMPSoftness, _cachedSoftness);
-            mat.SetFloat(PropTMPInvertMask, _cachedInvertMask ? 1f : 0f);
+            mat.SetFloat(PropTMPSoftnessRcp, SoftnessRcp(_softness));
+            mat.SetFloat(PropTMPInvertMask, _invertMask ? 1f : 0f);
             if (maskTex != null) mat.SetTexture(PropTMPMaskTex, maskTex);
             mat.SetVector(PropTMPMaskUVRect, maskUVRect);
 
-            // 슬라이스 프로퍼티
-            if (_cachedIsSliced)
+            // 형태 대응 프로퍼티 (_SOFTMASK_SLICE 하나가 마스크 1·2를 모두 담당)
+            // 지연 캐시가 아닌 지오메트리 캐시 게터 사용 — 첫 프레임부터 올바른 형태 적용 보장
+            bool hasParent = _hasParentMask && _parentSoftMask != null;
+            if (IsSlicedMask() || (hasParent && _parentSoftMask.IsSlicedMask()))
             {
                 if (!mat.IsKeywordEnabled(KEYWORD_SLICE))
                     mat.EnableKeyword(KEYWORD_SLICE);
-                mat.SetVector(PropTMPMaskSliceBorder, _cachedSliceBorder);
-                mat.SetVector(PropTMPMaskSliceInnerUV, _cachedSliceInnerUV);
+                mat.SetVector(PropTMPMaskSliceBorder, GetMaskSliceBorder());
+                mat.SetVector(PropTMPMaskSliceInnerUV, GetMaskSliceInnerUV());
+                mat.SetVector(PropTMPMaskSliceSlopeX, GetMaskSliceSlopeX());
+                mat.SetVector(PropTMPMaskSliceSlopeY, GetMaskSliceSlopeY());
+                mat.SetVector(PropTMPMaskFillLineA, GetMaskFillLineA());
+                mat.SetVector(PropTMPMaskFillLineB, GetMaskFillLineB());
+                mat.SetVector(PropTMPMaskSliceBorder2, hasParent ? _parentSoftMask.GetMaskSliceBorder() : IdentitySlice);
+                mat.SetVector(PropTMPMaskSliceInnerUV2, hasParent ? _parentSoftMask.GetMaskSliceInnerUV() : IdentitySlice);
+                mat.SetVector(PropTMPMaskSliceSlopeX2, hasParent ? _parentSoftMask.GetMaskSliceSlopeX() : IdentitySliceSlope);
+                mat.SetVector(PropTMPMaskSliceSlopeY2, hasParent ? _parentSoftMask.GetMaskSliceSlopeY() : IdentitySliceSlope);
+                mat.SetVector(PropTMPMaskFillLineA2, hasParent ? _parentSoftMask.GetMaskFillLineA() : IdentityFillLine);
+                mat.SetVector(PropTMPMaskFillLineB2, hasParent ? _parentSoftMask.GetMaskFillLineB() : IdentityFillLineB);
             }
             else if (mat.IsKeywordEnabled(KEYWORD_SLICE))
             {
@@ -1733,28 +2497,15 @@ namespace SoftMaskLight
                     mat.EnableKeyword(KEYWORD_NESTED);
 
                 Matrix4x4 parentWorldToUV = _cachedParentWorldToUV;
-                if (parentWorldToUV.m00 == 0f && parentWorldToUV.m11 == 0f)
+                if (!_cachedParentWorldToUVValid)
                     parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
                 mat.SetMatrix(PropTMPMaskWorldToUV2, parentWorldToUV);
-                mat.SetFloat(PropTMPSoftness2, _cachedParentSoftness);
-                mat.SetFloat(PropTMPInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+                mat.SetFloat(PropTMPSoftnessRcp2, SoftnessRcp(_parentSoftMask._softness));
+                mat.SetFloat(PropTMPInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
 
                 Texture parentTex = _parentSoftMask.GetMaskTexture();
                 if (parentTex != null) mat.SetTexture(PropTMPMaskTex2, parentTex);
                 mat.SetVector(PropTMPMaskUVRect2, _parentSoftMask.GetMaskUVRect());
-
-                // 중첩 슬라이스 프로퍼티
-                if (_cachedParentIsSliced)
-                {
-                    if (!mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                        mat.EnableKeyword(KEYWORD_NESTED_SLICE);
-                    mat.SetVector(PropTMPMaskSliceBorder2, _cachedParentSliceBorder);
-                    mat.SetVector(PropTMPMaskSliceInnerUV2, _cachedParentSliceInnerUV);
-                }
-                else if (mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                {
-                    mat.DisableKeyword(KEYWORD_NESTED_SLICE);
-                }
             }
             else
             {
@@ -1772,8 +2523,12 @@ namespace SoftMaskLight
         /// </summary>
         private static bool IsUIEffectGraphic(UnityEngine.UI.Graphic child)
         {
+#if UIEFFECT_ENABLED
             return child.GetComponent<UIEffect>() != null
                 || child.GetComponent<UIEffectReplica>() != null;
+#else
+            return false;
+#endif
         }
 
         /// <summary>
@@ -1790,6 +2545,14 @@ namespace SoftMaskLight
             // Cleanup() → Destroy(this)로 프레임 끝 지연 파괴 중인 zombie 프록시는 재사용 불가
             // → 새 프록시 추가 (zombie는 GetModifiedMaterial에서 패스스루, OnDestroy에서 머티리얼 미파괴)
             var proxy = child.GetComponent<UIEffectSoftMaskLightProxy>();
+
+            // 다른 마스크가 관리 중이던 자식 인수 → 이전 마스크 추적을 먼저 제거 (경합 방지)
+            if (proxy != null && !proxy.IsCleanedUp &&
+                proxy.SoftMask != null && proxy.SoftMask != this)
+            {
+                proxy.SoftMask.NotifyChildMovedOut(child);
+            }
+
             if (proxy == null || proxy.IsCleanedUp)
                 proxy = child.gameObject.AddComponent<UIEffectSoftMaskLightProxy>();
 
@@ -1808,6 +2571,78 @@ namespace SoftMaskLight
         }
 
         /// <summary>
+        /// UIEffectSoftMaskLightProxy에서 호출하여 공유 프록시 Material을 조회/생성.
+        /// UIEffect는 이펙트 설정별로 baseMaterial을 공유하므로, 같은 baseMaterial을 가진
+        /// 자식끼리 프록시를 공유해 배칭을 유지한다 (소유권은 SoftMaskLight).
+        ///
+        /// baseMaterial이 마스크 프로퍼티(_MaskTex)를 갖지 않으면(= 패키지 UIEffect 셰이더)
+        /// 설정 에셋에 직렬화된 오버라이드 셰이더로 교체한다.
+        /// Shader.Find는 이름 충돌 시 임포트 순서에 따라 아무 쪽이나 선택하므로 사용하지 않는다.
+        /// 키워드는 Material에 보존되므로 셰이더 교체 후에도 UIEffect의 shader_feature 변형이 유지된다.
+        /// 오버라이드 부재 시 null 반환 (호출부에서 마스킹 스킵).
+        /// </summary>
+        internal Material GetOrCreateUIEffectProxyMaterial(Material baseMaterial)
+        {
+            if (baseMaterial == null) return null;
+
+            if (_uiEffectProxyMaterials.TryGetValue(baseMaterial, out var existing) && existing != null)
+            {
+                // CopyPropertiesFromMaterial은 TexEnv 시트를 원본으로 교체해 _MaskTex 슬롯이 사라진다.
+                // CopyMatching은 대상 고유 슬롯을 유지한다.
+                existing.CopyMatchingPropertiesFromMaterial(baseMaterial);
+                if (!existing.IsKeywordEnabled(KEYWORD_CAT_SOFTMASK))
+                    existing.EnableKeyword(KEYWORD_CAT_SOFTMASK);
+                ResetRectMask2DMaterialState(existing);
+                ApplyMaskPropertiesToMaterial(existing);
+                Texture existingMask = GetMaskTexture();
+                if (existingMask == null || existing.GetTexture(PropMaskTex) != null)
+                    return existing;
+
+                _uiEffectProxyMaterials.Remove(baseMaterial);
+                _uiEffectProxyMaterialSet.Remove(existing);
+                if (Application.isPlaying) Destroy(existing);
+                else DestroyImmediate(existing);
+            }
+
+            // 패키지 UIEffect 셰이더면 마스크 대응 오버라이드로 교체 필요
+            Shader overrideShader = null;
+            if (!baseMaterial.HasProperty(PropMaskTex))
+            {
+                var settings = SoftMaskLightSettings.Instance;
+                overrideShader = settings != null ? settings.UIEffectOverrideShader : null;
+                if (overrideShader == null) return null; // 오버라이드 부재 → 마스킹 불가
+            }
+
+            // 오버라이드 셰이더로 생성해야 _MaskTex TexEnv 슬롯이 생긴다.
+            Material proxy;
+            if (overrideShader != null)
+            {
+                proxy = new Material(overrideShader)
+                {
+                    name = $"UIEffect Proxy (SoftMaskLight: {gameObject.name})",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+                proxy.CopyMatchingPropertiesFromMaterial(baseMaterial);
+            }
+            else
+            {
+                proxy = new Material(baseMaterial)
+                {
+                    name = $"UIEffect Proxy (SoftMaskLight: {gameObject.name})",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+
+            proxy.EnableKeyword(KEYWORD_CAT_SOFTMASK);
+            ResetRectMask2DMaterialState(proxy);
+            ApplyMaskPropertiesToMaterial(proxy);
+
+            _uiEffectProxyMaterials[baseMaterial] = proxy;
+            _uiEffectProxyMaterialSet.Add(proxy);
+            return proxy;
+        }
+
+        /// <summary>
         /// 지정된 머티리얼에 현재 마스크 프로퍼티를 적용
         /// UIEffectSoftMaskLightProxy.GetModifiedMaterial()에서 호출되어
         /// 캔버스 리빌드 시점에 프록시 머티리얼에 마스크 프로퍼티를 직접 적용
@@ -1823,25 +2658,39 @@ namespace SoftMaskLight
             Vector4 maskUVRect = GetMaskUVRect();
 
             // 캐시가 아직 초기화되지 않았을 수 있으므로 (GetModifiedMaterial이 LateUpdate 이전에 호출되는 경우)
-            // 캐시가 zero matrix이면 직접 계산하여 안전한 값 보장
+            // 캐시 미초기화 시 직접 계산하여 안전한 값 보장
             Matrix4x4 worldToUV = _cachedWorldToUV;
-            if (worldToUV.m00 == 0f && worldToUV.m11 == 0f)
+            if (!_cachedWorldToUVValid)
                 worldToUV = ComputeWorldToMaskUV();
 
-            // 기본 마스크 프로퍼티
+            // 기본 마스크 프로퍼티 (소프트니스/인버트는 첫 프레임 캐시 미초기화 대비로 현재 값 사용)
             mat.SetMatrix(PropMaskWorldToUV, worldToUV);
-            mat.SetFloat(PropSoftness, _cachedSoftness);
-            mat.SetFloat(PropInvertMask, _cachedInvertMask ? 1f : 0f);
+            mat.SetFloat(PropSoftnessRcp, SoftnessRcp(_softness));
+            mat.SetFloat(PropInvertMask, _invertMask ? 1f : 0f);
             if (maskTex != null) mat.SetTexture(PropMaskTex, maskTex);
             mat.SetVector(PropMaskUVRect, maskUVRect);
 
-            // 슬라이스 프로퍼티
-            if (_cachedIsSliced)
+            // 형태 대응 프로퍼티 (_SOFTMASK_SLICE 하나가 마스크 1·2를 모두 담당)
+            // 지연 캐시가 아닌 지오메트리 캐시 게터 사용 — UpdateSharedMaterial 조기 리턴 상태에서
+            // 프록시가 새로 생성돼도 첫 프레임부터 올바른 형태가 적용되도록 (비용 동일: 프레임당 1회 검증)
+            bool hasParent = _hasParentMask && _parentSoftMask != null;
+            bool anySliced = IsSlicedMask() || (hasParent && _parentSoftMask.IsSlicedMask());
+            if (anySliced)
             {
                 if (!mat.IsKeywordEnabled(KEYWORD_SLICE))
                     mat.EnableKeyword(KEYWORD_SLICE);
-                mat.SetVector(PropMaskSliceBorder, _cachedSliceBorder);
-                mat.SetVector(PropMaskSliceInnerUV, _cachedSliceInnerUV);
+                mat.SetVector(PropMaskSliceBorder, GetMaskSliceBorder());
+                mat.SetVector(PropMaskSliceInnerUV, GetMaskSliceInnerUV());
+                mat.SetVector(PropMaskSliceSlopeX, GetMaskSliceSlopeX());
+                mat.SetVector(PropMaskSliceSlopeY, GetMaskSliceSlopeY());
+                mat.SetVector(PropMaskFillLineA, GetMaskFillLineA());
+                mat.SetVector(PropMaskFillLineB, GetMaskFillLineB());
+                mat.SetVector(PropMaskSliceBorder2, hasParent ? _parentSoftMask.GetMaskSliceBorder() : IdentitySlice);
+                mat.SetVector(PropMaskSliceInnerUV2, hasParent ? _parentSoftMask.GetMaskSliceInnerUV() : IdentitySlice);
+                mat.SetVector(PropMaskSliceSlopeX2, hasParent ? _parentSoftMask.GetMaskSliceSlopeX() : IdentitySliceSlope);
+                mat.SetVector(PropMaskSliceSlopeY2, hasParent ? _parentSoftMask.GetMaskSliceSlopeY() : IdentitySliceSlope);
+                mat.SetVector(PropMaskFillLineA2, hasParent ? _parentSoftMask.GetMaskFillLineA() : IdentityFillLine);
+                mat.SetVector(PropMaskFillLineB2, hasParent ? _parentSoftMask.GetMaskFillLineB() : IdentityFillLineB);
             }
             else if (mat.IsKeywordEnabled(KEYWORD_SLICE))
             {
@@ -1855,28 +2704,15 @@ namespace SoftMaskLight
                     mat.EnableKeyword(KEYWORD_NESTED);
 
                 Matrix4x4 parentWorldToUV = _cachedParentWorldToUV;
-                if (parentWorldToUV.m00 == 0f && parentWorldToUV.m11 == 0f)
+                if (!_cachedParentWorldToUVValid)
                     parentWorldToUV = _parentSoftMask.ComputeWorldToMaskUV();
                 mat.SetMatrix(PropMaskWorldToUV2, parentWorldToUV);
-                mat.SetFloat(PropSoftness2, _cachedParentSoftness);
-                mat.SetFloat(PropInvertMask2, _cachedParentInvertMask ? 1f : 0f);
+                mat.SetFloat(PropSoftnessRcp2, SoftnessRcp(_parentSoftMask._softness));
+                mat.SetFloat(PropInvertMask2, _parentSoftMask._invertMask ? 1f : 0f);
 
                 Texture parentTex = _parentSoftMask.GetMaskTexture();
                 if (parentTex != null) mat.SetTexture(PropMaskTex2, parentTex);
                 mat.SetVector(PropMaskUVRect2, _parentSoftMask.GetMaskUVRect());
-
-                // 중첩 슬라이스 프로퍼티
-                if (_cachedParentIsSliced)
-                {
-                    if (!mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                        mat.EnableKeyword(KEYWORD_NESTED_SLICE);
-                    mat.SetVector(PropMaskSliceBorder2, _cachedParentSliceBorder);
-                    mat.SetVector(PropMaskSliceInnerUV2, _cachedParentSliceInnerUV);
-                }
-                else if (mat.IsKeywordEnabled(KEYWORD_NESTED_SLICE))
-                {
-                    mat.DisableKeyword(KEYWORD_NESTED_SLICE);
-                }
             }
             else
             {
@@ -1892,20 +2728,12 @@ namespace SoftMaskLight
         /// </summary>
         private void UpdateUIEffectMaterials()
         {
-            if (_uiEffectProxies.Count == 0) return;
+            // 공유 캐시를 직접 순회 — 프록시 컴포넌트 수와 무관하게 Material당 1회만 적용
+            if (_uiEffectProxyMaterials.Count == 0) return;
 
-            for (int i = _uiEffectProxies.Count - 1; i >= 0; i--)
+            foreach (var mat in _uiEffectProxyMaterials.Values)
             {
-                var proxy = _uiEffectProxies[i];
-                if (proxy == null)
-                {
-                    _uiEffectProxies.RemoveAt(i);
-                    continue;
-                }
-
-                Material mat = proxy.ProxyMaterial;
                 if (mat == null) continue;
-
                 ApplyMaskPropertiesToMaterial(mat);
             }
         }
@@ -1929,9 +2757,12 @@ namespace SoftMaskLight
 
                 // 프록시 머티리얼이 null이면 UIEffect가 머티리얼을 재생성한 것
                 // → SetMaterialDirty()로 GetModifiedMaterial() 재호출 트리거
-                if (proxy.ProxyMaterial == null)
+                //
+                // 비활성 오브젝트는 캔버스 리빌드가 없어 ProxyMaterial이 영원히 null이므로,
+                // 그대로 두면 매 프레임 헛도는 호출이 된다. 활성 상태에서만 처리한다.
+                if (proxy.ProxyMaterial == null && proxy.isActiveAndEnabled)
                 {
-                    var graphic = proxy.GetComponent<UnityEngine.UI.Graphic>();
+                    var graphic = proxy.OwnerGraphic;
                     if (graphic != null) graphic.SetMaterialDirty();
                 }
             }
@@ -1976,12 +2807,7 @@ namespace SoftMaskLight
         /// </summary>
         private bool IsUIEffectProxyMaterial(Material mat)
         {
-            for (int i = 0; i < _uiEffectProxies.Count; i++)
-            {
-                if (_uiEffectProxies[i] != null && _uiEffectProxies[i].ProxyMaterial == mat)
-                    return true;
-            }
-            return false;
+            return _uiEffectProxyMaterialSet.Contains(mat);
         }
 
         // ─────────────────────────────────────────────
@@ -2017,29 +2843,6 @@ namespace SoftMaskLight
                     return _tmpOriginalBackup[i].material;
             }
             return null;
-        }
-
-        /// <summary>
-        /// SoftMask 셰이더 가져오기
-        /// 직렬화 참조 → 정적 캐시 → Shader.Find() 순으로 폴백
-        /// 직렬화 참조가 있으면 빌드에 셰이더가 자동 포함되어 Shader.Find() 실패를 방지
-        /// </summary>
-        private Shader GetCachedShader()
-        {
-            if (_maskShader != null)
-            {
-                s_cachedShader = _maskShader;
-                return _maskShader;
-            }
-
-            if (s_cachedShader != null) return s_cachedShader;
-
-            s_cachedShader = Shader.Find(SHADER_NAME);
-            if (s_cachedShader == null)
-            {
-                Debug.LogError($"[SoftMaskLight] 셰이더를 찾을 수 없습니다: {SHADER_NAME}");
-            }
-            return s_cachedShader;
         }
 
         /// <summary>

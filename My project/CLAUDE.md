@@ -218,22 +218,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - 키워드: `_SOFTMASK_NESTED`, `_SOFTMASK_SLICE`, `_SOFTMASK_NESTED_SLICE` (multi_compile_local)
    - 상세 가이드: `Assets/Plugins/CAT/SoftMaskLight/README.md` 참조
 
-2. **mob-sakai SoftMaskable 변형 셰이더 생성** (필수, 파티클/커스텀 블렌드 모드 셰이더)
-   - 파일: `Hidden/{원본셰이더경로} (SoftMaskable)`
-   - 원본 셰이더를 복사 + `SOFTMASKABLE` shader_feature + `SoftMask.cginc` include
-   - v2f에 `float4 worldPosition : TEXCOORD_N`, frag에 `SoftMask(IN.vertex, IN.worldPosition, col.a)`
-   - **중요**: 블렌드 모드를 반드시 원본과 동일하게 유지 (Additive: `Blend SrcAlpha One`, AlphaBlend: `Blend SrcAlpha OneMinusSrcAlpha`)
-   - 안 만들면 mob-sakai가 `Hidden/UI/Default (SoftMaskable)`로 폴백 → 블렌드 모드 깨짐
+2. **mob-sakai SoftMaskable 변형 셰이더** (⚠️ SoftMaskLight v2.3.0에서 대응 완전 제거됨)
+   - `(SoftMaskable)` 변형 5종은 삭제되었고, 새로 만들지 않는다. 하나의 Graphic에 두 마스크를
+     동시에 걸 수 없으며, `FindOptionalShader()`가 `(SoftMaskable)` 셰이더를 만나면 경고 후 스킵한다.
+   - mob-sakai SoftMask를 다시 도입할 경우에만 아래 규칙 적용:
+     파일 `Hidden/{원본셰이더경로} (SoftMaskable)`, `SOFTMASKABLE` shader_feature + `SoftMask.cginc` include,
+     **블렌드 모드는 반드시 원본과 동일하게 유지** (안 만들면 `Hidden/UI/Default (SoftMaskable)` 폴백 → 블렌드 모드 깨짐)
 
 3. **셰이더 등록** (빌드에서 누락 방지)
    - `SoftMaskLightInstaller.cs`의 `HiddenShaderNames` 배열에 두 변형 모두 추가
    - 에디터에서 `Tools > SoftMaskLight > Refresh Settings` 실행
    - `SoftMaskLightSettings.asset` 인스펙터에서 셰이더 목록 확인
 
-4. **UIEffect 셰이더 특수 처리** (해당 시)
-   - UIEffect는 `shader_feature_local_fragment` 기반이므로 Hidden 셰이더 교체가 아닌 **키워드 방식** 사용
-   - `#pragma multi_compile_local _ _CAT_SOFTMASK` 추가
-   - `UIEffectSoftMaskLightProxy`가 키워드를 활성화하여 마스킹 적용
+4. **UIEffect 셰이더 특수 처리** (해당 시, v2.4 기준)
+   - 오버라이드 셰이더는 패키지 셰이더와 **다른 고유 이름** 사용: `Hidden/UI/Default (UIEffect) (SoftMaskLight)`
+     (동일 이름 섀도잉은 Shader.Find 임포트 순서에 따라 마스킹이 조용히 꺼지는 실장애가 있었음)
+   - `#pragma multi_compile_local _ _CAT_SOFTMASK` + 이펙트 키워드는 shader_feature 유지
+   - `UIEffectSoftMaskLightProxy`가 공유 프록시 Material의 셰이더를 오버라이드로 교체하고 키워드 활성화
+     (오버라이드 참조는 `SoftMaskLightSettings.asset`의 `_uiEffectOverrideShader` 직렬화 바인딩)
 
 5. **C# 스크립트에서 SoftMaskLight 특수 처리 불필요** (v2.1 이후)
    - SoftMaskLight는 `IMaterialModifier` 프록시 패턴으로 `graphic.m_Material`을 수정하지 않음
@@ -245,16 +247,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 시스템 | 접미사 | 예시 |
 |--------|--------|------|
 | SoftMaskLight | `(SoftMaskLight)` | `Hidden/CAT/Effects/ColorReplace (SoftMaskLight)` |
-| mob-sakai SoftMask | `(SoftMaskable)` | `Hidden/SoftMaskLight/Particles/UIAdditive (SoftMaskable)` |
+| mob-sakai SoftMask (v2.3에서 대응 제거, 재도입 시에만) | `(SoftMaskable)` | `Hidden/CAT/VFX/UIAdditive (SoftMaskable)` |
 
 #### 기존 변형 셰이더 위치 참고
 
 ```
-SoftMaskLight 변형:  Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/
-mob-sakai 변형:      Assets/Plugins/CAT/SoftMaskLight/Shader/Hidden/ (파티클)
-ColorReplace 변형:   Assets/Plugins/CAT/ColorReplace/Shader/
-UIShining 변형:      Assets/Plugins/CAT/UIShining/Shader/
-Windable 변형:       Assets/Plugins/CAT/Windable/Shader/
+SoftMaskLight 변형:  Assets/Plugins/CAT/SoftMaskLight/Resources/Shader/Hidden/
+mob-sakai 변형:      Assets/Plugins/CAT/SoftMaskLight/Resources/Shader/Hidden/ (파티클)
+ColorReplace 변형:   Assets/Plugins/CAT/SoftMaskLight/Resources/Shader/Hidden/ (플러그인 독립성 유지)
+UIShining 변형:      Assets/Plugins/CAT/SoftMaskLight/Resources/Shader/Hidden/ (플러그인 독립성 유지)
+Windable 변형:       Assets/Plugins/CAT/SoftMaskLight/Resources/Shader/Hidden/ (플러그인 독립성 유지)
 VFX 커스텀 변형:     Assets/VFX_Work/Shader/Hidden/
 ```
 
