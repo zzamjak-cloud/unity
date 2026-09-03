@@ -103,6 +103,25 @@ CATToonOutlineRuntime.Reset();
 `CATToonOutlineController` 컴포넌트를 씬에 두면 인스펙터에서 같은 값을 만질 수 있고,
 `Flash(Color, duration)` 로 피격 연출용 순간 색 변경도 가능합니다.
 
+## 성능
+
+모바일 기준 비용이 큰 순서입니다.
+
+| 항목 | 비용 | 대응 |
+| --- | --- | --- |
+| `Use Normal Edge` | **불투명 지오메트리 1회 추가 렌더**(URP DepthNormals 프리패스) + 픽셀당 노멀 샘플 5개 | 모바일에서는 끄기. 끄면 깊이만으로 평면 예측 오차를 계산해 실루엣/접힘을 검출하므로 프리패스가 사라진다 |
+| 풀스크린 아웃라인 패스 | 픽셀당 텍스처 샘플 10개(노멀 엣지 on) / 5개(off) | `Use Normal Edge` off, 필요하면 주입 시점을 뒤로 미뤄 그리는 픽셀 수 줄이기 |
+| 커스텀 렌더러 피처 | URP 의 `SupportsNativeRenderPass()` 가 `internal virtual` 이라 커스텀 피처는 Native Render Pass 병합에서 제외된다. 타일 기반 GPU 에서 컬러 어태치먼트 store/load 1회가 추가된다 | 우회 불가. 아웃라인이 필요 없는 씬에서는 피처를 꺼두기 |
+| 셰이더 배리언트 | `CAT/Toon/ToonLit` 의 이론상 배리언트 수는 URP Lit 과 동급(≈1.7e14), SimpleLit 대비 약 160배 | URP 빌드 스트리퍼가 RP Asset 에서 꺼진 기능의 배리언트를 제거하므로 빌드 크기 영향은 제한적. 에디터 셰이더 컴파일 시간을 줄이려면 아래 pragma 를 지울 수 있다 |
+
+프로젝트 설정상 쓰이지 않아 제거 가능한 pragma (`CAT_Toon.shader` ForwardLit 패스):
+`_LIGHT_COOKIES`, `_LIGHT_LAYERS`, `DYNAMICLIGHTMAP_ON`, `USE_LEGACY_LIGHTMAPS`,
+`LOD_FADE_CROSSFADE`, `ProbeVolumeVariants.hlsl`(RP Asset 이 Light Probe Groups 사용).
+지우면 해당 기능이 이 셰이더에서 조용히 동작하지 않으므로 필요할 때만 지운다.
+
+CPU 쪽은 머티리얼 프로퍼티를 매 프레임 다시 쓰지 않고, 해상도·런타임 오버라이드처럼
+실제로 바뀔 수 있는 값만 비교 후 반영한다. 나머지는 인스펙터 변경 시에만 갱신된다.
+
 ## 알려진 제약
 
 - 아웃라인은 화면 전체에 적용됩니다. 특정 오브젝트만 제외하려면 별도 마스크 패스가 필요합니다.

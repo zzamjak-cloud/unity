@@ -69,6 +69,10 @@ namespace CAT.Toon
             public float grazingSuppress = 0.7f;
 
             [Header("노멀 엣지 (내부 크리스)")]
+            [Tooltip("옷 주름·관절 같은 내부 크리스까지 그립니다.\n" +
+                     "켜면 URP 가 불투명 지오메트리를 한 번 더 그리는 DepthNormals 프리패스를 추가하고 " +
+                     "픽셀당 노멀 샘플이 5개 늘어납니다. 모바일에서는 끄는 쪽을 권장합니다.\n" +
+                     "끄면 깊이만으로 평면 예측 오차를 계산해 실루엣/접힘을 검출합니다.")]
             public bool useNormalEdge = true;
 
             [Range(0f, 2f)]
@@ -123,6 +127,7 @@ namespace CAT.Toon
 
             m_Pass ??= new CATToonOutlinePass();
             m_Pass.Setup(m_Material, settings);
+            m_Pass.MarkDirty();
         }
 
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
@@ -164,10 +169,17 @@ namespace CAT.Toon
             private static readonly int FadeEndId          = Shader.PropertyToID("_FadeEnd");
             private static readonly int SketchJitterId     = Shader.PropertyToID("_SketchJitter");
             private static readonly int SketchFrequencyId  = Shader.PropertyToID("_SketchFrequency");
-            private static readonly int UseNormalEdgeId    = Shader.PropertyToID("_UseNormalEdge");
+            private const string NormalEdgeKeyword = "_NORMAL_EDGE_ON";
 
             private Material m_Material;
             private Settings m_Settings;
+
+            // 매 프레임 SetXxx 를 반복하지 않도록 마지막으로 반영한 값을 캐시한다.
+            private bool    m_MaterialDirty = true;
+            private Vector4 m_LastTexelSize;
+            private Color   m_LastColor;
+            private float   m_LastThickness;
+            private bool    m_LastUseNormalEdge = true;
 
             private class PassData
             {
@@ -181,9 +193,24 @@ namespace CAT.Toon
                 m_Settings  = settings;
                 renderPassEvent = settings.injectionPoint;
 
-                // URP 가 _CameraDepthTexture / _CameraNormalsTexture 를 준비하도록 요청한다.
-                ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
+                // 노멀 엣지를 끄면 Normal 입력을 요청하지 않는다.
+                // Normal 을 요청하는 순간 URP 가 불투명 지오메트리를 한 번 더 그리는
+                // DepthNormals 프리패스를 추가하므로, 모바일에서는 이 차이가 가장 크다.
+                var input = ScriptableRenderPassInput.Depth;
+                if (settings.useNormalEdge)
+                    input |= ScriptableRenderPassInput.Normal;
+                ConfigureInput(input);
+
+                if (m_LastUseNormalEdge != settings.useNormalEdge)
+                {
+                    CoreUtils.SetKeyword(material, NormalEdgeKeyword, settings.useNormalEdge);
+                    m_LastUseNormalEdge = settings.useNormalEdge;
+                    m_MaterialDirty     = true;
+                }
             }
+
+            /// <summary>인스펙터 변경·도메인 리로드 후 전체 프로퍼티를 다시 반영하게 한다.</summary>
+            public void MarkDirty() => m_MaterialDirty = true;
 
             /// <summary>
             /// 실제 샘플링에 쓸 픽셀 두께를 구한다.
@@ -207,10 +234,32 @@ namespace CAT.Toon
                 float w = Mathf.Max(1, desc.width);
                 float h = Mathf.Max(1, desc.height);
 
-                m_Material.SetVector(OutlineTexelSizeId, new Vector4(1f / w, 1f / h, w, h));
+                // 해상도 / 런타임 오버라이드처럼 매 프레임 달라질 수 있는 값만 먼저 비교한다.
+                var   texel     = new Vector4(1f / w, 1f / h, w, h);
+                Color color     = CATToonOutlineRuntime.ResolveColor(m_Settings.outlineColor);
+                float thickness = ResolveThicknessPixels(h);
 
-                m_Material.SetColor(OutlineColorId, CATToonOutlineRuntime.ResolveColor(m_Settings.outlineColor));
-                m_Material.SetFloat(ThicknessId, ResolveThicknessPixels(h));
+                if (texel != m_LastTexelSize)
+                {
+                    m_Material.SetVector(OutlineTexelSizeId, texel);
+                    m_LastTexelSize = texel;
+                }
+                if (color != m_LastColor)
+                {
+                    m_Material.SetColor(OutlineColorId, color);
+                    m_LastColor = color;
+                }
+                if (!Mathf.Approximately(thickness, m_LastThickness))
+                {
+                    m_Material.SetFloat(ThicknessId, thickness);
+                    m_LastThickness = thickness;
+                }
+
+                // 나머지는 인스펙터에서만 바뀌므로 Setup() 이 dirty 를 세울 때만 반영한다.
+                if (!m_MaterialDirty)
+                    return;
+                m_MaterialDirty = false;
+
                 m_Material.SetFloat(DepthThresholdId, m_Settings.depthThreshold);
                 m_Material.SetFloat(DepthSmoothId, m_Settings.depthSmooth);
                 m_Material.SetFloat(NormalThresholdId, m_Settings.normalThreshold);
@@ -220,7 +269,6 @@ namespace CAT.Toon
                 m_Material.SetFloat(FadeEndId, Mathf.Max(m_Settings.fadeEnd, m_Settings.fadeStart + 0.01f));
                 m_Material.SetFloat(SketchJitterId, CATToonOutlineRuntime.ResolveSketchJitter(m_Settings.sketchJitter));
                 m_Material.SetFloat(SketchFrequencyId, m_Settings.sketchFrequency);
-                m_Material.SetFloat(UseNormalEdgeId, m_Settings.useNormalEdge ? 1f : 0f);
             }
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -234,7 +282,11 @@ namespace CAT.Toon
                 // 백버퍼에 직접 그리는 구성에서는 중간 텍스처가 없어 블렌딩 대상을 보장할 수 없다.
                 if (resourceData.isActiveTargetBackBuffer)
                     return;
-                if (!resourceData.cameraDepthTexture.IsValid() || !resourceData.cameraNormalsTexture.IsValid())
+                if (!resourceData.cameraDepthTexture.IsValid())
+                    return;
+
+                bool useNormals = m_Settings.useNormalEdge;
+                if (useNormals && !resourceData.cameraNormalsTexture.IsValid())
                     return;
 
                 UpdateMaterial(cameraData);
@@ -245,7 +297,8 @@ namespace CAT.Toon
                     passData.shaderPass = (int)CATToonOutlineRuntime.ResolveBlendMode(m_Settings.blendMode);
 
                     builder.UseTexture(resourceData.cameraDepthTexture, AccessFlags.Read);
-                    builder.UseTexture(resourceData.cameraNormalsTexture, AccessFlags.Read);
+                    if (useNormals)
+                        builder.UseTexture(resourceData.cameraNormalsTexture, AccessFlags.Read);
 
                     // 셰이더가 _CameraDepthTexture / _CameraNormalsTexture 전역 바인딩을 읽으므로
                     // RenderGraph 에 전역 텍스처 사용을 명시해야 실제로 바인딩된다.

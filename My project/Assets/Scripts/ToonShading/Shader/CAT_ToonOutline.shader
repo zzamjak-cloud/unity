@@ -32,7 +32,6 @@ Shader "CAT/Toon/ScreenSpaceOutline"
         float  _FadeEnd;
         float  _SketchJitter;
         float  _SketchFrequency;
-        float  _UseNormalEdge;
 
         float CAT_Hash21(float2 p)
         {
@@ -74,12 +73,13 @@ Shader "CAT/Toon/ScreenSpaceOutline"
 
             centerDepth = CAT_LinearDepth(uv);
 
-            // --- 깊이 엣지 -------------------------------------------------
             float d0 = CAT_LinearDepth(uv0);
             float d1 = CAT_LinearDepth(uv1);
             float d2 = CAT_LinearDepth(uv2);
             float d3 = CAT_LinearDepth(uv3);
 
+#ifdef _NORMAL_EDGE_ON
+            // --- 깊이 엣지: 로버츠 크로스 기울기 ---------------------------
             float2 depthDelta = float2(d1 - d0, d3 - d2);
             // 카메라에서 멀수록 같은 각도 차이도 깊이 차가 커지므로 중심 깊이로 나눠 정규화한다.
             float  depthDiff  = length(depthDelta) / max(centerDepth, 1e-4);
@@ -94,25 +94,33 @@ Shader "CAT/Toon/ScreenSpaceOutline"
             float depthEdge = smoothstep(depthThreshold, depthThreshold + max(_DepthSmooth, 1e-4), depthDiff);
 
             // --- 노멀 엣지 (내부 크리스) -----------------------------------
-            float normalEdge = 0.0;
-            if (_UseNormalEdge > 0.5)
-            {
-                float3 n0 = SampleSceneNormals(uv0);
-                float3 n1 = SampleSceneNormals(uv1);
-                float3 n2 = SampleSceneNormals(uv2);
-                float3 n3 = SampleSceneNormals(uv3);
+            float3 n0 = SampleSceneNormals(uv0);
+            float3 n1 = SampleSceneNormals(uv1);
+            float3 n2 = SampleSceneNormals(uv2);
+            float3 n3 = SampleSceneNormals(uv3);
 
-                float3 dn1 = n1 - n0;
-                float3 dn2 = n3 - n2;
-                float  normalDiff = sqrt(dot(dn1, dn1) + dot(dn2, dn2));
+            float3 dn1 = n1 - n0;
+            float3 dn2 = n3 - n2;
+            float  normalDiff = sqrt(dot(dn1, dn1) + dot(dn2, dn2));
 
-                normalEdge = smoothstep(_NormalThreshold, _NormalThreshold + max(_NormalSmooth, 1e-4), normalDiff);
+            float normalEdge = smoothstep(_NormalThreshold, _NormalThreshold + max(_NormalSmooth, 1e-4), normalDiff);
 
-                // 깊이가 크게 튀는 실루엣 경계에서는 노멀 차이가 무의미하므로 깊이 엣지를 우선한다.
-                normalEdge *= 1.0 - saturate(depthEdge);
-            }
+            // 깊이가 크게 튀는 실루엣 경계에서는 노멀 차이가 무의미하므로 깊이 엣지를 우선한다.
+            normalEdge *= 1.0 - saturate(depthEdge);
 
             return saturate(max(depthEdge, normalEdge));
+#else
+            // --- 깊이만 사용 (DepthNormals 프리패스 불필요) -----------------
+            // 네 이웃의 평균은 평면 위에서 정확히 중심 깊이와 같다. 그 예측 오차를 쓰면
+            // 면의 기울기와 무관하게 실루엣/접힘만 검출되므로 grazing 보정이 필요 없다.
+            float predicted = (d0 + d1 + d2 + d3) * 0.25;
+            float depthDiff = abs(centerDepth - predicted) / max(centerDepth, 1e-4);
+
+            // 기울기 방식 대비 값이 약 1/4 이라 같은 임계값을 쓰도록 스케일을 맞춘다.
+            depthDiff *= 4.0;
+
+            return saturate(smoothstep(_DepthThreshold, _DepthThreshold + max(_DepthSmooth, 1e-4), depthDiff));
+#endif
         }
 
         // 원거리에서 아웃라인이 지저분해지지 않도록 페이드 아웃한다.
@@ -134,6 +142,7 @@ Shader "CAT/Toon/ScreenSpaceOutline"
             #pragma vertex Vert
             #pragma fragment FragSolid
             #pragma target 3.0
+            #pragma multi_compile_local_fragment _ _NORMAL_EDGE_ON
 
             half4 FragSolid(Varyings input) : SV_Target
             {
@@ -160,6 +169,7 @@ Shader "CAT/Toon/ScreenSpaceOutline"
             #pragma vertex Vert
             #pragma fragment FragMultiply
             #pragma target 3.0
+            #pragma multi_compile_local_fragment _ _NORMAL_EDGE_ON
 
             half4 FragMultiply(Varyings input) : SV_Target
             {
