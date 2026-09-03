@@ -1,3 +1,12 @@
+// 프로젝트에서 쓰지 않는 URP 기능의 multi_compile 은 제외했다.
+// 되살려야 하는 조건:
+//   _LIGHT_COOKIES        : 라이트에 쿠키를 쓸 때
+//   _LIGHT_LAYERS         : 라이트를 렌더링 레이어로 필터링할 때
+//   DYNAMICLIGHTMAP_ON    : 실시간 GI(Enlighten) 를 켤 때
+//   USE_LEGACY_LIGHTMAPS  : 레거시(텍스처 배열 아님) 라이트맵으로 전환할 때
+//   LOD_FADE_CROSSFADE    : LODGroup 크로스페이드를 쓸 때
+//   ProbeVolumeVariants   : Light Probe System 을 APV(Adaptive Probe Volumes) 로 바꿀 때
+// 베이크 라이트맵(LIGHTMAP_ON / DIRLIGHTMAP_COMBINED / SHADOWS_SHADOWMASK) 은 유지한다.
 Shader "CAT/Toon/ToonLit"
 {
     Properties
@@ -103,8 +112,6 @@ Shader "CAT/Toon/ToonLit"
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
-            #pragma multi_compile_fragment _ _LIGHT_COOKIES
-            #pragma multi_compile _ _LIGHT_LAYERS
             #pragma multi_compile _ _FORWARD_PLUS
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
 
@@ -112,12 +119,8 @@ Shader "CAT/Toon/ToonLit"
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ DIRLIGHTMAP_COMBINED
             #pragma multi_compile _ LIGHTMAP_ON
-            #pragma multi_compile _ DYNAMICLIGHTMAP_ON
-            #pragma multi_compile _ USE_LEGACY_LIGHTMAPS
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma multi_compile_fog
             #pragma multi_compile_fragment _ DEBUG_DISPLAY
-            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
 
             #pragma multi_compile_instancing
             #pragma instancing_options renderinglayer
@@ -146,7 +149,6 @@ Shader "CAT/Toon/ToonLit"
             #pragma fragment ShadowPassFragment
 
             #pragma shader_feature_local_fragment _ALPHATEST_ON
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma multi_compile_instancing
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
 
@@ -173,7 +175,6 @@ Shader "CAT/Toon/ToonLit"
             #pragma fragment DepthOnlyFragment
 
             #pragma shader_feature_local_fragment _ALPHATEST_ON
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma multi_compile_instancing
 
             #include "CAT_ToonInput.hlsl"
@@ -198,7 +199,6 @@ Shader "CAT/Toon/ToonLit"
             #pragma fragment DepthNormalsFragment
 
             #pragma shader_feature_local_fragment _ALPHATEST_ON
-            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_instancing
             #pragma instancing_options renderinglayer

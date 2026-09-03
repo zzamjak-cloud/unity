@@ -112,12 +112,39 @@ CATToonOutlineRuntime.Reset();
 | `Use Normal Edge` | **불투명 지오메트리 1회 추가 렌더**(URP DepthNormals 프리패스) + 픽셀당 노멀 샘플 5개 | 모바일에서는 끄기. 끄면 깊이만으로 평면 예측 오차를 계산해 실루엣/접힘을 검출하므로 프리패스가 사라진다 |
 | 풀스크린 아웃라인 패스 | 픽셀당 텍스처 샘플 10개(노멀 엣지 on) / 5개(off) | `Use Normal Edge` off, 필요하면 주입 시점을 뒤로 미뤄 그리는 픽셀 수 줄이기 |
 | 커스텀 렌더러 피처 | URP 의 `SupportsNativeRenderPass()` 가 `internal virtual` 이라 커스텀 피처는 Native Render Pass 병합에서 제외된다. 타일 기반 GPU 에서 컬러 어태치먼트 store/load 1회가 추가된다 | 우회 불가. 아웃라인이 필요 없는 씬에서는 피처를 꺼두기 |
-| 셰이더 배리언트 | `CAT/Toon/ToonLit` 의 이론상 배리언트 수는 URP Lit 과 동급(≈1.7e14), SimpleLit 대비 약 160배 | URP 빌드 스트리퍼가 RP Asset 에서 꺼진 기능의 배리언트를 제거하므로 빌드 크기 영향은 제한적. 에디터 셰이더 컴파일 시간을 줄이려면 아래 pragma 를 지울 수 있다 |
+| 셰이더 배리언트 | 미사용 `multi_compile` 제거로 9.06e9 → 9.44e7 (96배 감소). 아래 참고 | 추가로 줄이려면 베이크 라이트맵 지원(`LIGHTMAP_ON` 계열)까지 제거 가능 |
 
-프로젝트 설정상 쓰이지 않아 제거 가능한 pragma (`CAT_Toon.shader` ForwardLit 패스):
+### 측정값 (Apple M1 Pro, 1920x1080, 에디터 오프스크린 렌더)
+
+6라운드 교차 반복 · 라운드당 60프레임 · GPU 완료까지 동기화 후 각 구성의 최소값.
+씬은 캐릭터 1체 + 지면.
+
+| 구성 | 프레임당 | 아웃라인 OFF 대비 |
+| --- | --- | --- |
+| 아웃라인 OFF | 2.967 ms | — |
+| 아웃라인 ON, `Use Normal Edge` off | 2.933 ms | ±0 (측정 노이즈 이내) |
+| 아웃라인 ON, `Use Normal Edge` on | 3.188 ms | **+0.22 ms** |
+
+이 프로젝트의 `PC_Renderer` 는 SSAO 가 `Source = DepthNormals` 라 DepthNormals 프리패스를
+어차피 실행한다. 따라서 PC 에서 `Use Normal Edge` 를 꺼서 얻는 이득은 프리패스가 아니라
+픽셀당 노멀 샘플 5개다. `Mobile_Renderer` 에는 SSAO 가 없으므로 그쪽에서만 프리패스가
+통째로 추가된다.
+
+### 제거된 multi_compile
+
+프로젝트 설정상 쓰이지 않아 `CAT_Toon.shader` 에서 제외했다.
+되살려야 하는 조건은 셰이더 파일 상단 주석에 적어두었다.
+
 `_LIGHT_COOKIES`, `_LIGHT_LAYERS`, `DYNAMICLIGHTMAP_ON`, `USE_LEGACY_LIGHTMAPS`,
-`LOD_FADE_CROSSFADE`, `ProbeVolumeVariants.hlsl`(RP Asset 이 Light Probe Groups 사용).
-지우면 해당 기능이 이 셰이더에서 조용히 동작하지 않으므로 필요할 때만 지운다.
+`LOD_FADE_CROSSFADE`, `ProbeVolumeVariants.hlsl`
+
+셰이더 자체 배리언트 수 **9.06e9 → 9.44e7 (약 96배 감소)**.
+(`ShaderUtil.GetVariantCount` 의 절대값에는 `FallBack "Universal Render Pipeline/Lit"` 체인이
+포함돼 1.67e14 로 나오므로, URP Lit 값을 뺀 차이로 계산한 값이다. URP Lit 은 어차피 빌드에
+포함되므로 이 fallback 이 빌드 크기를 실제로 늘리지는 않는다.)
+
+베이크 라이트맵(`LIGHTMAP_ON` / `DIRLIGHTMAP_COMBINED` / `SHADOWS_SHADOWMASK`)과
+소프트 섀도우 품질(`_SHADOWS_SOFT_*`, PC RP Asset 이 사용)은 유지했다.
 
 CPU 쪽은 머티리얼 프로퍼티를 매 프레임 다시 쓰지 않고, 해상도·런타임 오버라이드처럼
 실제로 바뀔 수 있는 값만 비교 후 반영한다. 나머지는 인스펙터 변경 시에만 갱신된다.
