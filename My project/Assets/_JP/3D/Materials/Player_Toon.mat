@@ -1,0 +1,84 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Player_Toon
+  m_Shader: {fileID: 4800000, guid: f749e2f18231c4091a6785366a3e78a2, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - _TOONSPECULAR_ON
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: 2000
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 2800000, guid: 11f736c8cb9fd4db983c0ce96bf4f701, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BumpMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SketchMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AlphaClip: 0
+    - _AmbientStrength: 0.99
+    - _Cull: 2
+    - _Cutoff: 0.5
+    - _EmissionEnabled: 0
+    - _HalfLambert: 0.651
+    - _MidSmooth: 0.025
+    - _MidThreshold: 0.3
+    - _MidToneEnabled: 0
+    - _NormalScale: 1
+    - _OcclusionStrength: 0.395
+    - _QueueOffset: 0
+    - _ReceiveShadowStrength: 0.739
+    - _RimEnabled: 0
+    - _RimLightAlign: 0.5
+    - _RimSmooth: 0.12
+    - _RimWidth: 0.321
+    - _ShadeIntensity: 0.551
+    - _ShadeSmooth: 0.025
+    - _ShadeThreshold: 0.52
+    - _SketchAngle: 45
+    - _SketchEnabled: 0
+    - _SketchScale: 7
+    - _SketchStrength: 0.6
+    - _SketchUseTexture: 0
+    - _SketchWidth: 0.45
+    - _SpecularEnabled: 1
+    - _SpecularSize: 0.3
+    - _SpecularSmooth: 0.03
+    m_Colors:
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _MidColor: {r: 0.8, g: 0.84, b: 0.95, a: 1}
+    - _RimColor: {r: 1, g: 0.94, b: 0.82, a: 0.55}
+    - _ShadeColor: {r: 0.31118724, g: 0.37554005, b: 0.5943396, a: 1}
+    - _SketchColor: {r: 0.38, g: 0.38, b: 0.5, a: 1}
+    - _SpecularColor: {r: 1, g: 1, b: 1, a: 0.5}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

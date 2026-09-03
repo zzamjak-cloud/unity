@@ -1,0 +1,1673 @@
+﻿{
+  "prefabName": "PopupComMessage",
+  "exportDate": "2026-03-25 13:48:17",
+  "root": {
+      "name": "PopupComMessage",
+      "active": true,
+      "tag": "Untagged",
+      "layer": 5,
+      "transform": {
+        "isRectTransform": true,
+        "localPosition": [0, 0, 0],
+        "localRotation": [0, 0, 0, 1],
+        "localScale": [1, 1, 1],
+        "anchorMin": [0, 0],
+        "anchorMax": [1, 1],
+        "anchoredPosition": [0, 0],
+        "sizeDelta": [0, 0],
+        "pivot": [0.5, 0.5]
+      },
+      "components": [],
+      "children": [
+        {
+          "name": "Dimmer",
+          "active": true,
+          "prefabGuid": "77d3ef85e2efc47fea941f5cd58086ea",
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0, 0],
+            "anchorMax": [1, 1],
+            "anchoredPosition": [0, 0],
+            "sizeDelta": [400, 400],
+            "pivot": [0.5, 0.5]
+          },
+          "modifications": [
+            {
+              "targetFileId": 821235749086560688,
+              "propertyPath": "m_Name",
+              "value": "Dimmer"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_Pivot.x",
+              "value": "0.5"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_Pivot.y",
+              "value": "0.5"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchorMax.x",
+              "value": "1"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchorMax.y",
+              "value": "1"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchorMin.x",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchorMin.y",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_SizeDelta.x",
+              "value": "400"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_SizeDelta.y",
+              "value": "400"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalPosition.x",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalPosition.y",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalPosition.z",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalRotation.w",
+              "value": "1"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalRotation.x",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalRotation.y",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalRotation.z",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchoredPosition.x",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_AnchoredPosition.y",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalEulerAnglesHint.x",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalEulerAnglesHint.y",
+              "value": "0"
+            },
+            {
+              "targetFileId": 6027808085774599213,
+              "propertyPath": "m_LocalEulerAnglesHint.z",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "name": "Content",
+          "active": true,
+          "tag": "Untagged",
+          "layer": 5,
+          "transform": {
+            "isRectTransform": true,
+            "localPosition": [0, 0, 0],
+            "localRotation": [0, 0, 0, 1],
+            "localScale": [1, 1, 1],
+            "anchorMin": [0.5, 0.5],
+            "anchorMax": [0.5, 0.5],
+            "anchoredPosition": [0, 0],
+            "sizeDelta": [680, 0],
+            "pivot": [0.5, 0.5]
+          },
+          "components": [
+            {
+              "typeName": "UnityEngine.CanvasGroup",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Alpha",
+                  "type": "Float",
+                  "value": "1"
+                },
+                {
+                  "name": "m_Interactable",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_BlocksRaycasts",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_IgnoreParentGroups",
+                  "type": "Boolean",
+                  "value": "false"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.VerticalLayoutGroup",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_Padding.m_Left",
+                  "type": "Integer",
+                  "value": "0"
+                },
+                {
+                  "name": "m_Padding.m_Right",
+                  "type": "Integer",
+                  "value": "0"
+                },
+                {
+                  "name": "m_Padding.m_Top",
+                  "type": "Integer",
+                  "value": "120"
+                },
+                {
+                  "name": "m_Padding.m_Bottom",
+                  "type": "Integer",
+                  "value": "60"
+                },
+                {
+                  "name": "m_ChildAlignment",
+                  "type": "Enum",
+                  "value": "4"
+                },
+                {
+                  "name": "m_Spacing",
+                  "type": "Float",
+                  "value": "20"
+                },
+                {
+                  "name": "m_ChildForceExpandWidth",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_ChildForceExpandHeight",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_ChildControlWidth",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_ChildControlHeight",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_ChildScaleWidth",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_ChildScaleHeight",
+                  "type": "Boolean",
+                  "value": "true"
+                },
+                {
+                  "name": "m_ReverseArrangement",
+                  "type": "Boolean",
+                  "value": "false"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.ContentSizeFitter",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_HorizontalFit",
+                  "type": "Enum",
+                  "value": "0"
+                },
+                {
+                  "name": "m_VerticalFit",
+                  "type": "Enum",
+                  "value": "2"
+                }
+              ]
+            },
+            {
+              "typeName": "UnityEngine.UI.LayoutElement",
+              "enabled": true,
+              "properties": [
+                {
+                  "name": "m_IgnoreLayout",
+                  "type": "Boolean",
+                  "value": "false"
+                },
+                {
+                  "name": "m_MinWidth",
+                  "type": "Float",
+                  "value": "-1"
+                },
+                {
+                  "name": "m_MinHeight",
+                  "type": "Float",
+                  "value": "-1"
+                },
+                {
+                  "name": "m_PreferredWidth",
+                  "type": "Float",
+                  "value": "680"
+                },
+                {
+                  "name": "m_PreferredHeight",
+                  "type": "Float",
+                  "value": "-1"
+                },
+                {
+                  "name": "m_FlexibleWidth",
+                  "type": "Float",
+                  "value": "-1"
+                },
+                {
+                  "name": "m_FlexibleHeight",
+                  "type": "Float",
+                  "value": "-1"
+                },
+                {
+                  "name": "m_LayoutPriority",
+                  "type": "Integer",
+                  "value": "1"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "PopupFrame",
+              "active": true,
+              "prefabGuid": "dc55ab2e1fed74f3d94dbd159e34affa",
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [0, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "modifications": [
+                {
+                  "targetFileId": 4809282887726869873,
+                  "propertyPath": "m_Name",
+                  "value": "PopupFrame"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_Pivot.x",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_Pivot.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchorMax.x",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchorMax.y",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchorMin.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchorMin.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_SizeDelta.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_SizeDelta.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalPosition.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalRotation.w",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalRotation.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalRotation.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalRotation.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchoredPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_AnchoredPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalEulerAnglesHint.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalEulerAnglesHint.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5425808414899432291,
+                  "propertyPath": "m_LocalEulerAnglesHint.z",
+                  "value": "0"
+                }
+              ]
+            },
+            {
+              "name": "Close",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [282, -58, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [1, 1],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [-58, -58],
+                "sizeDelta": [68, 70],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.UI.LayoutElement",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_IgnoreLayout",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_MinWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_MinHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_LayoutPriority",
+                      "type": "Integer",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "name": "PopupCloseButton",
+                  "active": true,
+                  "prefabGuid": "393bcfaa2e6c446a6960bfb34077a272",
+                  "transform": {
+                    "isRectTransform": true,
+                    "localPosition": [0, 0, 0],
+                    "localRotation": [0, 0, 0, 1],
+                    "localScale": [1, 1, 1],
+                    "anchorMin": [0.5, 0.5],
+                    "anchorMax": [0.5, 0.5],
+                    "anchoredPosition": [0, 0],
+                    "sizeDelta": [68, 70],
+                    "pivot": [0.5, 0.5]
+                  },
+                  "modifications": [
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_Pivot.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_Pivot.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMax.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMax.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMin.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchorMin.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_SizeDelta.x",
+                      "value": "68"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_SizeDelta.y",
+                      "value": "70"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalPosition.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.w",
+                      "value": "1"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalRotation.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchoredPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_AnchoredPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 1132491970685848009,
+                      "propertyPath": "m_LocalEulerAnglesHint.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 3402606177483708490,
+                      "propertyPath": "m_Name",
+                      "value": "PopupCloseButton"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Title Area",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [0, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 1],
+                "anchorMax": [1, 1],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [0, 120],
+                "pivot": [0.5, 1]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.UI.LayoutElement",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_IgnoreLayout",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_MinWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_MinHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_LayoutPriority",
+                      "type": "Integer",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "name": "Text (TMP)",
+                  "active": true,
+                  "prefabGuid": "6ebcda72f9c3d449480ec6f45a9bbff1",
+                  "transform": {
+                    "isRectTransform": true,
+                    "localPosition": [0, -60, 0],
+                    "localRotation": [0, 0, 0, 1],
+                    "localScale": [1, 1, 1],
+                    "anchorMin": [0, 0],
+                    "anchorMax": [1, 1],
+                    "anchoredPosition": [0, 0],
+                    "sizeDelta": [-200, -28],
+                    "pivot": [0.5, 0.5]
+                  },
+                  "modifications": [
+                    {
+                      "targetFileId": 2742756074721013432,
+                      "propertyPath": "m_text",
+                      "value": "Notice"
+                    },
+                    {
+                      "targetFileId": 2742756074721013432,
+                      "propertyPath": "m_fontSize",
+                      "value": "50"
+                    },
+                    {
+                      "targetFileId": 2742756074721013432,
+                      "propertyPath": "m_fontStyle",
+                      "value": "16"
+                    },
+                    {
+                      "targetFileId": 2742756074721013432,
+                      "propertyPath": "m_fontSizeMax",
+                      "value": "50"
+                    },
+                    {
+                      "targetFileId": 2742756074721013432,
+                      "propertyPath": "m_characterSpacing",
+                      "value": "2"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_Pivot.x",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_Pivot.y",
+                      "value": "0.5"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchorMax.x",
+                      "value": "1"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchorMax.y",
+                      "value": "1"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchorMin.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchorMin.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_SizeDelta.x",
+                      "value": "-200"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_SizeDelta.y",
+                      "value": "-28"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalPosition.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalRotation.w",
+                      "value": "1"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalRotation.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalRotation.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalRotation.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchoredPosition.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_AnchoredPosition.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalEulerAnglesHint.x",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalEulerAnglesHint.y",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 5992982433342371595,
+                      "propertyPath": "m_LocalEulerAnglesHint.z",
+                      "value": "0"
+                    },
+                    {
+                      "targetFileId": 7605912525047592318,
+                      "propertyPath": "m_Name",
+                      "value": "Text (TMP)"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "---------------------",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-340, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [0, 0],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [100, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.UI.LayoutElement",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_IgnoreLayout",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_MinWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_MinHeight",
+                      "type": "Float",
+                      "value": "14"
+                    },
+                    {
+                      "name": "m_PreferredWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_LayoutPriority",
+                      "type": "Integer",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "Icon",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 0,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-340, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [0, 0],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [128, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.CanvasRenderer",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_CullTransparentMesh",
+                      "type": "Boolean",
+                      "value": "true"
+                    }
+                  ]
+                },
+                {
+                  "typeName": "UnityEngine.UI.Image",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Material",
+                      "type": "ObjectReference",
+                      "value": "null"
+                    },
+                    {
+                      "name": "m_Color",
+                      "type": "Color",
+                      "value": "1,1,1,1"
+                    },
+                    {
+                      "name": "m_RaycastTarget",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_RaycastPadding",
+                      "type": "Vector4",
+                      "value": "0,0,0,0"
+                    },
+                    {
+                      "name": "m_Maskable",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_OnCullStateChanged.m_PersistentCalls.m_Calls.Array.size",
+                      "type": "ArraySize",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Sprite",
+                      "type": "ObjectReference",
+                      "value": "Pictogram_Coin",
+                      "objectRefGuid": "73be463c6923c405e9589d5f5a52ce37",
+                      "objectRefType": "UnityEngine.Sprite"
+                    },
+                    {
+                      "name": "m_Type",
+                      "type": "Enum",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_PreserveAspect",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_FillCenter",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillMethod",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_FillAmount",
+                      "type": "Float",
+                      "value": "1"
+                    },
+                    {
+                      "name": "m_FillClockwise",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_FillOrigin",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_UseSpriteMesh",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_PixelsPerUnitMultiplier",
+                      "type": "Float",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "Desc (TMP)",
+              "active": true,
+              "prefabGuid": "6ebcda72f9c3d449480ec6f45a9bbff1",
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-340, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [0, 0],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [578, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "modifications": [
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_text",
+                  "value": "Description Description Description \nDescription Description Description\nDescription Description Description"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontSize",
+                  "value": "40"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontColor.b",
+                  "value": "0.41509432"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontColor.g",
+                  "value": "0.41509432"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontColor.r",
+                  "value": "0.41509432"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontSizeMax",
+                  "value": "40"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontSizeBase",
+                  "value": "40"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_sharedMaterial",
+                  "value": "",
+                  "objectRefGuid": "135040b99feca4dedabd5317a7a4131b"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_characterSpacing",
+                  "value": "-4"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_enableAutoSizing",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 2742756074721013432,
+                  "propertyPath": "m_fontColor32.rgba",
+                  "value": "4285164138"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_Pivot.x",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_Pivot.y",
+                  "value": "0.5"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMax.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMax.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMin.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchorMin.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_SizeDelta.x",
+                  "value": "578"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_SizeDelta.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalPosition.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.w",
+                  "value": "1"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalRotation.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchoredPosition.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_AnchoredPosition.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.x",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.y",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 5992982433342371595,
+                  "propertyPath": "m_LocalEulerAnglesHint.z",
+                  "value": "0"
+                },
+                {
+                  "targetFileId": 7605912525047592318,
+                  "propertyPath": "m_Name",
+                  "value": "Desc (TMP)"
+                }
+              ]
+            },
+            {
+              "name": "---------------------",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-340, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [0, 0],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [100, 0],
+                "pivot": [0.5, 0.5]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.UI.LayoutElement",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_IgnoreLayout",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_MinWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_MinHeight",
+                      "type": "Float",
+                      "value": "14"
+                    },
+                    {
+                      "name": "m_PreferredWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_PreferredHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleWidth",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_FlexibleHeight",
+                      "type": "Float",
+                      "value": "-1"
+                    },
+                    {
+                      "name": "m_LayoutPriority",
+                      "type": "Integer",
+                      "value": "1"
+                    }
+                  ]
+                }
+              ],
+              "children": []
+            },
+            {
+              "name": "Button Group",
+              "active": true,
+              "tag": "Untagged",
+              "layer": 5,
+              "transform": {
+                "isRectTransform": true,
+                "localPosition": [-340, 0, 0],
+                "localRotation": [0, 0, 0, 1],
+                "localScale": [1, 1, 1],
+                "anchorMin": [0, 0],
+                "anchorMax": [0, 0],
+                "anchoredPosition": [0, 0],
+                "sizeDelta": [500, 0],
+                "pivot": [0.5, 0]
+              },
+              "components": [
+                {
+                  "typeName": "UnityEngine.UI.HorizontalLayoutGroup",
+                  "enabled": true,
+                  "properties": [
+                    {
+                      "name": "m_Padding.m_Left",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Padding.m_Right",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Padding.m_Top",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_Padding.m_Bottom",
+                      "type": "Integer",
+                      "value": "0"
+                    },
+                    {
+                      "name": "m_ChildAlignment",
+                      "type": "Enum",
+                      "value": "4"
+                    },
+                    {
+                      "name": "m_Spacing",
+                      "type": "Float",
+                      "value": "20"
+                    },
+                    {
+                      "name": "m_ChildForceExpandWidth",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_ChildForceExpandHeight",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_ChildControlWidth",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_ChildControlHeight",
+                      "type": "Boolean",
+                      "value": "false"
+                    },
+                    {
+                      "name": "m_ChildScaleWidth",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_ChildScaleHeight",
+                      "type": "Boolean",
+                      "value": "true"
+                    },
+                    {
+                      "name": "m_ReverseArrangement",
+                      "type": "Boolean",
+                      "value": "false"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "name": "0",
+                  "active": true,
+                  "tag": "Untagged",
+                  "layer": 5,
+                  "transform": {
+                    "isRectTransform": true,
+                    "localPosition": [-250, 0, 0],
+                    "localRotation": [0, 0, 0, 1],
+                    "localScale": [1, 1, 1],
+                    "anchorMin": [0, 0],
+                    "anchorMax": [0, 0],
+                    "anchoredPosition": [0, 0],
+                    "sizeDelta": [240, 110],
+                    "pivot": [0.5, 0.5]
+                  },
+                  "components": [],
+                  "children": [
+                    {
+                      "name": "PopupButton",
+                      "active": true,
+                      "prefabGuid": "e8d0a2ef5edaa4eabbc133439db6a5fa",
+                      "transform": {
+                        "isRectTransform": true,
+                        "localPosition": [0, 0, 0],
+                        "localRotation": [0, 0, 0, 1],
+                        "localScale": [1, 1, 1],
+                        "anchorMin": [0, 0],
+                        "anchorMax": [1, 1],
+                        "anchoredPosition": [0, 0],
+                        "sizeDelta": [0, 0],
+                        "pivot": [0.5, 0.5]
+                      },
+                      "modifications": [
+                        {
+                          "targetFileId": 3531701395025004937,
+                          "propertyPath": "m_text",
+                          "value": "Cancel"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_Pivot.x",
+                          "value": "0.5"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_Pivot.y",
+                          "value": "0.5"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMax.x",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMax.y",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMin.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMin.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_SizeDelta.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_SizeDelta.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.w",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchoredPosition.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchoredPosition.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 7621493310188627069,
+                          "propertyPath": "m_Name",
+                          "value": "PopupButton"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "1",
+                  "active": true,
+                  "tag": "Untagged",
+                  "layer": 5,
+                  "transform": {
+                    "isRectTransform": true,
+                    "localPosition": [-250, 0, 0],
+                    "localRotation": [0, 0, 0, 1],
+                    "localScale": [1, 1, 1],
+                    "anchorMin": [0, 0],
+                    "anchorMax": [0, 0],
+                    "anchoredPosition": [0, 0],
+                    "sizeDelta": [240, 110],
+                    "pivot": [0.5, 0.5]
+                  },
+                  "components": [],
+                  "children": [
+                    {
+                      "name": "PopupButton",
+                      "active": true,
+                      "prefabGuid": "e8d0a2ef5edaa4eabbc133439db6a5fa",
+                      "transform": {
+                        "isRectTransform": true,
+                        "localPosition": [0, 0, 0],
+                        "localRotation": [0, 0, 0, 1],
+                        "localScale": [1, 1, 1],
+                        "anchorMin": [0, 0],
+                        "anchorMax": [1, 1],
+                        "anchoredPosition": [0, 0],
+                        "sizeDelta": [0, 0],
+                        "pivot": [0.5, 0.5]
+                      },
+                      "modifications": [
+                        {
+                          "targetFileId": 3531701395025004937,
+                          "propertyPath": "m_text",
+                          "value": "OK"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_Pivot.x",
+                          "value": "0.5"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_Pivot.y",
+                          "value": "0.5"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMax.x",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMax.y",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMin.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchorMin.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_SizeDelta.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_SizeDelta.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalPosition.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.w",
+                          "value": "1"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalRotation.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchoredPosition.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_AnchoredPosition.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.x",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.y",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 4609034137549917140,
+                          "propertyPath": "m_LocalEulerAnglesHint.z",
+                          "value": "0"
+                        },
+                        {
+                          "targetFileId": 7621493310188627069,
+                          "propertyPath": "m_Name",
+                          "value": "PopupButton"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+}
