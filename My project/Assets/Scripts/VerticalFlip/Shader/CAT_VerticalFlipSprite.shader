@@ -2,244 +2,186 @@ Shader "CAT/Effects/VerticalFlipSprite"
 {
     Properties
     {
-        _MainTex ("Texture 1", 2D) = "white" {}
+        [PerRendererData] _MainTex ("Texture 1", 2D) = "white" {}
         _SecondTex ("Texture 2", 2D) = "white" {}
-        _FlipProgress ("Flip Progress", Range(0, 1)) = 0
+        _Color ("Tint", Color) = (1,1,1,1)
+
+        // 초 단위 경과 시간이 들어온다. Range로 선언하면 인스펙터 조작 시 1로 잘린다
+        _FlipProgress ("Flip Progress (seconds)", Float) = 0
         _SliceCount ("Slice Count", Range(1, 50)) = 6
         _FlipDuration ("Flip Duration", Range(0.1, 2.0)) = 0.2
         _FlipOffset ("Flip Offset", Range(0, 1)) = 0.1
-        
+
         // 라인 관련 속성
         [Toggle] _ShowLines ("Show Column Lines", Float) = 1
         _LineColor ("Line Color", Color) = (0, 0, 0, 1)
-        _LineWidth ("Line Width", Range(0.001, 0.05)) = 0.05
+        _LineWidth ("Line Width (UV)", Range(0.0005, 0.02)) = 0.004
+
+        // 아틀라스 대응: 스프라이트가 텍스처에서 차지하는 영역 (xy=시작, zw=크기)
+        _MainTexRect ("Main Sprite Rect", Vector) = (0, 0, 1, 1)
+        _SecondTexRect ("Second Sprite Rect", Vector) = (0, 0, 1, 1)
     }
-    
+
     SubShader
     {
-        Tags { "RenderType"="Opaque" "Queue"="Transparent" "PreviewType"="Plane" }
-        LOD 100
-        
+        Tags
+        {
+            "RenderPipeline" = "UniversalPipeline"
+            "RenderType" = "Transparent"
+            "Queue" = "Transparent"
+            "IgnoreProjector" = "True"
+            "PreviewType" = "Plane"
+            "CanUseSpriteAtlas" = "True"
+        }
+
+        Blend SrcAlpha OneMinusSrcAlpha
+        ZWrite Off
+        Cull Off
+
         Pass
         {
-            CGPROGRAM
+            Name "VerticalFlipUnlit"
+            // 2D Renderer로 교체해도 조용히 누락되지 않도록 명시한다
+            Tags { "LightMode" = "SRPDefaultUnlit" }
+
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            
-            // 모바일 최적화를 위한 프라그마 지시문
             #pragma target 3.0
             #pragma multi_compile_instancing
-            #pragma fragmentoption ARB_precision_hint_fastest
-            
-            #include "UnityCG.cginc"
-            
-            struct appdata
+            #pragma shader_feature_local_fragment _ _SHOWLINES_ON
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            #define CAT_PI      3.14159265
+            #define CAT_HALF_PI 1.57079633
+
+            TEXTURE2D(_MainTex);    SAMPLER(sampler_MainTex);
+            TEXTURE2D(_SecondTex);  SAMPLER(sampler_SecondTex);
+
+            // SRP Batcher 호환을 위해 모든 머티리얼 프로퍼티를 단일 CBUFFER에 둔다
+            CBUFFER_START(UnityPerMaterial)
+                float4 _MainTex_ST;
+                float4 _MainTexRect;
+                float4 _SecondTexRect;
+                half4  _Color;
+                half4  _LineColor;
+                float  _FlipProgress;
+                float  _SliceCount;
+                float  _FlipDuration;
+                float  _FlipOffset;
+                float  _ShowLines;
+                float  _LineWidth;
+            CBUFFER_END
+
+            struct Attributes
             {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
+                float4 positionOS : POSITION;
+                float4 color      : COLOR;
+                float2 uv         : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
-            
-            struct v2f
+
+            struct Varyings
             {
-                float2 uv : TEXCOORD0;
-                float4 vertex : SV_POSITION;
+                float4 positionCS : SV_POSITION;
+                half4  color      : COLOR;
+                float2 uv         : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
-            
-            sampler2D _MainTex;
-            sampler2D _SecondTex;
-            float4 _MainTex_ST;
-            float _FlipProgress;
-            float _SliceCount;
-            float _FlipDuration;
-            float _FlipOffset;
-            
-            // 라인 관련 변수
-            float _ShowLines;
-            float4 _LineColor;
-            float _LineWidth;
-            
-            // 최적화된 cos 테이블 (미리 계산된 값)
-            static const float COS_TABLE[16] = {
-                1.0, 0.9808, 0.9239, 0.8315, 0.7071, 0.5556, 
-                0.3827, 0.1951, 0.0, -0.1951, -0.3827, -0.5556, 
-                -0.7071, -0.8315, -0.9239, -0.9808
-            };
-            
-            // 최적화된 cos 함수
-            float fastCos(float x) {
-                // 범위를 0~1로 정규화
-                x = frac(x / 6.283185) * 16.0;
-                int idx = (int)x;
-                float t = frac(x);
-                // 선형 보간
-                return lerp(COS_TABLE[idx % 16], COS_TABLE[(idx + 1) % 16], t);
-            }
-            
-            v2f vert (appdata v)
+
+            Varyings vert (Attributes IN)
             {
-                v2f o;
-                UNITY_SETUP_INSTANCE_ID(v);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-                
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
-                
-                return o;
+                Varyings OUT = (Varyings)0;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
+
+                OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                // 아틀라스 UV를 그대로 보존해야 하므로 TRANSFORM_TEX를 적용하지 않는다
+                OUT.uv = IN.uv;
+                OUT.color = IN.color * _Color;
+                return OUT;
             }
-            
-            fixed4 frag (v2f i) : SV_Target
+
+            half4 frag (Varyings IN) : SV_Target
             {
-                // 수직 슬라이스의 인덱스 계산
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
+
+                // 아틀라스 UV -> 스프라이트 로컬 0~1 UV
+                float2 local = (IN.uv - _MainTexRect.xy) / max(_MainTexRect.zw, 1e-6);
+
+                // 슬라이스마다 시간차를 두고 진행.
+                // sliceWidth로 나누는 대신 _SliceCount를 곱해 픽셀당 나눗셈을 줄인다
                 float sliceWidth = 1.0 / _SliceCount;
-                float sliceIndex = floor(i.uv.x / sliceWidth);
-                
-                // 각 슬라이스마다 약간의 시간차를 두고 플립 애니메이션 적용
-                float delayedProgress = _FlipProgress - (sliceIndex * _FlipOffset);
-                delayedProgress = saturate(delayedProgress / _FlipDuration);
-                
-                // 플립 애니메이션 진행 상태에 따라 UV 좌표 조정
-                float2 uv = i.uv;
-                float flipAngle = delayedProgress * 3.14159; // 0에서 π까지
-                
-                fixed4 col;
-                
-                if (delayedProgress <= 0.0)
+                float scaled = local.x * _SliceCount;
+                float sliceIndex = min(floor(scaled), _SliceCount - 1.0);
+                float inSlice = scaled - sliceIndex; // 슬라이스 내부 0~1 좌표
+                float progress = saturate((_FlipProgress - sliceIndex * _FlipOffset) / _FlipDuration);
+
+                // 0~pi. pi/2에서 폭이 0이 되며 뒷면으로 넘어간다
+                float flipAngle = progress * CAT_PI;
+                float halfAngle = min(flipAngle, CAT_PI - flipAngle);
+                float stretch   = max(cos(halfAngle), 1e-4);
+                float invStretch = rcp(stretch);
+
+                // 각 슬라이스는 이미지 중심이 아니라 자기 세로축을 중심으로 회전한다
+                float adjInSlice = (inSlice - 0.5) * invStretch + 0.5;
+                float2 adjusted = float2((sliceIndex + adjInSlice) * sliceWidth, local.y);
+
+                // 슬라이스 경계에서 adjusted는 불연속이라 자동 미분이 튄다.
+                // 연속인 local의 미분을 압축률로 보정해 쓰면 분기 안에서도 밉이 정확하다
+                float2 dLocalDx = ddx(local);
+                float2 dLocalDy = ddy(local);
+                float2 gradX = float2(dLocalDx.x * invStretch, dLocalDx.y);
+                float2 gradY = float2(dLocalDy.x * invStretch, dLocalDy.y);
+
+                // 앞/뒤 중 실제로 보이는 면만 샘플링한다
+                half4 col;
+                UNITY_BRANCH
+                if (flipAngle < CAT_HALF_PI)
                 {
-                    // 아직 플립되지 않은 상태 - 첫 번째 텍스처 표시
-                    col = tex2D(_MainTex, uv);
-                }
-                else if (delayedProgress >= 1.0)
-                {
-                    // 플립이 완료된 상태 - 두 번째 텍스처 표시
-                    col = tex2D(_SecondTex, uv);
+                    float2 uv = _MainTexRect.xy + adjusted * _MainTexRect.zw;
+                    col = SAMPLE_TEXTURE2D_GRAD(_MainTex, sampler_MainTex, uv,
+                                                gradX * _MainTexRect.zw, gradY * _MainTexRect.zw);
                 }
                 else
                 {
-                    // 플립 중인 상태 - 수직 축을 중심으로 회전
-                    if (flipAngle < 1.57079) // π/2보다 작으면
-                    {
-                        // 첫 번째 텍스처가 수직 축을 중심으로 회전하며 사라짐
-                        float horizontalStretch = fastCos(flipAngle);
-                        float2 adjustedUV = float2((uv.x - 0.5) / horizontalStretch + 0.5, uv.y);
-                        
-                        // UV 범위를 벗어나면 검은색 처리
-                        if (adjustedUV.x >= 0.0 && adjustedUV.x <= 1.0)
-                            col = tex2D(_MainTex, adjustedUV);
-                        else
-                            col = fixed4(0, 0, 0, 1);
-                    }
-                    else
-                    {
-                        // 두 번째 텍스처가 수직 축을 중심으로 회전하며 나타남
-                        float horizontalStretch = fastCos(3.14159 - flipAngle);
-                        float2 adjustedUV = float2((uv.x - 0.5) / horizontalStretch + 0.5, uv.y);
-                        
-                        // UV 범위를 벗어나면 검은색 처리
-                        if (adjustedUV.x >= 0.0 && adjustedUV.x <= 1.0)
-                            col = tex2D(_SecondTex, adjustedUV);
-                        else
-                            col = fixed4(0, 0, 0, 1);
-                    }
+                    float2 uv = _SecondTexRect.xy + adjusted * _SecondTexRect.zw;
+                    col = SAMPLE_TEXTURE2D_GRAD(_SecondTex, sampler_SecondTex, uv,
+                                                gradX * _SecondTexRect.zw, gradY * _SecondTexRect.zw);
                 }
-                
-                // 라인 그리기 (컬럼 경계에만)
-                if (_ShowLines > 0.5)
+
+                col *= IN.color;
+
+                // 회전으로 슬라이스 밖을 벗어난 영역은 비운다
+                col.a *= step(0.0, adjInSlice) * step(adjInSlice, 1.0);
+
+                #ifdef _SHOWLINES_ON
                 {
-                    // 현재 위치가 슬라이스 경계에 충분히 가까운지 확인
-                    // frac(i.uv.x / sliceWidth)가 0에 가까우면 슬라이스 경계에 있는 것
-                    float distToSliceBoundary = frac(i.uv.x / sliceWidth);
-                    
-                    // 경계에 가까울 때만 라인 그리기 (0에 가까울 때 또는 1에 가까울 때)
-                    if (distToSliceBoundary < _LineWidth || (1.0 - distToSliceBoundary) < _LineWidth)
-                    {
-                        // 라인과의 거리 계산 (0에 가까울수록 라인에 가까움)
-                        float lineDistance = min(distToSliceBoundary, 1.0 - distToSliceBoundary);
-                        // 라인 가장자리에서 자연스럽게 블렌딩
-                        float blend = saturate(lineDistance / _LineWidth);
-                        // 라인 색상과 텍스처 색상 블렌딩
-                        col = lerp(_LineColor, col, blend);
-                    }
+                    // 슬라이스 경계까지의 거리를 UV 단위로 환산해 슬라이스 개수와 무관한 두께를 만든다
+                    float boundary = round(scaled);
+                    float distToBoundary = abs(scaled - boundary) * sliceWidth;
+
+                    // 픽셀 폭보다 얇은 라인도 사라지지 않도록 화면 미분으로 정규화한다
+                    float aa = max(abs(dLocalDx.x) + abs(dLocalDy.x), 1e-5);
+                    float lineMask = saturate(0.5 - (distToBoundary - _LineWidth * 0.5) / aa);
+
+                    // 바깥 테두리(0번, n번)는 슬라이스 경계가 아니므로 제외한다
+                    lineMask *= step(0.5, boundary) * step(boundary, _SliceCount - 0.5);
+
+                    // 알파는 콘텐츠를 따라가게 두어 카드가 없는 영역에는 라인이 남지 않는다
+                    col.rgb = lerp(col.rgb, _LineColor.rgb, lineMask * _LineColor.a);
                 }
-                
+                #endif
+
                 return col;
             }
-            ENDCG
+            ENDHLSL
         }
     }
-    
-    // 모바일 장치를 위한 대체 셰이더 (더 단순화된 버전)
-    SubShader
-    {
-        Tags { "RenderType"="Opaque" "Queue"="Transparent" }
-        LOD 50
-        
-        Pass
-        {
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment frag
-            #pragma fragmentoption ARB_precision_hint_fastest
-            
-            #include "UnityCG.cginc"
-            
-            struct appdata
-            {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
-            };
-            
-            struct v2f
-            {
-                float2 uv : TEXCOORD0;
-                float4 vertex : SV_POSITION;
-            };
-            
-            sampler2D _MainTex;
-            sampler2D _SecondTex;
-            float _FlipProgress;
-            float _SliceCount;
-            float _FlipOffset;
-            float _ShowLines;
-            float4 _LineColor;
-            float _LineWidth;
-            
-            v2f vert (appdata v)
-            {
-                v2f o;
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = v.uv;
-                return o;
-            }
-            
-            fixed4 frag (v2f i) : SV_Target
-            {
-                float sliceWidth = 1.0 / _SliceCount;
-                float sliceIndex = floor(i.uv.x / sliceWidth);
-                float delayedProgress = saturate((_FlipProgress - (sliceIndex * _FlipOffset)) * 2.0);
-                
-                fixed4 col;
-                if (delayedProgress < 0.5)
-                    col = tex2D(_MainTex, i.uv);
-                else
-                    col = tex2D(_SecondTex, i.uv);
-                
-                // 단순화된 라인 처리 - 경계에만 라인 그리기
-                if (_ShowLines > 0.5) {
-                    float distToSliceBoundary = frac(i.uv.x / sliceWidth);
-                    if (distToSliceBoundary < _LineWidth || (1.0 - distToSliceBoundary) < _LineWidth) {
-                        float lineDistance = min(distToSliceBoundary, 1.0 - distToSliceBoundary);
-                        float blend = saturate(lineDistance / _LineWidth);
-                        col = lerp(_LineColor, col, blend);
-                    }
-                }
-                
-                return col;
-            }
-            ENDCG
-        }
-    }
-    
-    FallBack "Unlit/Texture"
+
+    Fallback "Sprites/Default"
 }

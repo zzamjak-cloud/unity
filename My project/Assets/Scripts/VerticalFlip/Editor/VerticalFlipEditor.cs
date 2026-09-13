@@ -5,24 +5,117 @@ using System.Collections.Generic;
 
 namespace CAT.Effects
 {
+    /// <summary>
+    /// 씬 뷰 프리뷰 구동기.
+    /// 인스펙터 Editor 인스턴스는 에셋 임포트 등으로 수시로 재생성되므로,
+    /// 프리뷰 상태를 Editor에 두면 재생 직후 꺼져 버린다. static으로 분리해 수명을 분리한다.
+    /// </summary>
+    [InitializeOnLoad]
+    internal static class VerticalFlipPreviewDriver
+    {
+        public const float MaxPreviewSeconds = 60f;
+
+        private static VerticalFlip target;
+        private static double lastUpdateTime;
+        private static float elapsed;
+
+        static VerticalFlipPreviewDriver()
+        {
+            EditorApplication.update += Update;
+            Selection.selectionChanged += OnSelectionChanged;
+            EditorApplication.playModeStateChanged += _ => Stop();
+            UnityEditor.SceneManagement.EditorSceneManager.sceneSaving += (a, b) => Stop();
+            AssemblyReloadEvents.beforeAssemblyReload += Stop;
+        }
+
+        public static bool IsRunning(VerticalFlip flip)
+            => flip != null && target == flip && flip.IsEditorPreviewActive;
+
+        public static float RemainingSeconds => Mathf.Max(0f, MaxPreviewSeconds - elapsed);
+
+        public static void Start(VerticalFlip flip, float waitOverride)
+        {
+            Stop();
+
+            if (flip == null || !flip.EditorPreviewBegin(waitOverride))
+                return;
+
+            target = flip;
+            elapsed = 0f;
+            lastUpdateTime = EditorApplication.timeSinceStartup;
+            SceneView.RepaintAll();
+        }
+
+        /// <summary>정지 상태에서 진행도만 직접 지정한다. 생성된 머티리얼은 Stop에서 함께 정리된다</summary>
+        public static void Scrub(VerticalFlip flip, float progress)
+        {
+            if (flip == null)
+                return;
+
+            if (target != null && target != flip)
+                Stop();
+
+            target = flip;
+            flip.EditorPreviewScrub(progress);
+            SceneView.RepaintAll();
+        }
+
+        public static void Stop()
+        {
+            if (target != null)
+            {
+                target.EditorPreviewEnd();
+                SceneView.RepaintAll();
+            }
+
+            target = null;
+            elapsed = 0f;
+        }
+
+        // 다른 오브젝트를 선택했을 때만 멈춘다(Editor 재생성과 구분)
+        private static void OnSelectionChanged()
+        {
+            if (target != null && Selection.activeGameObject != target.gameObject)
+                Stop();
+        }
+
+        private static void Update()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            float delta = (float)(now - lastUpdateTime);
+            lastUpdateTime = now;
+
+            if (target == null || !target.IsEditorPreviewActive)
+                return;
+
+            // 에디터가 멈췄다 재개될 때 한 번에 튀는 것을 막는다
+            delta = Mathf.Min(delta, 0.1f);
+
+            elapsed += delta;
+            if (elapsed >= MaxPreviewSeconds)
+            {
+                Stop();
+                return;
+            }
+
+            target.EditorPreviewTick(delta);
+            SceneView.RepaintAll();
+        }
+    }
+
     [CustomEditor(typeof(VerticalFlip))]
     public class VerticalFlipEditor : Editor
     {
-        // 미리보기 관련 변수
-        private bool showPreview = true;
-        private float previewProgress = 0.0f;
-        private Texture2D previewTexture;
-        private Material previewMaterial;
-        private readonly int textureSize = 256;
+        // 실제 대기 간격(최대 10초)을 그대로 쓰면 프리뷰가 대부분 정지 화면이라 기본값을 짧게 잡는다
+        private const float ShortPreviewWait = 0.6f;
 
-        // 애니메이션 미리보기 관련 변수
-        private bool isAnimating = false;
-        private float animationTime = 0.0f;
-        //private readonly float previewFPS = 60.0f;
-        private readonly float previewDeltaTime = 1.0f / 60.0f;
-        private float previewTimeBetweenFlips = 1.0f;
-        private List<Texture2D> cachedPreviewFrames;
-        //private int currentPreviewFrame = 0;
+        private float scrubProgress;
+        private bool useRealInterval;
+
+        // 스프라이트 임포트 경고 캐시 (AssetImporter 조회가 비싸다)
+        private Sprite cachedWarningFirst;
+        private Sprite cachedWarningSecond;
+        private List<string> cachedWarnings;
 
         // 프로퍼티 캐싱
         private SerializedProperty firstSpriteProperty;
@@ -34,23 +127,10 @@ namespace CAT.Effects
         private SerializedProperty showColumnLinesProperty;
         private SerializedProperty lineColorProperty;
         private SerializedProperty lineWidthProperty;
-        private SerializedProperty allowFrameSkippingProperty;
         private SerializedProperty useLowQualityOnMobileProperty;
-
-        // 셰이더 속성 ID (캐싱)
-        private static readonly int MainTexProperty = Shader.PropertyToID("_MainTex");
-        private static readonly int SecondTexProperty = Shader.PropertyToID("_SecondTex");
-        private static readonly int FlipProgressProperty = Shader.PropertyToID("_FlipProgress");
-        private static readonly int SliceCountProperty = Shader.PropertyToID("_SliceCount");
-        private static readonly int FlipDurationProperty = Shader.PropertyToID("_FlipDuration");
-        private static readonly int FlipOffsetProperty = Shader.PropertyToID("_FlipOffset");
-        private static readonly int ShowLinesProperty = Shader.PropertyToID("_ShowLines");
-        private static readonly int LineColorProperty = Shader.PropertyToID("_LineColor");
-        private static readonly int LineWidthProperty = Shader.PropertyToID("_LineWidth");
 
         private void OnEnable()
         {
-            // 프로퍼티 가져오기
             firstSpriteProperty = serializedObject.FindProperty("firstSprite");
             secondSpriteProperty = serializedObject.FindProperty("secondSprite");
             sliceCountProperty = serializedObject.FindProperty("sliceCount");
@@ -60,238 +140,155 @@ namespace CAT.Effects
             showColumnLinesProperty = serializedObject.FindProperty("showColumnLines");
             lineColorProperty = serializedObject.FindProperty("lineColor");
             lineWidthProperty = serializedObject.FindProperty("lineWidth");
-            allowFrameSkippingProperty = serializedObject.FindProperty("allowFrameSkipping");
             useLowQualityOnMobileProperty = serializedObject.FindProperty("useLowQualityOnMobile");
 
-            // 미리보기 초기화
-            InitializePreview();
-
-            // 에디터 업데이트 이벤트 등록
-            EditorApplication.update += UpdatePreviewAnimation;
+            // 프리뷰 구동은 static 드라이버가 맡는다. 여기서는 인스펙터 갱신만 담당한다
+            EditorApplication.update += RepaintWhilePreviewing;
         }
 
         private void OnDisable()
         {
-            // 이벤트 등록 해제
-            EditorApplication.update -= UpdatePreviewAnimation;
-
-            // 리소스 정리
-            CleanupResources();
+            EditorApplication.update -= RepaintWhilePreviewing;
         }
 
-        private void InitializePreview()
+        private bool IsPreviewing => VerticalFlipPreviewDriver.IsRunning(target as VerticalFlip);
+
+        private void RepaintWhilePreviewing()
         {
-            VerticalFlip flipComponent = (VerticalFlip)target;
-
-            // 스프라이트 확인
-            if (flipComponent.firstSprite == null || flipComponent.secondSprite == null)
-                return;
-
-            // 미리보기 렌더링용 머티리얼 생성
-            bool isUI = flipComponent.GetComponent<Image>() != null;
-            string shaderName = isUI ? "CAT/UI/VerticalFlipUI" : "CAT/Effects/VerticalFlipSprite";
-            Shader previewShader = Shader.Find(shaderName);
-
-            if (previewShader == null)
-            {
-                Debug.LogWarning($"미리보기용 셰이더를 찾을 수 없습니다: {shaderName}");
-                return;
-            }
-
-            // 미리보기 머티리얼 생성
-            previewMaterial = new Material(previewShader);
-
-            // 미리보기 텍스처 생성
-            previewTexture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
-
-            // 캐시된 프레임 리스트 초기화
-            cachedPreviewFrames = new List<Texture2D>();
+            if (IsPreviewing)
+                Repaint();
         }
 
-        private void UpdatePreviewMaterial()
+        private void StartPreview(VerticalFlip flip)
         {
-            if (previewMaterial == null)
-                return;
-
-            VerticalFlip flipComponent = (VerticalFlip)target;
-
-            // 머티리얼 속성 업데이트
-            previewMaterial.SetFloat(SliceCountProperty, flipComponent.sliceCount);
-            previewMaterial.SetFloat(FlipDurationProperty, flipComponent.flipDuration);
-            previewMaterial.SetFloat(FlipOffsetProperty, flipComponent.flipOffsetBetweenSlices);
-            previewMaterial.SetFloat(FlipProgressProperty, previewProgress);
-            previewMaterial.SetFloat(ShowLinesProperty, flipComponent.showColumnLines ? 1.0f : 0.0f);
-            previewMaterial.SetColor(LineColorProperty, flipComponent.lineColor);
-            previewMaterial.SetFloat(LineWidthProperty, flipComponent.lineWidth);
-
-            // 스프라이트 텍스처 설정
-            if (flipComponent.firstSprite != null && flipComponent.secondSprite != null)
-            {
-                previewMaterial.SetTexture(MainTexProperty, flipComponent.firstSprite.texture);
-                previewMaterial.SetTexture(SecondTexProperty, flipComponent.secondSprite.texture);
-            }
+            VerticalFlipPreviewDriver.Start(flip, useRealInterval ? -1f : ShortPreviewWait);
         }
 
-        private void UpdatePreviewAnimation()
+        private void StopPreview()
         {
-            if (!isAnimating || !showPreview)
-                return;
-
-            VerticalFlip flipComponent = (VerticalFlip)target;
-            if (flipComponent == null || previewMaterial == null)
-                return;
-
-            // 미리보기 애니메이션 시간 갱신
-            animationTime += previewDeltaTime;
-            float totalDuration = flipComponent.flipDuration + (flipComponent.sliceCount * flipComponent.flipOffsetBetweenSlices);
-
-            if (animationTime <= totalDuration)
-            {
-                // 애니메이션 진행 중
-                previewProgress = animationTime;
-                UpdatePreviewMaterial();
-                Repaint(); // 에디터 윈도우 갱신
-            }
-            else if (animationTime > totalDuration && animationTime <= totalDuration + previewTimeBetweenFlips)
-            {
-                // 다음 플립까지 대기
-                previewProgress = totalDuration;
-            }
-            else
-            {
-                // 애니메이션 완료 후 재시작 - 스프라이트 교체
-                animationTime = 0;
-                previewProgress = 0;
-
-                // 텍스처 교체
-                Texture2D temp = previewMaterial.GetTexture(MainTexProperty) as Texture2D;
-                previewMaterial.SetTexture(MainTexProperty, previewMaterial.GetTexture(SecondTexProperty));
-                previewMaterial.SetTexture(SecondTexProperty, temp);
-            }
+            VerticalFlipPreviewDriver.Stop();
         }
 
-        private void RenderPreview(Rect previewRect)
+        /// <summary>플립 UV 가정을 깨뜨리는 스프라이트 임포트 설정을 검사한다</summary>
+        private List<string> CollectSpriteWarnings(VerticalFlip flipComponent, bool isUI)
         {
-            if (previewMaterial == null || previewTexture == null)
-                return;
+            List<string> warnings = new List<string>();
 
-            // 미리보기 렌더링
-            UpdatePreviewMaterial();
-
-            // 여기서 RenderTexture를 사용하여 셰이더 효과가 적용된 미리보기 이미지 생성
-            RenderTexture rt = RenderTexture.GetTemporary(textureSize, textureSize, 0, RenderTextureFormat.ARGB32);
-            Graphics.Blit(null, rt, previewMaterial);
-
-            // 현재 RenderTexture를 활성화
-            RenderTexture.active = rt;
-            previewTexture.ReadPixels(new Rect(0, 0, textureSize, textureSize), 0, 0);
-            previewTexture.Apply();
-            RenderTexture.active = null;
-            RenderTexture.ReleaseTemporary(rt);
-
-            // 미리보기 텍스처 표시
-            EditorGUI.DrawPreviewTexture(previewRect, previewTexture);
-        }
-
-        private void CleanupResources()
-        {
-            // 미리보기 리소스 정리
-            if (previewMaterial != null)
+            Sprite[] sprites = { flipComponent.firstSprite, flipComponent.secondSprite };
+            foreach (Sprite sprite in sprites)
             {
-                DestroyImmediate(previewMaterial);
-                previewMaterial = null;
-            }
+                if (sprite == null)
+                    continue;
 
-            if (previewTexture != null)
-            {
-                DestroyImmediate(previewTexture);
-                previewTexture = null;
-            }
-
-            // 캐시된 프레임 정리
-            if (cachedPreviewFrames != null)
-            {
-                foreach (var texture in cachedPreviewFrames)
+                if (sprite.packingRotation != SpritePackingRotation.None)
                 {
-                    if (texture != null)
-                        DestroyImmediate(texture);
+                    warnings.Add($"'{sprite.name}'이(가) 회전 패킹되어 있습니다. Sprite Atlas의 Packing 설정에서 Allow Rotation을 꺼야 플립 UV가 맞습니다.");
                 }
-                cachedPreviewFrames.Clear();
+
+                // Tight 메시는 스프라이트 외곽만 폴리곤으로 만들기 때문에 플립으로 늘어난 영역이 잘려 나간다
+                if (!isUI)
+                {
+                    string path = AssetDatabase.GetAssetPath(sprite);
+                    TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                    if (importer != null)
+                    {
+                        TextureImporterSettings settings = new TextureImporterSettings();
+                        importer.ReadTextureSettings(settings);
+                        if (settings.spriteMeshType == SpriteMeshType.Tight)
+                        {
+                            warnings.Add($"'{sprite.name}'의 Mesh Type이 Tight입니다. Full Rect로 바꿔야 플립 중 잘리지 않습니다.");
+                        }
+                    }
+                }
             }
+
+            return warnings;
+        }
+
+        private void DrawPreviewControls(VerticalFlip flipComponent, bool hasSprites)
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("씬 뷰 미리보기", EditorStyles.boldLabel);
+
+            if (Application.isPlaying)
+            {
+                EditorGUILayout.HelpBox("플레이 모드에서는 컴포넌트가 직접 재생됩니다.", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            bool previewing = IsPreviewing;
+
+            using (new EditorGUI.DisabledScope(!hasSprites))
+            {
+                string label = previewing
+                    ? $"정지  ({Mathf.CeilToInt(VerticalFlipPreviewDriver.RemainingSeconds)}초 남음)"
+                    : "재생";
+
+                if (GUILayout.Button(label, GUILayout.Height(26)))
+                {
+                    if (previewing)
+                        StopPreview();
+                    else
+                        StartPreview(flipComponent);
+                }
+            }
+
+            // 재생 중에도 대기 구간이면 화면이 멈춰 보이므로 현재 구간을 명시한다
+            using (new EditorGUI.DisabledScope(previewing))
+            {
+                useRealInterval = EditorGUILayout.ToggleLeft(
+                    $"실제 대기 간격 사용 ({flipComponent.timeBetweenFlips:0.#}초)", useRealInterval);
+            }
+
+            if (previewing)
+            {
+                Rect bar = EditorGUILayout.GetControlRect(false, 18f);
+                string phase = flipComponent.EditorPreviewIsFlipping
+                    ? $"플립 중  {flipComponent.EditorPreviewPhase * flipComponent.EditorFlipDuration:0.00} / {flipComponent.EditorFlipDuration:0.00}s"
+                    : $"대기 중  ({flipComponent.EditorPreviewWait:0.#}초 간격)";
+                EditorGUI.ProgressBar(bar, flipComponent.EditorPreviewPhase, phase);
+            }
+
+            // 정지 상태에서는 슬라이더로 플립 중간 상태를 직접 확인할 수 있다
+            using (new EditorGUI.DisabledScope(!hasSprites || previewing))
+            {
+                EditorGUI.BeginChangeCheck();
+                scrubProgress = EditorGUILayout.Slider("진행도", scrubProgress, 0f, flipComponent.EditorFlipDuration);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    VerticalFlipPreviewDriver.Scrub(flipComponent, scrubProgress);
+                }
+            }
+
+            if (!hasSprites)
+                EditorGUILayout.HelpBox("두 스프라이트를 모두 할당하면 미리보기를 재생할 수 있습니다.", MessageType.Info);
+            else if (previewing)
+                EditorGUILayout.HelpBox($"씬 뷰에서 재생 중입니다. {VerticalFlipPreviewDriver.MaxPreviewSeconds:0}초 후 자동으로 정지합니다.", MessageType.None);
+            else
+                EditorGUILayout.HelpBox("재생하면 씬 뷰의 실제 오브젝트가 플립합니다. 씬 뷰 창이 보이는 상태여야 합니다.", MessageType.None);
+
+            EditorGUILayout.EndVertical();
         }
 
         public override void OnInspectorGUI()
         {
-            // 직렬화 객체 업데이트
             serializedObject.Update();
 
             VerticalFlip flipComponent = (VerticalFlip)target;
+            bool isUI = flipComponent.GetComponent<Image>() != null;
+            bool hasSprites = flipComponent.firstSprite != null && flipComponent.secondSprite != null;
 
-            // 미리보기 섹션
             EditorGUILayout.Space();
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-            EditorGUILayout.BeginHorizontal();
-            showPreview = EditorGUILayout.ToggleLeft("미리보기 표시", showPreview, EditorStyles.boldLabel, GUILayout.Width(120));
-
-            GUI.enabled = showPreview;
-
-            // 플레이/정지 버튼
-            if (GUILayout.Button(isAnimating ? "정지" : "재생", GUILayout.Width(60)))
-            {
-                isAnimating = !isAnimating;
-                if (isAnimating)
-                {
-                    // 애니메이션 시작 시 초기화
-                    animationTime = 0;
-                    previewProgress = 0;
-                    previewTimeBetweenFlips = flipComponent.timeBetweenFlips;
-                    UpdatePreviewMaterial();
-                }
-            }
-
-            // 프로그레스 슬라이더
-            GUI.enabled = showPreview && !isAnimating;
-            float totalDuration = flipComponent.flipDuration + (flipComponent.sliceCount * flipComponent.flipOffsetBetweenSlices);
-            previewProgress = EditorGUILayout.Slider(previewProgress, 0, totalDuration);
-            GUI.enabled = true;
-
-            EditorGUILayout.EndHorizontal();
-
-            // 미리보기 표시
-            if (showPreview)
-            {
-                float previewSize = Mathf.Min(EditorGUIUtility.currentViewWidth - 40, 300);
-                Rect previewRect = EditorGUILayout.GetControlRect(false, previewSize);
-
-                // 미리보기 영역 테두리 표시
-                EditorGUI.DrawRect(previewRect, new Color(0.2f, 0.2f, 0.2f, 1));
-
-                // 내부 여백을 위해 약간 축소
-                previewRect = new Rect(previewRect.x + 2, previewRect.y + 2, previewRect.width - 4, previewRect.height - 4);
-
-                // 미리보기 렌더링
-                if (flipComponent.firstSprite != null && flipComponent.secondSprite != null)
-                {
-                    RenderPreview(previewRect);
-                }
-                else
-                {
-                    EditorGUI.LabelField(previewRect, "스프라이트가 할당되지 않았습니다", EditorStyles.centeredGreyMiniLabel);
-                }
-            }
-
-            EditorGUILayout.EndVertical();
+            DrawPreviewControls(flipComponent, hasSprites);
             EditorGUILayout.Space();
 
             // 스프라이트 설정 섹션
-            //EditorGUILayout.LabelField("스프라이트 설정", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(firstSpriteProperty);
             EditorGUILayout.PropertyField(secondSpriteProperty);
             EditorGUILayout.Space();
 
             // 애니메이션 설정 섹션
-            //EditorGUILayout.LabelField("플립 애니메이션 설정", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(sliceCountProperty);
             EditorGUILayout.PropertyField(flipDurationProperty);
             EditorGUILayout.PropertyField(flipOffsetBetweenSlicesProperty);
@@ -299,10 +296,7 @@ namespace CAT.Effects
             EditorGUILayout.Space();
 
             // 라인 설정 섹션
-            //EditorGUILayout.LabelField("라인 설정", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(showColumnLinesProperty);
-
-            // showColumnLines가 true일 때만 관련 속성 표시
             if (showColumnLinesProperty.boolValue)
             {
                 EditorGUI.indentLevel++;
@@ -313,51 +307,55 @@ namespace CAT.Effects
             EditorGUILayout.Space();
 
             // 성능 최적화 섹션
-            //EditorGUILayout.LabelField("성능 최적화", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(allowFrameSkippingProperty, new GUIContent("프레임 스킵 허용"));
             EditorGUILayout.PropertyField(useLowQualityOnMobileProperty, new GUIContent("모바일 저사양 모드"));
             EditorGUILayout.Space();
 
+            // 스프라이트 임포트 설정 경고
+            if (hasSprites)
+            {
+                if (cachedWarnings == null
+                    || cachedWarningFirst != flipComponent.firstSprite
+                    || cachedWarningSecond != flipComponent.secondSprite)
+                {
+                    cachedWarningFirst = flipComponent.firstSprite;
+                    cachedWarningSecond = flipComponent.secondSprite;
+                    cachedWarnings = CollectSpriteWarnings(flipComponent, isUI);
+                }
+
+                foreach (string warning in cachedWarnings)
+                    EditorGUILayout.HelpBox(warning, MessageType.Warning);
+            }
+
             // 컴포넌트 정보 표시
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            bool isUI = flipComponent.GetComponent<Image>() != null;
             EditorGUILayout.LabelField("컴포넌트 타입:", isUI ? "UI Image" : "Sprite Renderer", EditorStyles.miniLabel);
-            EditorGUILayout.LabelField("사용 중인 셰이더:", isUI ? "CAT/UI/VerticalFlipUI" : "CAT/Effects/VerticalFlipSprite", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("사용 중인 셰이더:", isUI ? VerticalFlip.UIShaderName : VerticalFlip.SpriteShaderName, EditorStyles.miniLabel);
             EditorGUILayout.EndVertical();
 
-            // 변경된 프로퍼티 적용
-            if (serializedObject.ApplyModifiedProperties())
-            {
-                // 프로퍼티가 변경되면 미리보기 업데이트
-                UpdatePreviewMaterial();
-            }
+            serializedObject.ApplyModifiedProperties();
         }
 
-        // (옵션) 씬 뷰에서 컴포넌트 미리보기
+        // 씬 뷰에서 슬라이스 경계 표시
         [DrawGizmo(GizmoType.Selected)]
         static void DrawGizmo(VerticalFlip flipComponent, GizmoType gizmoType)
         {
-            // 씬 뷰에서 선택된 객체에 아이콘이나 기타 시각적 표시 추가 (필요한 경우)
-            if (flipComponent.showColumnLines)
+            if (!flipComponent.showColumnLines)
+                return;
+
+            SpriteRenderer spriteRenderer = flipComponent.GetComponent<SpriteRenderer>();
+            if (spriteRenderer == null || spriteRenderer.sprite == null)
+                return;
+
+            Bounds bounds = spriteRenderer.bounds;
+            float sliceWidth = bounds.size.x / flipComponent.sliceCount;
+
+            Gizmos.color = flipComponent.lineColor;
+
+            for (int i = 1; i < flipComponent.sliceCount; i++)
             {
-                // 슬라이스 라인 표시 (필요한 경우)
-                SpriteRenderer spriteRenderer = flipComponent.GetComponent<SpriteRenderer>();
-                if (spriteRenderer != null && spriteRenderer.sprite != null)
-                {
-                    Bounds bounds = spriteRenderer.bounds;
-                    float width = bounds.size.x;
-                    float sliceWidth = width / flipComponent.sliceCount;
-
-                    Gizmos.color = flipComponent.lineColor;
-
-                    // 각 슬라이스 경계에 라인 그리기
-                    for (int i = 1; i < flipComponent.sliceCount; i++)
-                    {
-                        float x = bounds.min.x + i * sliceWidth;
-                        Gizmos.DrawLine(new Vector3(x, bounds.min.y, bounds.center.z),
-                                        new Vector3(x, bounds.max.y, bounds.center.z));
-                    }
-                }
+                float x = bounds.min.x + i * sliceWidth;
+                Gizmos.DrawLine(new Vector3(x, bounds.min.y, bounds.center.z),
+                                new Vector3(x, bounds.max.y, bounds.center.z));
             }
         }
     }

@@ -259,8 +259,8 @@
       }
     },
     "com.unity.nuget.mono-cecil": {
-      "version": "1.11.5",
-      "depth": 3,
+      "version": "1.11.6",
+      "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -270,6 +270,20 @@
       "depth": 1,
       "source": "registry",
       "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.pipeline": {
+      "version": "0.7.0-exp.1",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.test-framework": "1.1.33",
+        "com.unity.nuget.mono-cecil": "1.11.6",
+        "com.unity.modules.uielements": "1.0.0",
+        "com.unity.modules.jsonserialize": "1.0.0",
+        "com.unity.modules.screencapture": "1.0.0",
+        "com.unity.nuget.newtonsoft-json": "3.0.2"
+      },
       "url": "https://packages.unity.com"
     },
     "com.unity.render-pipelines.core": {
@@ -391,7 +405,7 @@
       "url": "https://packages.unity.com"
     },
     "com.zzamjak.cateditor": {
-      "version": "1.1.4",
+      "version": "2.1.0",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -415,6 +429,16 @@
       },
       "url": "https://package.openupm.com"
     },
+    "com.zzamjak.christmaslights": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.render-pipelines.universal": "17.0.4",
+        "com.unity.ugui": "2.0.0"
+      },
+      "url": "https://package.openupm.com"
+    },
     "com.zzamjak.colorreplace": {
       "version": "1.0.1",
       "depth": 0,
@@ -434,7 +458,7 @@
       "url": "https://package.openupm.com"
     },
     "com.zzamjak.oceanflow": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -449,6 +473,13 @@
       "dependencies": {
         "com.unity.ugui": "2.0.0"
       },
+      "url": "https://package.openupm.com"
+    },
+    "com.zzamjak.shapegenerator": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {},
       "url": "https://package.openupm.com"
     },
     "com.zzamjak.softmasklight": {
@@ -476,6 +507,15 @@
       "source": "registry",
       "dependencies": {
         "com.unity.ugui": "2.0.0"
+      },
+      "url": "https://package.openupm.com"
+    },
+    "com.zzamjak.toonshading": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.render-pipelines.universal": "17.0.4"
       },
       "url": "https://package.openupm.com"
     },
