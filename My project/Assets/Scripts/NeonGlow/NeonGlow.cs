@@ -3,391 +3,529 @@ using UnityEngine.UI;
 
 namespace CAT.Effects
 {
-    /// <summary>
-    /// 네온 글로우 효과를 Sprite, UI Image, UI Raw Image 그래픽 컴포넌트에 적용하는 통합 컴포넌트입니다.
-    /// RGBA 채널을 각각 분리해서 특수한 Main Texture를 만들어야 합니다.
-    /// 깜빡임 효과를 넣으려면 별도의 Noise Texture를 적용해야 합니다.
-    /// 이 컴포넌트는 NeonGlow 셰이더와 함께 작동합니다.
-    /// </summary>
-    [AddComponentMenu("CAT/Effects/NeonGlow")]
-    public class NeonGlowEffect : MonoBehaviour
+    /// <summary>깜빡임 연출 종류.</summary>
+    public enum NeonFlickerMode
     {
-        // 지원되는 그래픽 컴포넌트 타입 열거형
-        private enum GraphicType
-        {
-            None,
-            SpriteRenderer,
-            Image,
-            RawImage
-            // 필요에 따라 확장 가능
-        }
+        None = 0,
+        Hum = 1,     // 가스관의 미세한 떨림
+        Broken = 2,  // 스타터 불량. 불규칙 점멸
+        Warmup = 3   // 점등 직후 더듬다가 안정
+    }
 
-        #region 셰이더 프로퍼티 변수
-        [Header("기본 설정")]
-        [Tooltip("주요 텍스처 (RGBA 채널 사용)")]
-        public Texture2D mainTexture;
+    /// <summary>색상 프리셋.</summary>
+    public enum NeonPreset
+    {
+        ClassicRed,
+        IceBlue,
+        HotPink,
+        ToxicGreen,
+        WarmWhite,
+        AmberOrange
+    }
 
-        public Color mainColor = Color.white;
-        public Color innerGlowColor = Color.green;
-        public Color outerGlowColor = Color.blue;
+    /// <summary>
+    /// SDF 기반 네온 사인 효과.
+    ///
+    /// 사용자는 흑백 마스크 이미지 한 장만 준비하면 된다.
+    /// Tools > CAT > Neon SDF Baker 로 마스크를 SDF 텍스처로 구운 뒤,
+    /// 그 결과 스프라이트를 SpriteRenderer / Image 에 넣고 이 컴포넌트를 붙인다.
+    ///
+    /// 유리관, 발광 코어, 내외곽 글로우는 전부 거리장에서 절차적으로 생성되므로
+    /// 채널을 나눠 칠하거나 노이즈 텍스처를 따로 만들 필요가 없다.
+    ///
+    /// 원거리 번짐은 URP Bloom 이 담당한다. 카메라 HDR 과 Volume 의 Bloom 을 켜고
+    /// Exposure 를 1 이상으로 올리면 빛이 화면으로 퍼진다.
+    /// </summary>
+    [ExecuteAlways]
+    [DisallowMultipleComponent]
+    [AddComponentMenu("CAT/Effects/Neon Glow")]
+    public class NeonGlow : MonoBehaviour
+    {
+        public const string SpriteShaderName = "CAT/Effects/NeonGlow Sprite";
+        public const string UIShaderName = "CAT/Effects/NeonGlow UI";
 
-        [Range(0f, 3f)]
-        public float innerGlowIntensity = 1.0f;
+        private enum GraphicKind { None, Sprite, UI }
 
-        [Range(0f, 3f)]
-        public float outerGlowIntensity = 1.0f;
+        #region 인스펙터 프로퍼티
+        [Header("유리관")]
+        [ColorUsage(true, true)] public Color tubeColor = new Color(1f, 0.25f, 0.45f, 1f);
+        [ColorUsage(true, true)] public Color coreColor = new Color(1f, 0.92f, 0.95f, 1f);
 
-        [Range(0f, 5f)]
-        public float emissionIntensity = 1.0f;
+        [Range(0.01f, 1f), Tooltip("관 단면의 반지름. 마스크 획 두께의 절반에 맞추면 자연스럽다.")]
+        public float tubeWidth = 0.2f;
 
-        [Space(10)]
-        [Header("깜빡임 효과")]
-        [Tooltip("깜빡임 효과 사용 여부")]
-        public bool useFlicker = true;
+        [Range(0f, 1f), Tooltip("관 가장자리를 얼마나 어둡게 떨어뜨릴지. 유리 두께감을 만든다.")]
+        public float tubeShading = 0.6f;
 
-        [Tooltip("노이즈 텍스처 (R 채널 사용)")]
-        public Texture2D noiseTexture;
+        [Range(0f, 1f), Tooltip("관 한가운데 흰 심지의 폭.")]
+        public float coreWidth = 0.55f;
 
-        [Range(0.1f, 10f)]
-        [Tooltip("깜빡임 속도")]
-        public float flickerSpeed = 2.0f;
+        [Range(0.001f, 1f)] public float coreSoftness = 0.3f;
+        [Range(0f, 4f)] public float tubeIntensity = 1f;
 
-        [Range(0f, 1f)]
-        [Tooltip("내부 깜빡임 최소값")]
-        public float innerFlickerMin = 0.7f;
+        [Range(0f, 1f), Tooltip("0 이면 관 몸통도 완전 가산 합성되어 배경이 비친다.")]
+        public float tubeOpacity = 1f;
 
-        [Range(1f, 3f)]
-        [Tooltip("내부 깜빡임 최대값")]
-        public float innerFlickerMax = 1.3f;
+        [Header("내부 글로우 (관 주변 강한 발광)")]
+        [ColorUsage(true, true)] public Color innerGlowColor = new Color(1f, 0.2f, 0.4f, 1f);
+        [Range(0.01f, 1f)] public float innerGlowRadius = 0.2f;
+        [Range(0.5f, 8f)] public float innerGlowFalloff = 2f;
+        [Range(0f, 8f)] public float innerGlowIntensity = 1.6f;
 
-        [Range(0f, 1f)]
-        [Tooltip("외부 깜빡임 최소값")]
-        public float outerFlickerMin = 0.8f;
+        [Header("외부 글로우 (넓게 퍼지는 확산)")]
+        [ColorUsage(true, true)] public Color outerGlowColor = new Color(0.9f, 0.1f, 0.5f, 1f);
+        [Range(0.01f, 1f), Tooltip("1 이면 SDF 를 구울 때 준 패딩 전체를 사용한다.")]
+        public float outerGlowRadius = 0.9f;
+        [Range(0.5f, 8f)] public float outerGlowFalloff = 3f;
+        [Range(0f, 8f)] public float outerGlowIntensity = 0.8f;
 
-        [Range(1f, 3f)]
-        [Tooltip("외부 깜빡임 최대값")]
-        public float outerFlickerMax = 1.2f;
+        [Header("전역")]
+        [Range(0f, 8f), Tooltip("1 을 넘기면 URP Bloom 이 잡아 화면으로 번진다.")]
+        public float exposure = 1.5f;
 
-        [Range(0.1f, 5f)]
-        [Tooltip("내부 노이즈 스케일")]
-        public float noiseScaleInner = 1.0f;
+        [ColorUsage(true, true), Tooltip("전체 틴트. 런타임 페이드에 사용한다.")]
+        public Color tint = Color.white;
 
-        [Range(0.1f, 5f)]
-        [Tooltip("외부 노이즈 스케일")]
-        public float noiseScaleOuter = 0.7f;
+        [Header("깜빡임")]
+        public NeonFlickerMode flickerMode = NeonFlickerMode.None;
+        [Range(0.1f, 10f)] public float flickerSpeed = 1f;
+        [Range(0f, 1f)] public float flickerAmount = 0.5f;
+        [Tooltip("켜면 관 몸통은 고정되고 글로우만 깜빡인다.")]
+        public bool flickerGlowOnly = false;
+        [Range(0.1f, 10f), Tooltip("Warmup 모드에서 안정될 때까지 걸리는 시간(초).")]
+        public float warmupDuration = 2f;
 
-        [Range(0f, 1f)]
-        [Tooltip("외부 노이즈 오프셋")]
-        public float noiseOffsetOuter = 0.5f;
+        [Header("배칭 (모바일)")]
+        [Tooltip("같은 설정의 간판이 여러 개면 켜세요. 머티리얼을 공유해 드로우콜이 합쳐집니다.\n" +
+                 "켜면 위 파라미터 대신 아래 머티리얼 에셋의 값이 사용됩니다.")]
+        public bool useSharedMaterial = false;
+
+        [Tooltip("공유할 머티리얼 에셋. 인스펙터의 '현재 설정을 머티리얼로 저장' 으로 만들 수 있습니다.")]
+        public Material sharedMaterialAsset;
+
+        [Header("셰이더 참조")]
+        [Tooltip("비워두면 이름으로 찾는다. 빌드 시 셰이더 스트리핑을 막으려면 직접 지정해 두는 편이 안전하다.")]
+        [SerializeField] private Shader spriteShader;
+        [SerializeField] private Shader uiShader;
         #endregion
 
-        // 셰이더 프로퍼티 ID 캐싱 (메모리 및 퍼포먼스 최적화)
-        private static readonly int MainTexProp = Shader.PropertyToID("_MainTex");
-        private static readonly int MainColorProp = Shader.PropertyToID("_MainColor");
-        private static readonly int InnerGlowColorProp = Shader.PropertyToID("_InnerGlowColor");
-        private static readonly int OuterGlowColorProp = Shader.PropertyToID("_OuterGlowColor");
-        private static readonly int InnerGlowIntensityProp = Shader.PropertyToID("_InnerGlowIntensity");
-        private static readonly int OuterGlowIntensityProp = Shader.PropertyToID("_OuterGlowIntensity");
-        private static readonly int EmissionIntensityProp = Shader.PropertyToID("_EmissionIntensity");
-        private static readonly int UseFlickerProp = Shader.PropertyToID("_UseFlicker");
-        private static readonly int NoiseTextureProp = Shader.PropertyToID("_NoiseTexture");
-        private static readonly int FlickerSpeedProp = Shader.PropertyToID("_FlickerSpeed");
-        private static readonly int InnerFlickerMinProp = Shader.PropertyToID("_InnerFlickerMin");
-        private static readonly int InnerFlickerMaxProp = Shader.PropertyToID("_InnerFlickerMax");
-        private static readonly int OuterFlickerMinProp = Shader.PropertyToID("_OuterFlickerMin");
-        private static readonly int OuterFlickerMaxProp = Shader.PropertyToID("_OuterFlickerMax");
-        private static readonly int NoiseScaleInnerProp = Shader.PropertyToID("_NoiseScaleInner");
-        private static readonly int NoiseScaleOuterProp = Shader.PropertyToID("_NoiseScaleOuter");
-        private static readonly int NoiseOffsetOuterProp = Shader.PropertyToID("_NoiseOffsetOuter");
+        #region 셰이더 프로퍼티 ID
+        private static readonly int TubeColorId = Shader.PropertyToID("_TubeColor");
+        private static readonly int CoreColorId = Shader.PropertyToID("_CoreColor");
+        private static readonly int TubeWidthId = Shader.PropertyToID("_TubeWidth");
+        private static readonly int TubeShadingId = Shader.PropertyToID("_TubeShading");
+        private static readonly int CoreWidthId = Shader.PropertyToID("_CoreWidth");
+        private static readonly int CoreSoftnessId = Shader.PropertyToID("_CoreSoftness");
+        private static readonly int TubeIntensityId = Shader.PropertyToID("_TubeIntensity");
+        private static readonly int TubeOpacityId = Shader.PropertyToID("_TubeOpacity");
+        private static readonly int InnerGlowColorId = Shader.PropertyToID("_InnerGlowColor");
+        private static readonly int InnerGlowRadiusId = Shader.PropertyToID("_InnerGlowRadius");
+        private static readonly int InnerGlowFalloffId = Shader.PropertyToID("_InnerGlowFalloff");
+        private static readonly int InnerGlowIntensityId = Shader.PropertyToID("_InnerGlowIntensity");
+        private static readonly int OuterGlowColorId = Shader.PropertyToID("_OuterGlowColor");
+        private static readonly int OuterGlowRadiusId = Shader.PropertyToID("_OuterGlowRadius");
+        private static readonly int OuterGlowFalloffId = Shader.PropertyToID("_OuterGlowFalloff");
+        private static readonly int OuterGlowIntensityId = Shader.PropertyToID("_OuterGlowIntensity");
+        private static readonly int ExposureId = Shader.PropertyToID("_Exposure");
+        private static readonly int GlowCutoffId = Shader.PropertyToID("_GlowCutoff");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private static readonly int FlickerModeId = Shader.PropertyToID("_FlickerMode");
+        private static readonly int FlickerSpeedId = Shader.PropertyToID("_FlickerSpeed");
+        private static readonly int FlickerAmountId = Shader.PropertyToID("_FlickerAmount");
+        private static readonly int FlickerGlowOnlyId = Shader.PropertyToID("_FlickerGlowOnly");
+        private static readonly int WarmupDurationId = Shader.PropertyToID("_WarmupDuration");
+        private static readonly int StartTimeId = Shader.PropertyToID("_StartTime");
+        private static readonly int UsePreviewTimeId = Shader.PropertyToID("_UsePreviewTime");
+        private static readonly int PreviewTimeId = Shader.PropertyToID("_PreviewTime");
+        #endregion
 
-        // 그래픽 컴포넌트 참조들
         private SpriteRenderer spriteRenderer;
-        private Image uiImage;
-        private RawImage rawImage;
-        private GraphicType graphicType = GraphicType.None;
+        private Graphic graphic;
+        private GraphicKind kind = GraphicKind.None;
 
-        // 네온 글로우 셰이더 머티리얼
-        private Material neonGlowMaterial;
+        private Material instanceMaterial;   // 이 컴포넌트가 소유하는 인스턴스. 공유 모드면 null.
+        private Material appliedMaterial;    // 실제로 렌더러에 붙어 있는 머티리얼
+        private Material originalMaterial;
+        private bool originalCaptured;
 
-        private void Awake()
+        /// <summary>현재 그래픽에 적용된 머티리얼. 공유 모드면 공유 에셋을 가리킨다.</summary>
+        public Material Material => appliedMaterial;
+
+        /// <summary>공유 머티리얼을 쓰는 중인지. 이때는 인스펙터 값이 셰이더로 전달되지 않는다.</summary>
+        public bool IsUsingSharedMaterial => useSharedMaterial && sharedMaterialAsset != null;
+
+        private void OnEnable()
         {
-            // 자동으로 그래픽 컴포넌트 탐지
-            DetectGraphicComponent();
-
-            if (graphicType == GraphicType.None)
-            {
-                Debug.LogError("지원되는 그래픽 컴포넌트(SpriteRenderer, Image, RawImage)를 찾을 수 없습니다.");
-                enabled = false;
-                return;
-            }
-
-            // 네온 글로우 셰이더 로드
-            Shader neonGlowShader = Shader.Find("CAT/Effects/NeonGlow");
-
-            if (neonGlowShader == null)
-            {
-                Debug.LogError("NeonGlow 셰이더를 찾을 수 없습니다. 셰이더가 프로젝트에 포함되어 있는지 확인하세요.");
-                enabled = false;
-                return;
-            }
-
-            // 새 머티리얼 생성 및 셰이더 적용
-            neonGlowMaterial = new Material(neonGlowShader);
-
-            // 발견된 그래픽 컴포넌트에 머티리얼 적용
-            ApplyMaterialToGraphic();
-
-            // 초기 셰이더 프로퍼티 설정
-            UpdateShaderProperties();
+            Rebuild();
         }
 
-        /// <summary>
-        /// 이 게임 오브젝트에서 사용 가능한 그래픽 컴포넌트를 감지합니다.
-        /// </summary>
-        private void DetectGraphicComponent()
+        private void OnDisable()
         {
-            // 우선순위: SpriteRenderer > Image > RawImage
-            spriteRenderer = GetComponent<SpriteRenderer>();
-            if (spriteRenderer != null)
-            {
-                graphicType = GraphicType.SpriteRenderer;
-                return;
-            }
-
-            uiImage = GetComponent<Image>();
-            if (uiImage != null)
-            {
-                graphicType = GraphicType.Image;
-                return;
-            }
-
-            rawImage = GetComponent<RawImage>();
-            if (rawImage != null)
-            {
-                graphicType = GraphicType.RawImage;
-                return;
-            }
-
-            graphicType = GraphicType.None;
-        }
-
-        /// <summary>
-        /// 현재 감지된 그래픽 컴포넌트에 네온 글로우 머티리얼을 적용합니다.
-        /// </summary>
-        private void ApplyMaterialToGraphic()
-        {
-            switch (graphicType)
-            {
-                case GraphicType.SpriteRenderer:
-                    spriteRenderer.material = neonGlowMaterial;
-                    break;
-                case GraphicType.Image:
-                    uiImage.material = neonGlowMaterial;
-                    break;
-                case GraphicType.RawImage:
-                    rawImage.material = neonGlowMaterial;
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// 메인 텍스처를 현재 그래픽 컴포넌트의 텍스처로 설정합니다.
-        /// </summary>
-        private void TryUseGraphicTexture()
-        {
-            if (mainTexture != null)
-                return;
-
-            switch (graphicType)
-            {
-                case GraphicType.SpriteRenderer:
-                    if (spriteRenderer.sprite != null)
-                    {
-                        mainTexture = spriteRenderer.sprite.texture;
-                    }
-                    break;
-                case GraphicType.Image:
-                    if (uiImage.sprite != null)
-                    {
-                        mainTexture = uiImage.sprite.texture;
-                    }
-                    break;
-                case GraphicType.RawImage:
-                    if (rawImage.texture != null && rawImage.texture is Texture2D)
-                    {
-                        mainTexture = (Texture2D)rawImage.texture;
-                    }
-                    break;
-            }
+            EditorPreviewEnd();
+            RestoreOriginalMaterial();
+            ReleaseInstanceMaterial();
         }
 
         private void OnValidate()
         {
-            // 인스펙터에서 값이 변경될 때마다 셰이더 프로퍼티 업데이트
-            if (neonGlowMaterial != null)
+            if (!isActiveAndEnabled) return;
+
+#if UNITY_EDITOR
+            // OnValidate 안에서 머티리얼을 만들거나 렌더러에 할당하면 Unity 가 경고를 낸다.
+            // 한 프레임 뒤로 미뤄 안전한 시점에 재구성한다.
+            UnityEditor.EditorApplication.delayCall += () =>
             {
-                UpdateShaderProperties();
-            }
+                if (this == null || !isActiveAndEnabled) return;
+                Rebuild();
+            };
+#else
+            UpdateShaderProperties();
+#endif
         }
 
-        /// <summary>
-        /// 컴포넌트의 변수 값을 셰이더 프로퍼티에 적용합니다.
-        /// </summary>
+        /// <summary>그래픽 컴포넌트를 다시 찾고 머티리얼을 재생성한 뒤 모든 값을 적용한다.</summary>
+        public void Rebuild()
+        {
+            DetectGraphic();
+            if (kind == GraphicKind.None)
+            {
+                instanceMaterial = null;
+                appliedMaterial = null;
+                return;
+            }
+
+            // 공유 모드: 인스턴스를 만들지 않으므로 간판 N 개가 드로우콜 1 개로 묶인다.
+            // 대신 파라미터는 머티리얼 에셋이 단일 소스이므로 여기서 덮어쓰지 않는다.
+            if (IsUsingSharedMaterial)
+            {
+                ReleaseInstanceMaterial();
+                AssignMaterial(sharedMaterialAsset);
+                return;
+            }
+
+            Shader shader = ResolveShader();
+            if (shader == null)
+            {
+                Debug.LogError($"[NeonGlow] 셰이더를 찾을 수 없습니다. '{SpriteShaderName}' / '{UIShaderName}' 가 프로젝트에 있는지 확인하세요.", this);
+                return;
+            }
+
+            if (instanceMaterial == null || instanceMaterial.shader != shader)
+            {
+                ReleaseInstanceMaterial();
+                instanceMaterial = new Material(shader)
+                {
+                    name = "NeonGlow (Instance)",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+
+            AssignMaterial(instanceMaterial);
+            ResetFlickerTime();
+            UpdateShaderProperties();
+        }
+
+        /// <summary>인스펙터 값을 셰이더에 밀어 넣는다. 공유 모드에서는 아무것도 하지 않는다.</summary>
         public void UpdateShaderProperties()
         {
-            // 기본 텍스처가 설정되어 있지 않으면 그래픽 컴포넌트의 텍스처 사용
-            TryUseGraphicTexture();
-
-            // 텍스처 설정
-            if (mainTexture != null)
-            {
-                neonGlowMaterial.SetTexture(MainTexProp, mainTexture);
-            }
-
-            // 색상 및 강도 설정
-            neonGlowMaterial.SetColor(MainColorProp, mainColor);
-            neonGlowMaterial.SetColor(InnerGlowColorProp, innerGlowColor);
-            neonGlowMaterial.SetColor(OuterGlowColorProp, outerGlowColor);
-            neonGlowMaterial.SetFloat(InnerGlowIntensityProp, innerGlowIntensity);
-            neonGlowMaterial.SetFloat(OuterGlowIntensityProp, outerGlowIntensity);
-            neonGlowMaterial.SetFloat(EmissionIntensityProp, emissionIntensity);
-
-            // 깜빡임 효과 설정
-            neonGlowMaterial.SetFloat(UseFlickerProp, useFlicker ? 1.0f : 0.0f);
-
-            if (noiseTexture != null)
-            {
-                neonGlowMaterial.SetTexture(NoiseTextureProp, noiseTexture);
-            }
-
-            neonGlowMaterial.SetFloat(FlickerSpeedProp, flickerSpeed);
-            neonGlowMaterial.SetFloat(InnerFlickerMinProp, innerFlickerMin);
-            neonGlowMaterial.SetFloat(InnerFlickerMaxProp, innerFlickerMax);
-            neonGlowMaterial.SetFloat(OuterFlickerMinProp, outerFlickerMin);
-            neonGlowMaterial.SetFloat(OuterFlickerMaxProp, outerFlickerMax);
-            neonGlowMaterial.SetFloat(NoiseScaleInnerProp, noiseScaleInner);
-            neonGlowMaterial.SetFloat(NoiseScaleOuterProp, noiseScaleOuter);
-            neonGlowMaterial.SetFloat(NoiseOffsetOuterProp, noiseOffsetOuter);
-        }
-
-        #region 런타임 유틸리티 메서드
-        /// <summary>
-        /// 런타임에 내부 글로우 색상을 변경합니다.
-        /// </summary>
-        public void SetInnerGlowColor(Color color)
-        {
-            innerGlowColor = color;
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetColor(InnerGlowColorProp, innerGlowColor);
-            }
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            ApplyTo(instanceMaterial);
+            if (graphic != null) graphic.SetMaterialDirty();
         }
 
         /// <summary>
-        /// 런타임에 외부 글로우 색상을 변경합니다.
+        /// 현재 인스펙터 값을 임의의 머티리얼에 기록한다.
+        /// 공유용 머티리얼 에셋을 만들 때 에디터에서도 쓴다.
         /// </summary>
-        public void SetOuterGlowColor(Color color)
+        public void ApplyTo(Material target)
         {
-            outerGlowColor = color;
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetColor(OuterGlowColorProp, outerGlowColor);
-            }
+            if (target == null) return;
+            target.SetColor(ColorId, tint);
+
+            target.SetColor(TubeColorId, tubeColor);
+            target.SetColor(CoreColorId, coreColor);
+            target.SetFloat(TubeWidthId, tubeWidth);
+            target.SetFloat(TubeShadingId, tubeShading);
+            target.SetFloat(CoreWidthId, coreWidth);
+            target.SetFloat(CoreSoftnessId, coreSoftness);
+            target.SetFloat(TubeIntensityId, tubeIntensity);
+            target.SetFloat(TubeOpacityId, tubeOpacity);
+
+            target.SetColor(InnerGlowColorId, innerGlowColor);
+            target.SetFloat(InnerGlowRadiusId, innerGlowRadius);
+            target.SetFloat(InnerGlowFalloffId, innerGlowFalloff);
+            target.SetFloat(InnerGlowIntensityId, innerGlowIntensity);
+
+            target.SetColor(OuterGlowColorId, outerGlowColor);
+            target.SetFloat(OuterGlowRadiusId, outerGlowRadius);
+            target.SetFloat(OuterGlowFalloffId, outerGlowFalloff);
+            target.SetFloat(OuterGlowIntensityId, outerGlowIntensity);
+
+            target.SetFloat(ExposureId, exposure);
+
+            target.SetFloat(FlickerModeId, (float)flickerMode);
+            target.SetFloat(FlickerSpeedId, flickerSpeed);
+            target.SetFloat(FlickerAmountId, flickerAmount);
+            target.SetFloat(FlickerGlowOnlyId, flickerGlowOnly ? 1f : 0f);
+            target.SetFloat(WarmupDurationId, warmupDuration);
+
+            // 글로우가 사실상 보이지 않는 거리를 미리 구해 셰이더가 조기 폐기하도록 한다.
+            // SDF 패딩 때문에 쿼드 면적의 상당 부분이 여기 해당해서 모바일 오버드로가 크게 준다.
+            target.SetFloat(GlowCutoffId, ComputeGlowCutoff());
+
+            // 프리뷰 중에 슬라이더를 만져도 재생이 끊기지 않도록 현재 상태를 그대로 다시 쓴다.
+            // 공유 머티리얼 에셋을 만들 때는 둘 다 0 이 되어 프리뷰 상태가 저장되지 않는다.
+            target.SetFloat(UsePreviewTimeId, IsEditorPreviewActive ? 1f : 0f);
+            target.SetFloat(PreviewTimeId, previewTime);
         }
 
         /// <summary>
-        /// 런타임에 메인 색상을 변경합니다.
+        /// 글로우 기여가 1/1024 미만이 되는 정규화 거리. Bloom 이 증폭해도 티가 안 나는 수준이다.
+        /// 기여 = pow(saturate(1 - t/R), F) * I * exposure 이므로
+        /// t > R * (1 - (eps / (I * exposure))^(1/F)) 부터 버려도 된다.
         /// </summary>
-        public void SetMainColor(Color color)
+        private float ComputeGlowCutoff()
         {
-            mainColor = color;
-            if (neonGlowMaterial != null)
+            const float eps = 1f / 1024f;
+            float gain = Mathf.Max(exposure, 0f) * Mathf.Max(tint.maxColorComponent, 0f);
+            return Mathf.Max(
+                CutoffFor(innerGlowRadius, innerGlowFalloff, innerGlowIntensity * gain, eps),
+                CutoffFor(outerGlowRadius, outerGlowFalloff, outerGlowIntensity * gain, eps));
+        }
+
+        private static float CutoffFor(float radius, float falloff, float weight, float eps)
+        {
+            if (weight <= eps || radius <= 1e-4f) return 0f;
+            float x = Mathf.Pow(eps / weight, 1f / Mathf.Max(falloff, 1e-4f));
+            return Mathf.Clamp01(radius * (1f - x));
+        }
+
+        /// <summary>Warmup 모드의 기준 시각을 현재로 맞춘다. 간판을 다시 켜는 연출에 쓴다.</summary>
+        public void ResetFlickerTime()
+        {
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            instanceMaterial.SetFloat(StartTimeId, Application.isPlaying ? Time.time : 0f);
+        }
+
+        private void DetectGraphic()
+        {
+            spriteRenderer = GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
             {
-                neonGlowMaterial.SetColor(MainColorProp, mainColor);
+                graphic = null;
+                kind = GraphicKind.Sprite;
+                return;
+            }
+
+            graphic = GetComponent<Graphic>();
+            if (graphic != null)
+            {
+                kind = GraphicKind.UI;
+                return;
+            }
+
+            kind = GraphicKind.None;
+        }
+
+        private Shader ResolveShader()
+        {
+            if (kind == GraphicKind.Sprite)
+            {
+                if (spriteShader == null) spriteShader = Shader.Find(SpriteShaderName);
+                return spriteShader;
+            }
+
+            if (uiShader == null) uiShader = Shader.Find(UIShaderName);
+            return uiShader;
+        }
+
+        private void AssignMaterial(Material target)
+        {
+            appliedMaterial = target;
+
+            if (kind == GraphicKind.Sprite)
+            {
+                if (!originalCaptured)
+                {
+                    originalMaterial = spriteRenderer.sharedMaterial;
+                    originalCaptured = true;
+                }
+                if (spriteRenderer.sharedMaterial != target)
+                    spriteRenderer.sharedMaterial = target;
+            }
+            else if (kind == GraphicKind.UI)
+            {
+                if (!originalCaptured)
+                {
+                    originalMaterial = graphic.material;
+                    originalCaptured = true;
+                }
+                if (graphic.material != target)
+                    graphic.material = target;
             }
         }
 
-        /// <summary>
-        /// 런타임에 글로우 강도를 변경합니다.
-        /// </summary>
-        public void SetGlowIntensity(float inner, float outer)
+        private void RestoreOriginalMaterial()
         {
-            innerGlowIntensity = inner;
-            outerGlowIntensity = outer;
+            if (!originalCaptured) return;
 
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetFloat(InnerGlowIntensityProp, innerGlowIntensity);
-                neonGlowMaterial.SetFloat(OuterGlowIntensityProp, outerGlowIntensity);
-            }
+            if (kind == GraphicKind.Sprite && spriteRenderer != null)
+                spriteRenderer.sharedMaterial = originalMaterial;
+            else if (kind == GraphicKind.UI && graphic != null)
+                graphic.material = originalMaterial;
+
+            originalCaptured = false;
+            originalMaterial = null;
+            appliedMaterial = null;
         }
 
-        /// <summary>
-        /// 런타임에 발광 강도를 변경합니다.
-        /// </summary>
-        public void SetEmissionIntensity(float intensity)
+        private void ReleaseInstanceMaterial()
         {
-            emissionIntensity = intensity;
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetFloat(EmissionIntensityProp, emissionIntensity);
-            }
+            if (instanceMaterial == null) return;
+
+            if (Application.isPlaying) Destroy(instanceMaterial);
+            else DestroyImmediate(instanceMaterial);
+
+            instanceMaterial = null;
         }
 
+        #region 에디터 씬 뷰 프리뷰
+        private float previewTime;
+
+        /// <summary>씬 뷰 프리뷰가 돌고 있는지.</summary>
+        public bool IsEditorPreviewActive { get; private set; }
+
         /// <summary>
-        /// 런타임에 깜빡임 효과를 켜거나 끕니다.
+        /// 프리뷰를 시작한다. 시작할 수 없으면 false 를 돌려준다.
+        /// 편집 모드에서는 _Time 이 흐르지 않으므로 셰이더가 _PreviewTime 을 보도록 전환한다.
         /// </summary>
-        public void ToggleFlicker(bool enabled)
+        public bool EditorPreviewBegin()
         {
-            useFlicker = enabled;
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetFloat(UseFlickerProp, useFlicker ? 1.0f : 0.0f);
-            }
+            if (flickerMode == NeonFlickerMode.None) return false;
+
+            // 공유 머티리얼은 여러 오브젝트가 함께 쓰는 에셋이라 프리뷰로 건드리지 않는다.
+            if (IsUsingSharedMaterial) return false;
+
+            if (instanceMaterial == null) Rebuild();
+            if (instanceMaterial == null) return false;
+
+            previewTime = 0f;
+            IsEditorPreviewActive = true;
+            instanceMaterial.SetFloat(UsePreviewTimeId, 1f);
+            instanceMaterial.SetFloat(PreviewTimeId, 0f);
+            instanceMaterial.SetFloat(StartTimeId, 0f);   // Warmup 을 처음부터 재생
+            return true;
         }
 
-        /// <summary>
-        /// 런타임에 깜빡임 속도를 변경합니다.
-        /// </summary>
-        public void SetFlickerSpeed(float speed)
+        /// <summary>프리뷰 시간을 delta 만큼 진행시킨다.</summary>
+        public void EditorPreviewTick(float delta)
         {
-            flickerSpeed = Mathf.Clamp(speed, 0.1f, 10f);
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetFloat(FlickerSpeedProp, flickerSpeed);
-            }
+            if (!IsEditorPreviewActive || instanceMaterial == null) return;
+
+            previewTime += delta;
+            instanceMaterial.SetFloat(PreviewTimeId, previewTime);
         }
 
-        /// <summary>
-        /// 런타임에 깜빡임 범위를 설정합니다.
-        /// </summary>
-        public void SetFlickerRange(float innerMin, float innerMax, float outerMin, float outerMax)
+        /// <summary>프리뷰를 끝내고 셰이더를 평소 시간축으로 되돌린다.</summary>
+        public void EditorPreviewEnd()
         {
-            innerFlickerMin = Mathf.Clamp(innerMin, 0f, 1f);
-            innerFlickerMax = Mathf.Clamp(innerMax, 1f, 3f);
-            outerFlickerMin = Mathf.Clamp(outerMin, 0f, 1f);
-            outerFlickerMax = Mathf.Clamp(outerMax, 1f, 3f);
-
-            if (neonGlowMaterial != null)
-            {
-                neonGlowMaterial.SetFloat(InnerFlickerMinProp, innerFlickerMin);
-                neonGlowMaterial.SetFloat(InnerFlickerMaxProp, innerFlickerMax);
-                neonGlowMaterial.SetFloat(OuterFlickerMinProp, outerFlickerMin);
-                neonGlowMaterial.SetFloat(OuterFlickerMaxProp, outerFlickerMax);
-            }
+            IsEditorPreviewActive = false;
+            previewTime = 0f;
+            if (instanceMaterial != null) instanceMaterial.SetFloat(UsePreviewTimeId, 0f);
         }
         #endregion
 
-        /// <summary>
-        /// GameObject가 비활성화될 때 인스턴스 머티리얼 정리
-        /// </summary>
-        private void OnDisable()
+        #region 런타임 유틸리티
+        /// <summary>전체 밝기를 조절한다. 1 이하로 내리면 꺼진 느낌이 된다.</summary>
+        public void SetExposure(float value)
         {
-            // 런타임에 생성된 인스턴스 머티리얼 정리
-            if (Application.isPlaying && neonGlowMaterial != null)
-            {
-                Destroy(neonGlowMaterial);
-            }
+            exposure = Mathf.Max(0f, value);
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            instanceMaterial.SetFloat(ExposureId, exposure);
+            // 밝기가 바뀌면 글로우가 보이는 거리도 바뀐다.
+            instanceMaterial.SetFloat(GlowCutoffId, ComputeGlowCutoff());
         }
+
+        /// <summary>틴트 색상을 바꾼다. 알파를 낮추면 전체가 페이드아웃된다.</summary>
+        public void SetTint(Color value)
+        {
+            tint = value;
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            instanceMaterial.SetColor(ColorId, tint);
+            instanceMaterial.SetFloat(GlowCutoffId, ComputeGlowCutoff());
+        }
+
+        /// <summary>관과 글로우 색을 한 번에 바꾼다.</summary>
+        public void SetNeonColor(Color tube, Color inner, Color outer)
+        {
+            tubeColor = tube;
+            innerGlowColor = inner;
+            outerGlowColor = outer;
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            instanceMaterial.SetColor(TubeColorId, tubeColor);
+            instanceMaterial.SetColor(InnerGlowColorId, innerGlowColor);
+            instanceMaterial.SetColor(OuterGlowColorId, outerGlowColor);
+        }
+
+        /// <summary>깜빡임 모드를 바꾼다. Warmup 으로 바꾸면 기준 시각도 갱신한다.</summary>
+        public void SetFlicker(NeonFlickerMode mode, float speed = -1f, float amount = -1f)
+        {
+            flickerMode = mode;
+            if (speed >= 0f) flickerSpeed = Mathf.Clamp(speed, 0.1f, 10f);
+            if (amount >= 0f) flickerAmount = Mathf.Clamp01(amount);
+
+            if (IsUsingSharedMaterial || instanceMaterial == null) return;
+            instanceMaterial.SetFloat(FlickerModeId, (float)flickerMode);
+            instanceMaterial.SetFloat(FlickerSpeedId, flickerSpeed);
+            instanceMaterial.SetFloat(FlickerAmountId, flickerAmount);
+            if (mode == NeonFlickerMode.Warmup) ResetFlickerTime();
+        }
+
+        /// <summary>색상 프리셋을 적용한다.</summary>
+        public void ApplyPreset(NeonPreset preset)
+        {
+            switch (preset)
+            {
+                case NeonPreset.ClassicRed:
+                    tubeColor = new Color(1f, 0.12f, 0.10f);
+                    coreColor = new Color(1f, 0.78f, 0.68f);
+                    innerGlowColor = new Color(1f, 0.15f, 0.08f);
+                    outerGlowColor = new Color(1f, 0.08f, 0.05f);
+                    break;
+                case NeonPreset.IceBlue:
+                    tubeColor = new Color(0.25f, 0.75f, 1f);
+                    coreColor = new Color(0.88f, 0.97f, 1f);
+                    innerGlowColor = new Color(0.20f, 0.70f, 1f);
+                    outerGlowColor = new Color(0.10f, 0.45f, 1f);
+                    break;
+                case NeonPreset.HotPink:
+                    tubeColor = new Color(1f, 0.15f, 0.60f);
+                    coreColor = new Color(1f, 0.85f, 0.95f);
+                    innerGlowColor = new Color(1f, 0.10f, 0.55f);
+                    outerGlowColor = new Color(0.85f, 0.05f, 0.60f);
+                    break;
+                case NeonPreset.ToxicGreen:
+                    tubeColor = new Color(0.35f, 1f, 0.30f);
+                    coreColor = new Color(0.90f, 1f, 0.85f);
+                    innerGlowColor = new Color(0.30f, 1f, 0.25f);
+                    outerGlowColor = new Color(0.15f, 0.90f, 0.20f);
+                    break;
+                case NeonPreset.WarmWhite:
+                    tubeColor = new Color(1f, 0.92f, 0.80f);
+                    coreColor = Color.white;
+                    innerGlowColor = new Color(1f, 0.88f, 0.70f);
+                    outerGlowColor = new Color(1f, 0.80f, 0.55f);
+                    break;
+                case NeonPreset.AmberOrange:
+                    tubeColor = new Color(1f, 0.55f, 0.10f);
+                    coreColor = new Color(1f, 0.90f, 0.70f);
+                    innerGlowColor = new Color(1f, 0.50f, 0.08f);
+                    outerGlowColor = new Color(1f, 0.35f, 0.05f);
+                    break;
+            }
+
+            UpdateShaderProperties();
+        }
+        #endregion
     }
 }
