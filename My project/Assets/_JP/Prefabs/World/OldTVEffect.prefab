@@ -88,7 +88,7 @@ SpriteRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 10754, guid: 0000000000000000f000000000000000, type: 0}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -132,6 +132,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 807228de4cc174ccab6bb6660f080164, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  spriteShader: {fileID: 4800000, guid: 6c0c0205313924444a5c769ed5aa4f54, type: 3}
+  uiShader: {fileID: 4800000, guid: 1a450a5e502114fd881732cd683c4508, type: 3}
   noiseTexture: {fileID: 2800000, guid: 5f54521bb80fc4b479d1ee5b2a2dfcb4, type: 3}
   noiseIntensity: 0.5
   noiseScale: 3
@@ -143,5 +145,5 @@ MonoBehaviour:
   colorBleed: 0.212
   colorBleedOffset: 0.0244
   rollSpeed: 1
-  lowPerformanceMode: 0
-  autoDetectPerformance: 1
+  performanceMode: 1
+  lowQualityMaxLevel: 0
